@@ -61,8 +61,8 @@ const when = (iso: string) =>
     timeZone: "Asia/Kolkata",
   });
 
-function slotState(maxSlots: number, realFilled: number, startsAt?: string, status?: string) {
-  const isStarted = startsAt ? new Date(startsAt).getTime() <= Date.now() : false;
+function slotState(maxSlots: number, realFilled: number, startsAt?: string, status?: string, clientNow?: number) {
+  const isStarted = startsAt && clientNow ? new Date(startsAt).getTime() <= clientNow : false;
   const isLive = status === "live" || isStarted;
 
   if (status === "completed") return { label: "COMPLETED", color: "#6b7280", left: 0, closed: true };
@@ -417,12 +417,14 @@ function EventCard({
   onToggle,
   onViewPrize,
   regs,
+  clientNow,
 }: {
   e: EventRow;
   selected: boolean;
   onToggle: () => void;
   onViewPrize: (e: EventRow) => void;
   regs: PublicReg[];
+  clientNow: number;
 }) {
   const eventRegs = regs.filter((r) => r.event_id === e.id);
   const confirmedCount = eventRegs.filter((r) => r.status === "confirmed").length;
@@ -431,7 +433,7 @@ function EventCard({
   // Real team count calculated strictly from actual live registrations (no dummy data)
   const realFilled = confirmedCount + pendingCount;
   const slotsLeft = Math.max(0, e.max_slots - realFilled);
-  const s = slotState(e.max_slots, realFilled, e.starts_at, e.status);
+  const s = slotState(e.max_slots, realFilled, e.starts_at, e.status, clientNow);
   const pct = Math.min(100, Math.round((realFilled / e.max_slots) * 100));
 
   const earlyBirdRemaining =
@@ -642,10 +644,12 @@ export default function Home() {
   const [sort, setSort] = useState<SortMode>("soon");
   const [search, setSearch] = useState("");
   const [prizeModalEvent, setPrizeModalEvent] = useState<EventRow | null>(null);
+  const [clientNow, setClientNow] = useState<number>(0);
   const checkoutRef = useRef<HTMLDivElement>(null);
 
-  // ── Auth state ──
+  // ── Auth state & Client Time ──
   useEffect(() => {
+    setClientNow(Date.now());
     async function checkAuthUser(u: { id: string; email?: string | null } | null) {
       if (!u) {
         setUserEmail(null);
@@ -776,7 +780,7 @@ export default function Home() {
     (events ?? []).some((e) => {
       if (e.id !== id) return false;
       const count = regs.filter((r) => r.event_id === e.id).length;
-      const isStarted = new Date(e.starts_at).getTime() <= Date.now();
+      const isStarted = clientNow > 0 && new Date(e.starts_at).getTime() <= clientNow;
       const isClosed = e.status !== "open" || isStarted || e.max_slots - count <= 0;
       return !isClosed;
     })
@@ -1070,6 +1074,7 @@ export default function Home() {
                     onToggle={() => toggle(e.id)}
                     onViewPrize={setPrizeModalEvent}
                     regs={regs}
+                    clientNow={clientNow}
                   />
                 ))}
           </div>
@@ -1104,6 +1109,7 @@ export default function Home() {
                     onToggle={() => toggle(e.id)}
                     onViewPrize={setPrizeModalEvent}
                     regs={regs}
+                    clientNow={clientNow}
                   />
                 ))}
           </div>

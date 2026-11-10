@@ -705,7 +705,7 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
   const [count, setCount] = useState(5);
   const [manualTitles, setManualTitles] = useState("APX 1-3PM | L1\nAPX 3-5PM | L2\nAPX 5-7PM | L3\nAPX 7-9PM | L4\nAPX 9-11PM | L5");
   const [useManual, setUseManual] = useState(true);
-  const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
+  const [startDate, setStartDate] = useState("2026-11-11");
   const [firstTime, setFirstTime] = useState("13:00");
   const [intervalVal, setIntervalVal] = useState(120);
   const [customInterval, setCustomInterval] = useState(30);
@@ -762,9 +762,18 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
   };
 
   // Clone state
-  const [cloneDate, setCloneDate] = useState(yesterday());
+  const [cloneDate, setCloneDate] = useState("2026-11-10");
   const [cloning, setCloning] = useState(false);
   const [cloneCount, setCloneCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    try {
+      setStartDate(new Date().toISOString().split("T")[0]);
+      setCloneDate(yesterday());
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const effectiveInterval = intervalVal === -1 ? customInterval : intervalVal;
 

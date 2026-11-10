@@ -102,17 +102,21 @@ function useCopyToClipboard(resetMs = 2000): [string | null, (text: string, key:
 
 function RegCard({
   reg,
+  clientNow,
 }: {
   reg: MyRegistration;
+  clientNow: number;
 }) {
   const [copiedKey, copy] = useCopyToClipboard();
   const sc = STATUS_CONFIG[reg.status] ?? STATUS_CONFIG.cancelled;
   const kc = KIND_CONFIG[reg.event_kind] ?? KIND_CONFIG.scrim;
-  const isUpcoming = new Date(reg.event_starts_at) > new Date();
+  const isUpcoming = clientNow > 0 ? new Date(reg.event_starts_at).getTime() > clientNow : true;
   const isPending = reg.status === "pending_payment";
   const isConfirmed = reg.status === "confirmed";
   const orderExpired =
-    reg.order_expires_at && new Date(reg.order_expires_at) < new Date();
+    reg.order_expires_at && clientNow > 0
+      ? new Date(reg.order_expires_at).getTime() < clientNow
+      : false;
 
   function CopyBtn({ value, label, copyKey }: { value: string; label: string; copyKey: string }) {
     const isCopied = copiedKey === copyKey;
@@ -427,12 +431,20 @@ export default function ProfilePage() {
     setRegs(flat);
   }, []);
 
-  const now = new Date();
+  const [clientNow, setClientNow] = useState<number>(0);
+  useEffect(() => {
+    setClientNow(Date.now());
+  }, []);
+
   const filtered = (regs ?? []).filter((r) => {
-    if (tab === "upcoming")
-      return r.status === "confirmed" && new Date(r.event_starts_at) > now;
-    if (tab === "past")
-      return r.status === "confirmed" && new Date(r.event_starts_at) <= now;
+    if (tab === "upcoming") {
+      if (!clientNow) return r.status === "confirmed";
+      return r.status === "confirmed" && new Date(r.event_starts_at).getTime() > clientNow;
+    }
+    if (tab === "past") {
+      if (!clientNow) return false;
+      return r.status === "confirmed" && new Date(r.event_starts_at).getTime() <= clientNow;
+    }
     if (tab === "pending") return r.status === "pending_payment";
     return true;
   });
@@ -541,12 +553,17 @@ export default function ProfilePage() {
                   ? regs.length
                   : t.key === "upcoming"
                   ? regs.filter(
-                      (r) => r.status === "confirmed" && new Date(r.event_starts_at) > now
+                      (r) =>
+                        r.status === "confirmed" &&
+                        (!clientNow || new Date(r.event_starts_at).getTime() > clientNow)
                     ).length
                   : t.key === "pending"
                   ? regs.filter((r) => r.status === "pending_payment").length
                   : regs.filter(
-                      (r) => r.status === "confirmed" && new Date(r.event_starts_at) <= now
+                      (r) =>
+                        r.status === "confirmed" &&
+                        clientNow > 0 &&
+                        new Date(r.event_starts_at).getTime() <= clientNow
                     ).length;
               return (
                 <button
@@ -622,7 +639,7 @@ export default function ProfilePage() {
         {filtered.length > 0 && (
           <div className="grid gap-5 sm:grid-cols-2">
             {filtered.map((r) => (
-              <RegCard key={r.id} reg={r} />
+              <RegCard key={r.id} reg={r} clientNow={clientNow} />
             ))}
           </div>
         )}

@@ -213,6 +213,11 @@ function PhaseADetails({
   const [whatsapp, setWhatsapp] = useState("");
   const [teamName, setTeamName] = useState("");
   const [touched, setTouched] = useState({ whatsapp: false, teamName: false });
+  const [clientNow, setClientNow] = useState(0);
+
+  useEffect(() => {
+    setClientNow(Date.now());
+  }, []);
 
   const whatsappValid = /^[6-9][0-9]{9}$/.test(whatsapp);
   const teamNameValid = teamName.trim().length >= 2 && teamName.trim().length <= 40;
@@ -337,7 +342,7 @@ function PhaseADetails({
             Not Available
           </h2>
           {unavailable.map((ev) => {
-            const isStarted = new Date(ev.starts_at).getTime() <= Date.now();
+            const isStarted = clientNow > 0 && new Date(ev.starts_at).getTime() <= clientNow;
             const reason = isStarted
               ? "Match already started"
               : ev.status !== "open"
@@ -482,13 +487,7 @@ function PhaseADetails({
 // ─────────────────────────────────────────────
 
 function useCountdown(expiresAt: string | null): number {
-  const [secondsLeft, setSecondsLeft] = useState<number>(() => {
-    if (!expiresAt) return SLOT_HOLD_SECONDS;
-    return Math.max(
-      0,
-      Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000)
-    );
-  });
+  const [secondsLeft, setSecondsLeft] = useState<number>(SLOT_HOLD_SECONDS);
 
   useEffect(() => {
     if (!expiresAt) return;
