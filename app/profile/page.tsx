@@ -546,7 +546,7 @@ export default function ProfilePage() {
 
         {/* ── Tabs ── */}
         {regs && regs.length > 0 && (
-          <div className="mb-6 flex gap-1 p-1 rounded-xl bg-white/[0.04] border border-white/[0.06] w-fit">
+          <div className="mb-6 flex gap-1 p-1 rounded-xl bg-white/[0.04] border border-white/[0.06] max-w-full overflow-x-auto no-scrollbar">
             {TABS.map((t) => {
               const count =
                 t.key === "all"

@@ -217,11 +217,11 @@ function PrizeModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-md bg-[#0D111A] border border-white/10 rounded-3xl p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200"
+        className="relative w-full max-w-md max-h-[88vh] overflow-y-auto no-scrollbar bg-[#0D111A] border border-white/10 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4 sm:space-y-5 animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between">
@@ -453,7 +453,7 @@ function EventCard({
 
   return (
     <div
-      className={`flex flex-col gap-4 rounded-2xl border bg-[#0E1118] p-5 transition-all duration-200 ${
+      className={`flex flex-col gap-3.5 sm:gap-4 rounded-2xl border bg-[#0E1118] p-4 sm:p-5 transition-all duration-200 ${
         selected
           ? "border-emerald-400 shadow-lg shadow-emerald-900/20"
           : "border-white/[0.08] hover:border-white/[0.15] hover:scale-[1.01]"
@@ -521,14 +521,14 @@ function EventCard({
       <IDPBox idpTimes={e.idp_times} startTimes={e.start_times} />
 
       {/* ── Prize / fee with Clickable Prize Pool ── */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
         <button
           type="button"
           onClick={(ev) => {
             ev.stopPropagation();
             onViewPrize(e);
           }}
-          className="group rounded-2xl bg-gradient-to-br from-emerald-500/15 via-emerald-500/5 to-transparent border border-emerald-500/30 p-3.5 text-left hover:border-emerald-400 hover:shadow-lg hover:shadow-emerald-900/20 transition-all cursor-pointer relative overflow-hidden"
+          className="group rounded-2xl bg-gradient-to-br from-emerald-500/15 via-emerald-500/5 to-transparent border border-emerald-500/30 p-3 sm:p-3.5 text-left hover:border-emerald-400 hover:shadow-lg hover:shadow-emerald-900/20 transition-all cursor-pointer relative overflow-hidden"
           title="Click to view Top 4 Prize Distribution"
         >
           <div className="flex items-center justify-between text-[10px] text-emerald-400 font-bold uppercase tracking-wider mb-1">
@@ -539,19 +539,19 @@ function EventCard({
               Top 4 ↗
             </span>
           </div>
-          <p className="text-xl font-black text-emerald-300 font-mono tracking-tight group-hover:text-emerald-200">
+          <p className="text-lg sm:text-xl font-black text-emerald-300 font-mono tracking-tight group-hover:text-emerald-200">
             {rupees(e.prize_pool_paise)}
           </p>
           <p className="text-[10px] text-white/40 mt-0.5">Click for Top 4 Payouts</p>
         </button>
 
-        <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-3.5 flex flex-col justify-between">
+        <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-3 sm:p-3.5 flex flex-col justify-between">
           <span className="text-[10px] text-white/40 uppercase tracking-wider font-bold">
             ENTRY FEE
           </span>
           <div className="flex items-baseline gap-1.5 mt-1">
             <p
-              className={`text-xl font-black font-mono ${
+              className={`text-lg sm:text-xl font-black font-mono ${
                 showEarlyBird ? "text-amber-400" : "text-white"
               }`}
             >
@@ -604,7 +604,7 @@ function EventCard({
 
       {/* ── CTA ── */}
       {s.closed ? (
-        <span className="mt-auto rounded-xl bg-white/[0.04] border border-white/[0.08] px-4 py-3 text-center text-xs font-bold uppercase tracking-wider text-white/50">
+        <span className="mt-auto rounded-xl bg-white/[0.04] border border-white/[0.08] px-4 py-3 min-h-[44px] flex items-center justify-center text-center text-xs font-bold uppercase tracking-wider text-white/50">
           {s.label === "🔴 LIVE NOW"
             ? "🔴 Match In Progress · Closed"
             : s.label === "COMPLETED"
@@ -616,10 +616,10 @@ function EventCard({
       ) : (
         <button
           onClick={onToggle}
-          className={`mt-auto rounded-xl px-4 py-3 text-sm font-semibold transition-all duration-150 ${
+          className={`mt-auto rounded-xl px-4 py-3 min-h-[44px] flex items-center justify-center text-sm font-semibold transition-all duration-150 ${
             selected
               ? "bg-emerald-500 text-black hover:bg-emerald-400 shadow-md shadow-emerald-900/30"
-              : "border border-white/[0.12] hover:bg-white/5 hover:border-white/20"
+              : "border border-white/[0.12] hover:bg-white/5 hover:border-white/20 text-white"
           }`}
         >
           {selected ? "✓  Selected" : "Select Lobby"}
@@ -645,6 +645,7 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [prizeModalEvent, setPrizeModalEvent] = useState<EventRow | null>(null);
   const [clientNow, setClientNow] = useState<number>(0);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const checkoutRef = useRef<HTMLDivElement>(null);
 
   // ── Auth state & Client Time ──
@@ -828,7 +829,7 @@ export default function Home() {
 
   return (
     <div
-      className={`min-h-screen bg-[#06070B] text-white ${sel.length > 0 ? "pb-28" : ""}`}
+      className="min-h-screen bg-[#06070B] text-white pb-24 sm:pb-12"
     >
       {/* ── Fixed background layers ── */}
       <div
@@ -841,12 +842,15 @@ export default function Home() {
       </div>
 
       {/* ── Sticky Navbar ── */}
-      <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#06070B]/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 sm:px-6 py-4 gap-4">
-          <span className="text-lg sm:text-xl font-extrabold tracking-widest shrink-0">
-            {orgFirst}{" "}
+      <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#06070B]/90 backdrop-blur-md">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-3.5 sm:px-6 py-3 sm:py-4 gap-2 sm:gap-4">
+          <a href="/" className="flex items-center gap-1.5 text-base sm:text-xl font-extrabold tracking-widest shrink-0">
+            <span>{orgFirst}</span>{" "}
             <span className="text-emerald-400">{orgRest}</span>
-          </span>
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 glow-pulse sm:hidden" />
+          </a>
+
+          {/* Desktop navigation */}
           <nav className="hidden sm:flex items-center gap-5 text-sm text-white/60">
             <a href="#scrims" className="hover:text-white transition-colors">
               Scrims
@@ -856,22 +860,34 @@ export default function Home() {
             </a>
             <a
               href="/my-tournaments"
-              className="hover:text-white transition-colors"
+              className="hover:text-white transition-colors flex items-center gap-1"
             >
-              My Tournaments
+              <span>🔑</span>
+              <span>Room ID &amp; Password</span>
             </a>
           </nav>
-          <div className="flex items-center gap-3 shrink-0">
+
+          {/* Right actions */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* Quick mobile Room ID badge */}
+            <a
+              href="/my-tournaments"
+              className="sm:hidden inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-bold text-emerald-400 hover:bg-emerald-500/20 transition-all"
+            >
+              <span>🔑</span>
+              <span>Room ID</span>
+            </a>
+
             {isAdmin && (
               <a
                 href="/admin"
-                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 px-3 py-1.5 text-xs font-bold text-amber-400 hover:bg-amber-500/25 transition-all shadow-sm"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs font-bold text-amber-400 hover:bg-amber-500/25 transition-all shadow-sm"
               >
                 <span>⚡</span>
                 <span className="hidden sm:inline">Admin Panel</span>
-                <span className="sm:hidden">Admin</span>
               </a>
             )}
+
             {userEmail ? (
               <div className="flex items-center gap-2">
                 <a
@@ -895,33 +911,149 @@ export default function Home() {
             ) : (
               <a
                 href="/login"
-                className="rounded-lg bg-emerald-500 px-4 py-1.5 text-xs font-semibold text-black hover:bg-emerald-400 transition-colors"
+                className="rounded-lg bg-emerald-500 px-3 sm:px-4 py-1 sm:py-1.5 text-xs font-bold text-black hover:bg-emerald-400 transition-colors hidden sm:inline-block"
               >
                 Sign in
               </a>
             )}
-            {/* Mobile nav menu indicator */}
-            <a
-              href="/profile"
-              className="sm:hidden text-xs text-white/50 hover:text-white transition-colors"
+
+            {/* Mobile Hamburger toggle */}
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(true)}
+              className="sm:hidden rounded-xl border border-white/10 bg-white/[0.04] p-1.5 text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+              aria-label="Open navigation menu"
             >
-              My Bookings
-            </a>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="relative mx-auto max-w-6xl px-4 sm:px-6">
+      {/* ── Slide-over Mobile Navigation Drawer ── */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div
+            className="fixed inset-0"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          <div className="relative w-full max-w-[280px] h-full bg-[#0A0D14] border-l border-white/[0.08] p-5 shadow-2xl flex flex-col justify-between overflow-y-auto no-scrollbar animate-in slide-in-from-right duration-200 z-10">
+            <div>
+              <div className="flex items-center justify-between pb-4 border-b border-white/[0.08]">
+                <div>
+                  <span className="text-base font-black tracking-wider uppercase text-white">
+                    {orgFirst} <span className="text-emerald-400">{orgRest}</span>
+                  </span>
+                  <p className="text-[10px] text-white/40">Player &amp; Host Portal</p>
+                </div>
+                <button
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="rounded-full w-7 h-7 flex items-center justify-center bg-white/5 text-white/60 hover:text-white transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Navigation links */}
+              <nav className="flex flex-col gap-1 pt-4">
+                <a
+                  href="#scrims"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.05] text-sm font-semibold text-white/80 hover:text-white transition-colors"
+                >
+                  <span className="text-base">🎮</span>
+                  <span>Daily Scrims</span>
+                </a>
+                <a
+                  href="#leagues"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.05] text-sm font-semibold text-white/80 hover:text-white transition-colors"
+                >
+                  <span className="text-base">🏆</span>
+                  <span>Major Leagues</span>
+                </a>
+                <a
+                  href="/my-tournaments"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-emerald-500/[0.08] border border-emerald-500/20 text-sm font-semibold text-emerald-400 transition-colors"
+                >
+                  <span className="text-base">🔑</span>
+                  <span>Room ID &amp; Password</span>
+                </a>
+                <a
+                  href="/profile"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.05] text-sm font-semibold text-white/80 hover:text-white transition-colors"
+                >
+                  <span className="text-base">📋</span>
+                  <span>My Bookings</span>
+                </a>
+                <a
+                  href={`https://wa.me/${SUPPORT_WHATSAPP}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.05] text-sm font-semibold text-green-400 hover:text-green-300 transition-colors"
+                >
+                  <span className="text-base">💬</span>
+                  <span>WhatsApp Support</span>
+                </a>
+                {isAdmin && (
+                  <a
+                    href="/admin"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm font-semibold text-amber-400 transition-colors"
+                  >
+                    <span className="text-base">⚡</span>
+                    <span>Admin Dashboard</span>
+                  </a>
+                )}
+              </nav>
+            </div>
+
+            {/* Bottom Account Controls */}
+            <div className="pt-4 border-t border-white/[0.08]">
+              {userEmail ? (
+                <div className="space-y-2.5">
+                  <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-2.5">
+                    <p className="text-[10px] uppercase font-bold text-emerald-400">Signed In</p>
+                    <p className="text-xs font-semibold text-white truncate mt-0.5">{userEmail}</p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      await supabase.auth.signOut();
+                      window.location.reload();
+                    }}
+                    className="w-full py-2 rounded-xl border border-white/15 text-xs font-semibold text-white/50 hover:text-white hover:bg-white/5 transition-colors"
+                  >
+                    Sign out
+                  </button>
+                </div>
+              ) : (
+                <a
+                  href="/login"
+                  className="w-full py-2.5 rounded-xl bg-emerald-500 text-black font-extrabold text-xs flex items-center justify-center gap-2 hover:bg-emerald-400 transition-colors shadow-md shadow-emerald-900/30"
+                >
+                  Sign In / Create Account →
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <main className="relative mx-auto max-w-6xl px-3.5 sm:px-6">
         {/* ── Hero ── */}
-        <section className="py-14 sm:py-24">
+        <section className="pt-5 pb-6 sm:py-20">
           {/* Live squad counter based on real registrations */}
-          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/[0.07] px-4 py-2 text-sm text-emerald-300">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 glow-pulse" />
+          <div className="mb-3 sm:mb-5 inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/[0.07] px-3 sm:px-4 py-1 sm:py-1.5 text-xs sm:text-sm text-emerald-300">
+            <span className="h-2 w-2 rounded-full bg-emerald-400 glow-pulse shrink-0" />
             {totalLocked > 0 ? (
               <span>
                 <strong>{totalLocked}</strong> squads locked in today
                 {totalHeld > 0 && (
-                  <span className="text-white/50 text-xs">
+                  <span className="text-white/50 text-[10px] sm:text-xs">
                     {" "}· {totalHeld} holding slots
                   </span>
                 )}
@@ -933,42 +1065,51 @@ export default function Home() {
             )}
           </div>
 
-          <h1 className="max-w-2xl text-4xl sm:text-6xl font-extrabold leading-[1.1] tracking-tight">
+          <h1 className="max-w-2xl text-2xl sm:text-6xl font-black leading-tight sm:leading-[1.1] tracking-tight">
             Your next lobby{" "}
             <span className="text-emerald-400">is waiting.</span>
           </h1>
-          <p className="mt-5 max-w-xl text-base sm:text-lg text-white/50 leading-relaxed">
+          <p className="mt-2 sm:mt-5 max-w-xl text-xs sm:text-lg text-white/50 leading-relaxed">
             Daily scrims, tournaments and leagues with real cash prizes.
             Book a slot in under a minute.
           </p>
 
-          <div className="mt-8 flex flex-wrap gap-3">
+          <div className="mt-4 sm:mt-8 flex flex-wrap gap-2.5 sm:gap-3">
             <a
               href="#scrims"
-              className="rounded-xl bg-emerald-500 px-6 py-3 font-semibold text-black hover:bg-emerald-400 transition-colors text-sm sm:text-base"
+              className="rounded-xl bg-emerald-500 px-4 sm:px-6 py-2.5 sm:py-3 font-semibold text-black hover:bg-emerald-400 transition-colors text-xs sm:text-base shadow-md shadow-emerald-900/20"
             >
               Browse Scrims
             </a>
             <a
               href="#leagues"
-              className="rounded-xl border border-white/15 px-6 py-3 font-semibold hover:bg-white/5 transition-colors text-sm sm:text-base"
+              className="rounded-xl border border-white/15 px-4 sm:px-6 py-2.5 sm:py-3 font-semibold hover:bg-white/5 transition-colors text-xs sm:text-base"
             >
               View Leagues
             </a>
+            <a
+              href="/my-tournaments"
+              className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 sm:px-5 py-2.5 sm:py-3 font-semibold text-emerald-400 hover:bg-emerald-500/20 transition-colors text-xs sm:text-base flex items-center gap-1.5"
+            >
+              <span>🔑</span>
+              <span>Room ID &amp; Password</span>
+            </a>
           </div>
 
-          {/* Quick stats */}
+          {/* Quick stats grid: 2 columns on mobile, 4 on desktop */}
           {events && events.length > 0 && (
-            <div className="mt-10 flex flex-wrap gap-6 sm:gap-10">
+            <div className="mt-5 sm:mt-10 grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
               {[
-                { label: "Active Lobbies", value: events.length.toString() },
+                { label: "Active Lobbies", value: events.length.toString(), icon: "🎮" },
                 {
                   label: "Squads Locked",
                   value: totalLocked.toString(),
+                  icon: "👥",
                 },
                 {
                   label: "Total Prize Pool",
                   value: rupees(totalPrize),
+                  icon: "💰",
                 },
                 {
                   label: "Entry From",
@@ -978,13 +1119,20 @@ export default function Home() {
                       : rupees(
                           Math.min(...events.map((e) => e.entry_fee_paise))
                         ),
+                  icon: "⚡",
                 },
               ].map((stat) => (
-                <div key={stat.label}>
-                  <p className="text-2xl font-extrabold text-white">
+                <div
+                  key={stat.label}
+                  className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-2.5 sm:p-4 hover:border-white/10 transition-colors"
+                >
+                  <div className="flex items-center justify-between text-white/40 mb-1">
+                    <span className="text-[10px] sm:text-xs uppercase font-bold tracking-wider">{stat.label}</span>
+                    <span className="text-xs sm:text-sm">{stat.icon}</span>
+                  </div>
+                  <p className="text-lg sm:text-2xl font-black text-white font-mono">
                     {stat.value}
                   </p>
-                  <p className="text-xs text-white/40 mt-0.5">{stat.label}</p>
                 </div>
               ))}
             </div>
@@ -999,16 +1147,16 @@ export default function Home() {
         )}
 
         {/* ── Filter & Search Bar ── */}
-        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {/* Filter tabs */}
-          <div className="flex gap-1 p-1 rounded-xl bg-white/[0.04] border border-white/[0.06] overflow-x-auto scrollbar-none">
+        <div className="mb-6 sm:mb-8 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+          {/* Filter tabs with smooth mobile horizontal swipe */}
+          <div className="flex gap-1.5 p-1 rounded-2xl bg-white/[0.04] border border-white/[0.06] overflow-x-auto no-scrollbar -mx-3.5 px-3.5 sm:mx-0 sm:px-0">
             {FILTERS.map((f) => (
               <button
                 key={f.key}
                 onClick={() => setFilter(f.key)}
-                className={`shrink-0 rounded-lg px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium transition-all duration-150 ${
+                className={`shrink-0 rounded-xl px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold transition-all duration-150 ${
                   filter === f.key
-                    ? "bg-emerald-500 text-black shadow"
+                    ? "bg-emerald-500 text-black shadow-md shadow-emerald-900/20"
                     : "text-white/60 hover:text-white"
                 }`}
               >
@@ -1017,9 +1165,9 @@ export default function Home() {
             ))}
           </div>
 
-          {/* Search + Sort */}
-          <div className="flex gap-2">
-            <div className="relative flex-1 sm:w-48 sm:flex-none">
+          {/* Search + Sort side-by-side on mobile */}
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="relative flex-1 sm:w-52">
               <svg
                 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30"
                 fill="none"
@@ -1038,13 +1186,13 @@ export default function Home() {
                 placeholder="Search lobbies…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full rounded-xl border border-white/[0.08] bg-[#0E1118] pl-9 pr-3 py-2.5 text-sm outline-none focus:border-emerald-500 transition-colors placeholder:text-white/25"
+                className="w-full rounded-xl border border-white/[0.08] bg-[#0E1118] pl-9 pr-3 py-2 text-xs sm:text-sm outline-none focus:border-emerald-500 transition-colors placeholder:text-white/25"
               />
             </div>
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as SortMode)}
-              className="rounded-xl border border-white/[0.08] bg-[#0E1118] px-3 py-2.5 text-sm outline-none focus:border-emerald-500 transition-colors text-white/70"
+              className="rounded-xl border border-white/[0.08] bg-[#0E1118] px-2.5 sm:px-3 py-2 text-xs sm:text-sm outline-none focus:border-emerald-500 transition-colors text-white/70 shrink-0"
             >
               <option value="soon">Starting Soon</option>
               <option value="prize_desc">Prize: High → Low</option>
@@ -1167,37 +1315,74 @@ export default function Home() {
       {sel.length > 0 && (
         <div
           ref={checkoutRef}
-          className="fixed inset-x-0 bottom-0 z-40 border-t border-white/[0.08] bg-[#0E1118]/95 backdrop-blur-md slide-up"
+          className="fixed inset-x-0 bottom-0 z-40 border-t border-emerald-500/30 bg-[#0E1118]/98 backdrop-blur-xl slide-up shadow-2xl"
         >
-          <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 sm:px-6 py-4">
-            <div>
-              <p className="font-bold text-sm sm:text-base">
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3.5 sm:px-6 py-3 sm:py-4">
+            <div className="min-w-0">
+              <p className="font-extrabold text-xs sm:text-base truncate">
                 {sel.length}{" "}
                 {sel.length === 1 ? "lobby" : "lobbies"} selected
               </p>
-              <p className="text-xs sm:text-sm text-white/50">
-                Total entry:{" "}
-                <span className="font-bold text-white">
+              <p className="text-[11px] sm:text-sm text-white/50 truncate">
+                Total:{" "}
+                <span className="font-bold text-emerald-400 font-mono">
                   {totalFee === 0 ? "Free" : rupees(totalFee)}
                 </span>
               </p>
             </div>
-            <div className="flex gap-2 shrink-0">
+            <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={() => setPicked([])}
-                className="rounded-xl border border-white/15 px-4 py-2.5 text-sm font-semibold hover:bg-white/5 transition-colors"
+                className="rounded-xl border border-white/15 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold hover:bg-white/5 transition-colors"
               >
                 Clear
               </button>
               <a
                 href={"/register?e=" + sel.join(",")}
-                className="rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-black hover:bg-emerald-400 transition-colors"
+                className="rounded-xl bg-emerald-500 px-3.5 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-extrabold text-black hover:bg-emerald-400 transition-colors shadow-lg shadow-emerald-900/40"
               >
                 Register &amp; Pay →
               </a>
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Mobile Bottom Navigation Dock (App Dock) ── */}
+      {sel.length === 0 && (
+        <nav
+          aria-label="Mobile Bottom Navigation"
+          className="sm:hidden fixed inset-x-0 bottom-0 z-30 bg-[#090C14]/95 backdrop-blur-xl border-t border-white/[0.08] px-2 py-1.5 flex items-center justify-around shadow-2xl"
+        >
+          <a
+            href="#scrims"
+            className="flex flex-col items-center gap-0.5 text-[10px] font-semibold text-white/60 hover:text-emerald-400 py-1 px-3 transition-colors"
+          >
+            <span className="text-base">🎮</span>
+            <span>Scrims</span>
+          </a>
+          <a
+            href="#leagues"
+            className="flex flex-col items-center gap-0.5 text-[10px] font-semibold text-white/60 hover:text-emerald-400 py-1 px-3 transition-colors"
+          >
+            <span className="text-base">🏆</span>
+            <span>Leagues</span>
+          </a>
+          <a
+            href="/my-tournaments"
+            className="flex flex-col items-center gap-0.5 text-[10px] font-semibold text-emerald-400 hover:text-emerald-300 py-1 px-3 transition-colors"
+          >
+            <span className="text-base">🔑</span>
+            <span>Room ID</span>
+          </a>
+          <a
+            href={userEmail ? "/profile" : "/login"}
+            className="flex flex-col items-center gap-0.5 text-[10px] font-semibold text-white/60 hover:text-white py-1 px-3 transition-colors"
+          >
+            <span className="text-base">👤</span>
+            <span>{userEmail ? "Account" : "Sign In"}</span>
+          </a>
+        </nav>
       )}
 
       {/* ── Top 4 Prize Distribution Modal ── */}
