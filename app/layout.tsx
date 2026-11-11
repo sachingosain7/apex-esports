@@ -3,9 +3,10 @@ import "./globals.css";
 import { ORG_NAME, ORG_TAGLINE } from "@/lib/config";
 
 export const viewport: Viewport = {
-  themeColor: "#06070B",
+  themeColor: "#0A1128",
   width: "device-width",
   initialScale: 1,
+  maximumScale: 5,
   viewportFit: "cover",
 };
 
@@ -66,7 +67,7 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-full flex flex-col bg-[#06070B] text-slate-100">
+      <body className="min-h-full flex flex-col bg-[#0A1128] text-slate-100 w-full max-w-full overflow-x-hidden">
         {children}
       </body>
     </html>

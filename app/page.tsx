@@ -926,20 +926,20 @@ export default function Home() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#0A1128] text-slate-900 pb-28 sm:pb-16 flex flex-col">
+    <div className="min-h-screen bg-[#0A1128] text-slate-900 flex flex-col w-full max-w-full overflow-x-hidden">
       {/* ────────────────────────────────────────────────────────────────────── */}
       {/* 1. Header / Navbar (Deep Midnight Navy) */}
       {/* ────────────────────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-30 border-b border-white/[0.08] bg-[#0A1128]/95 backdrop-blur-md text-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 gap-3">
+      <header className="sticky top-0 z-30 border-b border-white/[0.08] bg-[#0A1128]/95 backdrop-blur-md text-white w-full">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-3 sm:px-6 py-3 sm:py-4 gap-2 sm:gap-4 w-full">
           {/* Brand Logo */}
-          <a href="/" className="flex items-center gap-2 text-lg sm:text-xl font-black tracking-tight shrink-0">
-            <span className="text-[#FFB800] text-xl">◆</span>
-            <span>{ORG_NAME}</span>
+          <a href="/" className="flex items-center gap-1.5 sm:gap-2 text-base sm:text-xl font-black tracking-tight shrink min-w-0">
+            <span className="text-[#FFB800] text-lg sm:text-xl shrink-0">◆</span>
+            <span className="truncate">{ORG_NAME}</span>
           </a>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden md:flex items-center gap-6 text-sm font-semibold text-slate-300">
+          <nav className="hidden lg:flex items-center gap-6 text-sm font-semibold text-slate-300">
             <a href="#tournaments" className="hover:text-white transition-colors">
               Tournaments
             </a>
@@ -960,29 +960,36 @@ export default function Home() {
           </nav>
 
           {/* Right Actions */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+            {/* Quick Room ID pill on mobile */}
             <a
               href="/my-tournaments"
-              className="md:hidden inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-bold text-white hover:bg-white/20 transition-all"
+              className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-bold text-white hover:bg-white/20 transition-all shrink-0"
+              title="View 3-Match IDP & Room Credentials"
             >
               <span>🔑</span>
-              <span>Room ID</span>
+              <span className="hidden xs:inline">Room ID</span>
             </a>
 
+            {/* Quick Admin pill */}
             {isAdmin && (
               <a
                 href="/admin"
-                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 px-2.5 sm:px-3 py-1 text-xs font-bold text-amber-300 hover:bg-amber-500/30 transition-all"
+                className="inline-flex items-center gap-1 rounded-lg bg-amber-500/20 border border-amber-500/40 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-bold text-amber-300 hover:bg-amber-500/30 transition-all shrink-0"
+                title="Open Admin Dashboard"
               >
-                <span>⚡ Admin</span>
+                <span>⚡</span>
+                <span className="hidden xs:inline">Admin</span>
               </a>
             )}
 
+            {/* Desktop user profile & sign out */}
             {userEmail ? (
-              <div className="flex items-center gap-2">
+              <div className="hidden sm:flex items-center gap-2">
                 <a
                   href="/profile"
-                  className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white font-medium hover:bg-white/20 transition-colors hidden sm:inline-flex max-w-[150px] truncate"
+                  className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white font-medium hover:bg-white/20 transition-colors max-w-[140px] truncate"
+                  title={userEmail}
                 >
                   {userEmail}
                 </a>
@@ -991,7 +998,8 @@ export default function Home() {
                     await supabase.auth.signOut();
                     window.location.reload();
                   }}
-                  className="text-xs text-slate-400 hover:text-white transition-colors hidden sm:inline"
+                  className="text-xs text-rose-300 hover:text-rose-100 font-bold px-2 py-1 rounded bg-rose-500/15 border border-rose-500/30 transition-colors"
+                  title="Sign out of account"
                 >
                   Sign out
                 </button>
@@ -999,128 +1007,183 @@ export default function Home() {
             ) : (
               <a
                 href="/login"
-                className="rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] px-3.5 sm:px-4 py-1.5 text-xs font-black text-slate-950 transition-colors hidden sm:inline-block shadow-sm"
+                className="rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] px-3 sm:px-4 py-1.5 text-xs font-black text-slate-950 transition-colors hidden sm:inline-block shadow-sm"
               >
                 Sign In
               </a>
             )}
 
-            {/* Mobile Menu Hamburger */}
+            {/* 3-Dash Shortcut Window Button (☰) - Always visible for quick shortcuts & Sign Out */}
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
-              className="md:hidden rounded-lg border border-white/15 bg-white/5 p-2 text-white hover:bg-white/10 transition-colors"
-              aria-label="Open navigation menu"
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/20 bg-white/10 hover:bg-white/20 p-2 sm:px-3 sm:py-1.5 text-xs font-black text-white transition-all shadow-sm cursor-pointer shrink-0"
+              aria-label="Open shortcut menu"
+              title="Open shortcut window & account menu"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
+              <span className="hidden md:inline font-bold text-slate-200">Menu</span>
             </button>
           </div>
         </div>
       </header>
 
       {/* ────────────────────────────────────────────────────────────────────── */}
-      {/* 2. Slide-over Mobile Navigation Drawer */}
+      {/* 2. Slide-over Right Shortcut Window Drawer */}
       {/* ────────────────────────────────────────────────────────────────────── */}
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-50 flex justify-end bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="fixed inset-0" onClick={() => setMobileMenuOpen(false)} />
-          <div className="relative w-full max-w-[280px] h-full bg-[#0A1128] border-l border-white/10 p-5 shadow-2xl flex flex-col justify-between overflow-y-auto no-scrollbar animate-in slide-in-from-right duration-200 z-10 text-white">
-            <div>
-              <div className="flex items-center justify-between pb-4 border-b border-white/10">
-                <div className="flex items-center gap-1.5 font-black text-lg">
-                  <span className="text-[#FFB800]">◆</span>
+          <div className="relative w-full max-w-[320px] sm:max-w-[350px] h-full bg-[#0A1128] border-l border-white/10 p-5 shadow-2xl flex flex-col justify-between overflow-y-auto no-scrollbar animate-in slide-in-from-right duration-200 z-10 text-white">
+            <div className="space-y-4">
+              {/* Drawer Top Header */}
+              <div className="flex items-center justify-between pb-3.5 border-b border-white/10">
+                <div className="flex items-center gap-2 font-black text-lg">
+                  <span className="text-[#FFB800] text-xl">◆</span>
                   <span>{ORG_NAME}</span>
                 </div>
                 <button
                   onClick={() => setMobileMenuOpen(false)}
-                  className="rounded-full w-7 h-7 flex items-center justify-center bg-white/10 text-slate-400 hover:text-white"
+                  className="rounded-full w-8 h-8 flex items-center justify-center bg-white/10 text-slate-300 hover:text-white hover:bg-white/20 transition-colors"
+                  aria-label="Close menu"
                 >
                   ✕
                 </button>
               </div>
 
-              <nav className="flex flex-col gap-1.5 pt-4 text-sm font-semibold">
-                <a
-                  href="#tournaments"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 text-slate-200"
-                >
-                  <span>🎮</span>
-                  <span>Open Tournaments</span>
-                </a>
-                <a
-                  href="#leagues"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 text-slate-200"
-                >
-                  <span>🏆</span>
-                  <span>Major Leagues</span>
-                </a>
-                <a
-                  href="/my-tournaments"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-blue-500/10 text-blue-300 border border-blue-500/20"
-                >
-                  <span>🔑</span>
-                  <span>3-Match IDP &amp; Rooms</span>
-                </a>
-                <button
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    setUtrModalOpen(true);
-                  }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 text-slate-200 text-left font-semibold"
-                >
-                  <span>🔍</span>
-                  <span>Find My Room (UTR)</span>
-                </button>
-                <a
-                  href={`https://wa.me/${SUPPORT_WHATSAPP}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 text-emerald-400"
-                >
-                  <span>💬</span>
-                  <span>WhatsApp Support</span>
-                </a>
-                {isAdmin && (
-                  <a
-                    href="/admin"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-amber-500/15 text-amber-300 border border-amber-500/30"
-                  >
-                    <span>⚡</span>
-                    <span>Admin Panel</span>
-                  </a>
+              {/* ── User Account Box & Prominent Sign Out ── */}
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 space-y-3">
+                {userEmail ? (
+                  <>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-[#FFB800] text-slate-950 font-black text-base flex items-center justify-center shrink-0 shadow-md">
+                        {userEmail.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] uppercase font-bold text-slate-400">Signed In</span>
+                          {isAdmin ? (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded font-black bg-amber-400/20 text-amber-300 border border-amber-400/40">
+                              ADMIN
+                            </span>
+                          ) : (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded font-black bg-emerald-400/20 text-emerald-300 border border-emerald-400/40">
+                              CAPTAIN
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs font-bold text-white truncate" title={userEmail}>
+                          {userEmail}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Prominent High-Visibility Sign Out Button */}
+                    <button
+                      onClick={async () => {
+                        await supabase.auth.signOut();
+                        window.location.reload();
+                      }}
+                      className="w-full py-2.5 px-3 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-200 hover:text-white font-black text-xs flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer"
+                    >
+                      <svg className="w-4 h-4 text-red-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                      </svg>
+                      <span>Sign Out / Switch Account</span>
+                    </button>
+                  </>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs text-slate-300">You are browsing as Guest.</p>
+                    <a
+                      href="/login"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="w-full py-2.5 px-3 rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 font-black text-xs flex items-center justify-center gap-2 shadow-md shadow-amber-500/20 transition-all"
+                    >
+                      <span>⚡</span>
+                      <span>Sign In / Register →</span>
+                    </a>
+                  </div>
                 )}
-              </nav>
+              </div>
+
+              {/* ── Shortcuts Menu ── */}
+              <div className="space-y-1">
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 px-3 pt-2">
+                  Quick Shortcuts
+                </p>
+                <nav className="flex flex-col gap-1 text-sm font-semibold">
+                  <a
+                    href="#tournaments"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 text-slate-200 transition-colors"
+                  >
+                    <span className="text-base">🎮</span>
+                    <span>Open Tournaments &amp; Scrims</span>
+                  </a>
+                  <a
+                    href="#leagues"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 text-slate-200 transition-colors"
+                  >
+                    <span className="text-base">🏆</span>
+                    <span>Major Leagues</span>
+                  </a>
+                  <a
+                    href="/my-tournaments"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-blue-500/15 text-blue-300 border border-blue-500/30 transition-colors"
+                  >
+                    <span className="text-base">🔑</span>
+                    <span>3-Match IDP &amp; Credentials</span>
+                  </a>
+                  <button
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      setUtrModalOpen(true);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 text-slate-200 text-left font-semibold transition-colors cursor-pointer"
+                  >
+                    <span className="text-base">🔍</span>
+                    <span>Find My Room (UTR Search)</span>
+                  </button>
+                  <a
+                    href="/profile"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 text-slate-200 transition-colors"
+                  >
+                    <span className="text-base">📋</span>
+                    <span>My Bookings &amp; Teams</span>
+                  </a>
+                  <a
+                    href={`https://wa.me/${SUPPORT_WHATSAPP}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 text-emerald-400 transition-colors"
+                  >
+                    <span className="text-base">💬</span>
+                    <span>WhatsApp Support (+91 {SUPPORT_WHATSAPP})</span>
+                  </a>
+                  {isAdmin && (
+                    <a
+                      href="/admin"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-amber-500/15 text-amber-300 border border-amber-500/30 transition-colors"
+                    >
+                      <span className="text-base">⚡</span>
+                      <span>Admin Command Dashboard</span>
+                    </a>
+                  )}
+                </nav>
+              </div>
             </div>
 
-            <div className="pt-4 border-t border-white/10">
-              {userEmail ? (
-                <div className="space-y-2">
-                  <p className="text-xs text-slate-400">Signed in as:</p>
-                  <p className="text-xs font-bold text-white truncate">{userEmail}</p>
-                  <button
-                    onClick={async () => {
-                      await supabase.auth.signOut();
-                      window.location.reload();
-                    }}
-                    className="w-full py-2 rounded-xl border border-white/20 text-xs text-slate-300 hover:bg-white/5"
-                  >
-                    Sign out
-                  </button>
-                </div>
-              ) : (
-                <a
-                  href="/login"
-                  className="w-full py-2.5 rounded-xl bg-[#FFB800] text-slate-950 font-black text-xs flex items-center justify-center gap-2 hover:bg-[#F59E0B]"
-                >
-                  Sign In / Register →
-                </a>
-              )}
+            {/* Drawer Footer */}
+            <div className="pt-4 border-t border-white/10 text-[11px] text-slate-400 space-y-1">
+              <p className="font-semibold text-slate-300">Apex Esports India</p>
+              <p>Official 3-Match BGMI Tournaments &amp; Instant UPI Payouts.</p>
             </div>
           </div>
         </div>
@@ -1185,7 +1248,7 @@ export default function Home() {
       {/* ────────────────────────────────────────────────────────────────────── */}
       {/* 4. Main Content Area (Crisp Light Canvas `#F4F6FB` - Exactly like Reference) */}
       {/* ────────────────────────────────────────────────────────────────────── */}
-      <main className="bg-[#F4F6FB] flex-1 py-8 sm:py-12 border-t border-slate-200">
+      <main className="bg-[#F4F6FB] flex-1 py-8 sm:py-12 pb-36 sm:pb-28 border-t border-slate-200 w-full max-w-full overflow-x-hidden">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 space-y-8">
           {/* Error Banner */}
           {err && (
@@ -1398,12 +1461,12 @@ export default function Home() {
           ref={checkoutRef}
           className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-700 bg-[#0A1128]/98 backdrop-blur-xl slide-up shadow-2xl text-white"
         >
-          <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4">
-            <div>
-              <p className="font-black text-sm sm:text-base">
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-2.5 sm:gap-4 px-3 sm:px-6 py-3 sm:py-4">
+            <div className="min-w-0 flex-1">
+              <p className="font-black text-xs sm:text-base text-white truncate">
                 {sel.length} {sel.length === 1 ? "lobby" : "lobbies"} selected
               </p>
-              <p className="text-xs sm:text-sm text-slate-400">
+              <p className="text-[11px] sm:text-sm text-slate-300">
                 Total entry:{" "}
                 <span className="font-black text-[#FFB800] font-mono">
                   {totalFee === 0 ? "Free" : rupees(totalFee)}
@@ -1411,18 +1474,18 @@ export default function Home() {
               </p>
             </div>
 
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={() => setPicked([])}
-                className="rounded-xl border border-white/20 px-3.5 py-2 text-xs sm:text-sm font-semibold hover:bg-white/10 text-slate-300"
+                className="rounded-xl border border-white/20 hover:border-white/40 px-3 py-2 text-xs sm:text-sm font-semibold hover:bg-white/10 text-slate-300 transition-colors cursor-pointer"
               >
                 Clear
               </button>
               <a
                 href={"/register?e=" + sel.join(",")}
-                className="rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 px-5 sm:px-6 py-2.5 text-xs sm:text-sm font-black transition-colors shadow-lg shadow-amber-500/20"
+                className="rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 px-4 sm:px-6 py-2 sm:py-2.5 text-xs sm:text-sm font-black transition-all shadow-lg shadow-amber-500/25 shrink-0"
               >
-                Register selected
+                Register selected →
               </a>
             </div>
           </div>
@@ -1511,18 +1574,20 @@ export default function Home() {
         </div>
       </footer>
 
-      {/* Floating WhatsApp Support Pill */}
+      {/* Floating WhatsApp Support Pill - Smoothly moves above the dock when lobbies are selected so it NEVER overlaps checkout! */}
       <a
         href={`https://wa.me/${SUPPORT_WHATSAPP}`}
         target="_blank"
         rel="noopener noreferrer"
-        className="fixed bottom-5 right-5 z-40 rounded-full bg-[#25D366] hover:bg-[#20ba59] text-black font-extrabold px-4 py-2.5 text-xs flex items-center gap-2 shadow-2xl transition-all"
+        className={`fixed right-4 sm:right-6 z-30 rounded-full bg-[#25D366] hover:bg-[#20ba59] text-black font-extrabold px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs flex items-center gap-2 shadow-2xl transition-all duration-200 cursor-pointer ${
+          sel.length > 0 ? "bottom-24 sm:bottom-28" : "bottom-5 sm:bottom-6"
+        }`}
         title="Chat with WhatsApp Support"
       >
-        <svg className="w-4 h-4 fill-black" viewBox="0 0 24 24">
+        <svg className="w-4 h-4 fill-black shrink-0" viewBox="0 0 24 24">
           <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
         </svg>
-        <span>Support</span>
+        <span className="font-black">Support</span>
       </a>
 
       {/* Top 4 Prize Distribution Modal */}

@@ -172,14 +172,14 @@ function copyToClipboard(text: string) {
 
 function Badge({ text, color }: { text: string; color: "emerald" | "amber" | "red" | "gray" | "purple" }) {
   const cls = {
-    emerald: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-    amber: "bg-amber-500/15 text-amber-400 border-amber-500/30",
-    red: "bg-red-500/15 text-red-400 border-red-500/30",
-    gray: "bg-white/5 text-white/50 border-white/10",
-    purple: "bg-purple-500/15 text-purple-400 border-purple-500/30",
+    emerald: "bg-emerald-50 text-emerald-800 border-emerald-300 font-bold",
+    amber: "bg-amber-50 text-amber-900 border-amber-300 font-bold",
+    red: "bg-rose-50 text-rose-800 border-rose-300 font-bold",
+    gray: "bg-slate-100 text-slate-700 border-slate-300 font-semibold",
+    purple: "bg-purple-50 text-purple-800 border-purple-300 font-bold",
   }[color];
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${cls}`}>
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs border ${cls}`}>
       {text}
     </span>
   );
@@ -188,15 +188,15 @@ function Badge({ text, color }: { text: string; color: "emerald" | "amber" | "re
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; color: "emerald" | "amber" | "red" | "gray" | "purple" }> = {
     open: { label: "Open", color: "emerald" },
-    live: { label: "Live Now", color: "emerald" },
+    live: { label: "🔴 Live Now", color: "red" },
     cancelled: { label: "Cancelled", color: "red" },
     completed: { label: "Completed", color: "gray" },
     pending_verification: { label: "Pending", color: "amber" },
     approved: { label: "Approved", color: "emerald" },
     rejected: { label: "Rejected", color: "red" },
     moderator: { label: "Moderator", color: "purple" },
-    owner: { label: "Owner", color: "emerald" },
-    finance: { label: "Finance", color: "amber" },
+    owner: { label: "Owner", color: "amber" },
+    finance: { label: "Finance", color: "purple" },
   };
   const cfg = map[status] ?? { label: status, color: "gray" as const };
   return <Badge text={cfg.label} color={cfg.color} />;
@@ -205,7 +205,7 @@ function StatusBadge({ status }: { status: string }) {
 function Spinner() {
   return (
     <div className="flex items-center justify-center py-16">
-      <div className="w-8 h-8 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
+      <div className="w-8 h-8 border-2 border-slate-300 border-t-[#FFB800] rounded-full animate-spin" />
     </div>
   );
 }
@@ -221,18 +221,22 @@ function ConfirmDialog({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-      <div className="bg-[#0E1118] border border-white/[0.1] rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95 duration-200">
-        <p className="text-white/90 text-sm leading-relaxed mb-6 font-medium">{message}</p>
-        <div className="flex gap-3 justify-end">
+      <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95 duration-200 space-y-4">
+        <div className="flex items-center gap-2.5 text-amber-600 font-black text-base">
+          <span>⚠️</span>
+          <span>Confirmation Required</span>
+        </div>
+        <p className="text-slate-700 text-sm leading-relaxed font-medium">{message}</p>
+        <div className="flex gap-2.5 justify-end pt-2">
           <button
             onClick={onCancel}
-            className="px-4 py-2 rounded-xl text-xs font-semibold text-white/50 border border-white/10 hover:bg-white/5 transition-colors"
+            className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
-            className="px-4 py-2 rounded-xl text-xs font-semibold bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25 transition-colors"
+            className="px-5 py-2.5 rounded-xl text-xs font-black bg-rose-600 hover:bg-rose-700 text-white transition-colors shadow-sm"
           >
             Confirm
           </button>
@@ -245,10 +249,10 @@ function ConfirmDialog({
 function Toast({ message, type }: { message: string; type: "success" | "error" }) {
   return (
     <div
-      className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl border shadow-2xl text-sm font-semibold animate-in slide-in-from-bottom-4 duration-300 ${
+      className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl border shadow-2xl text-xs sm:text-sm font-bold animate-in slide-in-from-bottom-4 duration-300 ${
         type === "success"
-          ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
-          : "bg-red-500/20 border-red-500/40 text-red-300"
+          ? "bg-[#0A1128] border-emerald-500/40 text-emerald-300"
+          : "bg-[#0A1128] border-rose-500/40 text-rose-300"
       }`}
     >
       <span>{type === "success" ? "✓" : "✗"}</span>
@@ -330,30 +334,30 @@ Instant UPI QR verification & automatic slot confirmation!`;
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-      <div className="bg-[#0E1118] border border-white/[0.1] rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+      <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div className="flex items-center gap-2">
             <span className="text-xl">📢</span>
-            <h3 className="font-bold text-white text-base">WhatsApp Broadcast Notice</h3>
+            <h3 className="font-black text-slate-900 text-base">WhatsApp Broadcast Notice</h3>
           </div>
           <button
             onClick={onClose}
-            className="text-white/40 hover:text-white transition-colors text-sm"
+            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-colors flex items-center justify-center"
           >
             ✕
           </button>
         </div>
 
         {/* Template Selector Tabs */}
-        <div className="flex p-1 bg-black/40 border border-white/[0.08] rounded-xl gap-1">
+        <div className="flex p-1 bg-slate-100 border border-slate-200 rounded-xl gap-1">
           <button
             type="button"
             onClick={() => setTemplate("idp")}
-            className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
               template === "idp"
-                ? "bg-emerald-500 text-black shadow"
-                : "text-white/50 hover:text-white"
+                ? "bg-white text-slate-950 shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
             }`}
           >
             🔑 Room ID &amp; Password Notice
@@ -361,28 +365,28 @@ Instant UPI QR verification & automatic slot confirmation!`;
           <button
             type="button"
             onClick={() => setTemplate("registration")}
-            className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
               template === "registration"
-                ? "bg-emerald-500 text-black shadow"
-                : "text-white/50 hover:text-white"
+                ? "bg-white text-slate-950 shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
             }`}
           >
             🚀 Registration Open Alert
           </button>
         </div>
 
-        <p className="text-xs text-white/50">
+        <p className="text-xs text-slate-500 font-medium">
           Ready to broadcast directly into your BGMI WhatsApp announcement groups:
         </p>
 
-        <pre className="bg-[#06070B] border border-white/[0.08] rounded-xl p-4 text-xs font-mono text-emerald-300/90 whitespace-pre-wrap max-h-64 overflow-y-auto leading-relaxed select-all">
+        <pre className="bg-[#0A1128] border border-blue-900/50 rounded-2xl p-4 text-xs font-mono text-emerald-400 whitespace-pre-wrap max-h-64 overflow-y-auto leading-relaxed select-all">
           {activeMessage}
         </pre>
 
         <div className="flex flex-col sm:flex-row gap-3 pt-2">
           <button
             onClick={handleCopy}
-            className="flex-1 py-3 rounded-xl bg-emerald-500 px-4 text-xs font-bold text-black hover:bg-emerald-400 transition-colors flex items-center justify-center gap-2"
+            className="flex-1 py-3 rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 font-black text-xs transition-colors flex items-center justify-center gap-2 shadow-sm"
           >
             <span>📋</span> Copy {template === "idp" ? "IDP Notice" : "Registration Alert"}
           </button>
@@ -391,7 +395,7 @@ Instant UPI QR verification & automatic slot confirmation!`;
               href={event.whatsapp_group_link}
               target="_blank"
               rel="noopener noreferrer"
-              className="py-3 rounded-xl border border-green-500/30 bg-green-500/10 px-4 text-xs font-bold text-green-400 hover:bg-green-500/20 transition-colors flex items-center justify-center gap-2"
+              className="py-3 rounded-xl border border-emerald-300 bg-emerald-50 px-4 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2"
             >
               <span>💬</span> Open Group
             </a>
@@ -443,19 +447,22 @@ function TeamsRosterModal({
   }, [event.id]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-      <div className="bg-[#0E1118] border border-white/[0.1] rounded-2xl p-6 max-w-2xl w-full shadow-2xl space-y-4 max-h-[85vh] flex flex-col animate-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+      <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-2xl w-full shadow-2xl space-y-4 max-h-[85vh] flex flex-col animate-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div>
-            <h3 className="font-bold text-white text-base flex items-center gap-2">
+            <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
               <span>👥</span>
               <span>Registered Squads — {event.title}</span>
             </h3>
-            <p className="text-xs text-white/40 mt-0.5">
+            <p className="text-xs text-slate-500 mt-0.5">
               {teams.length} / {event.max_slots} slots taken
             </p>
           </div>
-          <button onClick={onClose} className="text-white/40 hover:text-white text-sm">
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-colors flex items-center justify-center"
+          >
             ✕
           </button>
         </div>
@@ -464,23 +471,23 @@ function TeamsRosterModal({
           {loading ? (
             <Spinner />
           ) : teams.length === 0 ? (
-            <div className="text-center py-12 text-white/30 text-xs">
+            <div className="text-center py-12 text-slate-400 text-xs font-semibold">
               No squads registered for this lobby yet.
             </div>
           ) : (
-            <div className="divide-y divide-white/[0.04]">
+            <div className="divide-y divide-slate-100">
               {teams.map((t, idx) => (
                 <div
                   key={t.registration_id || t.created_at + idx}
-                  className="flex items-center justify-between gap-3 py-3 px-2 hover:bg-white/[0.02] rounded-lg transition-colors"
+                  className="flex items-center justify-between gap-3 py-3 px-2 hover:bg-slate-50 rounded-xl transition-colors"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <span className="font-mono text-xs font-bold text-emerald-400 w-8">
+                    <span className="font-mono text-xs font-black text-blue-700 w-8">
                       #{idx + 1}
                     </span>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-white truncate">{t.team_name}</p>
-                      <p className="text-xs text-white/40 font-mono">
+                      <p className="text-sm font-black text-slate-900 truncate">{t.team_name}</p>
+                      <p className="text-xs text-slate-500 font-mono">
                         +91 {t.whatsapp}
                         {t.utr ? ` · UTR: ${t.utr}` : ""}
                       </p>
@@ -489,10 +496,10 @@ function TeamsRosterModal({
 
                   <div className="flex items-center gap-2 shrink-0">
                     <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                      className={`px-2.5 py-0.5 rounded text-[10px] font-black ${
                         t.status === "confirmed"
-                          ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                          : "bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                          ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                          : "bg-amber-100 text-amber-800 border border-amber-300"
                       }`}
                     >
                       {t.status === "confirmed" ? "LOCKED" : "HOLD"}
@@ -503,7 +510,7 @@ function TeamsRosterModal({
                       )},+regarding+your+slot+for+${encodeURIComponent(event.title)}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25 transition-colors flex items-center gap-1"
+                      className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 transition-colors flex items-center gap-1"
                       title="Chat on WhatsApp"
                     >
                       <span>💬</span> WhatsApp
@@ -515,10 +522,10 @@ function TeamsRosterModal({
           )}
         </div>
 
-        <div className="pt-3 border-t border-white/[0.06] flex justify-end">
+        <div className="pt-3 border-t border-slate-100 flex justify-end">
           <button
             onClick={onClose}
-            className="px-5 py-2 rounded-xl text-xs font-semibold border border-white/10 hover:bg-white/5 transition-colors"
+            className="px-5 py-2.5 rounded-xl text-xs font-bold text-slate-700 border border-slate-200 hover:bg-slate-50 transition-colors"
           >
             Close
           </button>
@@ -1173,17 +1180,17 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
     <div className="space-y-6">
       {/* ── MODAL 1: Save Current Form as Preset ── */}
       {saveModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="bg-[#0E1118] border border-emerald-500/30 rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
-              <div className="flex items-center gap-2 text-emerald-400 font-bold text-base">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2 text-slate-900 font-black text-base">
                 <span>💾</span>
                 <span>Save Setup as Automated Preset</span>
               </div>
               <button
                 type="button"
                 onClick={() => setSaveModalOpen(false)}
-                className="text-white/40 hover:text-white text-sm"
+                className="text-slate-400 hover:text-slate-700 text-sm p-1 rounded-lg hover:bg-slate-100 transition-colors"
               >
                 ✕
               </button>
@@ -1191,7 +1198,7 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
 
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-white/70 mb-1">
+                <label className="block text-xs font-bold text-slate-700 mb-1">
                   Save Action
                 </label>
                 <select
@@ -1212,7 +1219,7 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
                       setPresetDescInput("");
                     }
                   }}
-                  className="w-full bg-black/40 border border-white/[0.1] rounded-xl px-3 py-2 text-xs text-white"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 focus:bg-white focus:border-blue-600 focus:outline-none"
                 >
                   <option value="new">+ Create as New Preset</option>
                   <optgroup label="Or Overwrite Existing Preset:">
@@ -1229,70 +1236,70 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
                 <>
                   <div className="grid grid-cols-4 gap-3">
                     <div className="col-span-3">
-                      <label className="block text-xs font-semibold text-white/70 mb-1">
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
                         Preset Name
                       </label>
                       <input
                         value={presetNameInput}
                         onChange={(e) => setPresetNameInput(e.target.value)}
                         placeholder="e.g. Daily 5 Lobbies (1-11 PM)"
-                        className="w-full bg-black/40 border border-white/[0.1] rounded-xl px-3 py-2 text-xs text-white placeholder-white/30"
+                        className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:border-blue-600 focus:outline-none"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-white/70 mb-1">
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
                         Emoji
                       </label>
                       <input
                         value={presetBadgeInput}
                         onChange={(e) => setPresetBadgeInput(e.target.value)}
-                        className="w-full bg-black/40 border border-white/[0.1] rounded-xl px-3 py-2 text-xs text-center text-white"
+                        className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-center text-slate-900 focus:bg-white focus:border-blue-600 focus:outline-none"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-white/70 mb-1">
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
                       Short Description (Optional)
                     </label>
                     <input
                       value={presetDescInput}
                       onChange={(e) => setPresetDescInput(e.target.value)}
                       placeholder="e.g. Standard 2-hour daily esports matches"
-                      className="w-full bg-black/40 border border-white/[0.1] rounded-xl px-3 py-2 text-xs text-white placeholder-white/30"
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:border-blue-600 focus:outline-none"
                     />
                   </div>
                 </>
               )}
 
               {/* Current Settings Summary */}
-              <div className="p-3.5 bg-black/40 border border-white/[0.06] rounded-xl text-xs space-y-1.5 text-white/70">
-                <p className="font-bold text-emerald-400">Values to be saved:</p>
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1.5 text-slate-700">
+                <p className="font-bold text-slate-900">Values to be saved:</p>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
-                  <span>Kind: <strong className="text-white uppercase">{kind}</strong></span>
-                  <span>Mode: <strong className="text-white">{mode}</strong></span>
-                  <span>Lobbies: <strong className="text-white">{previewLobbies.length}</strong></span>
-                  <span>First Match: <strong className="text-white">{firstTime} IST</strong></span>
-                  <span>Maps: <strong className="text-white">{selectedMaps.join(", ")}</strong></span>
-                  <span>Entry Fee: <strong className="text-white">₹{entryFee}</strong></span>
-                  <span>Prize Pool: <strong className="text-white">₹{prizePool}</strong></span>
-                  <span>Top 4: <strong className="text-white">{prizeFirst}/{prizeSecond}/{prizeThird}/{prizeFourth}</strong></span>
+                  <span>Kind: <strong className="text-slate-950 uppercase">{kind}</strong></span>
+                  <span>Mode: <strong className="text-slate-950">{mode}</strong></span>
+                  <span>Lobbies: <strong className="text-slate-950">{previewLobbies.length}</strong></span>
+                  <span>First Match: <strong className="text-slate-950">{firstTime} IST</strong></span>
+                  <span>Maps: <strong className="text-slate-950">{selectedMaps.join(", ")}</strong></span>
+                  <span>Entry Fee: <strong className="text-slate-950">₹{entryFee}</strong></span>
+                  <span>Prize Pool: <strong className="text-slate-950">₹{prizePool}</strong></span>
+                  <span>Top 4: <strong className="text-slate-950">{prizeFirst}/{prizeSecond}/{prizeThird}/{prizeFourth}</strong></span>
                 </div>
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-3 border-t border-white/[0.08]">
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => setSaveModalOpen(false)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold border border-white/10 text-white/70 hover:bg-white/5 transition-colors"
+                className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-300 text-slate-700 hover:bg-slate-100 transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={saveCurrentFormAsPreset}
-                className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-black hover:bg-emerald-400 transition-colors shadow-lg shadow-emerald-900/30"
+                className="px-5 py-2 rounded-xl text-xs font-black bg-[#FFB800] text-slate-950 hover:bg-[#E5A600] transition-colors shadow-sm"
               >
                 {targetPresetIdToUpdate === "new" ? "💾 Save as New Preset" : "🔄 Overwrite Preset"}
               </button>
@@ -1303,21 +1310,21 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
 
       {/* ── MODAL 2: Paste from Saved Lobby ── */}
       {importLobbyModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="bg-[#0E1118] border border-white/[0.1] rounded-2xl p-6 max-w-xl w-full shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-xl w-full shadow-2xl space-y-4 max-h-[85vh] flex flex-col text-slate-900">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
-                <h3 className="text-emerald-400 font-bold text-base flex items-center gap-1.5">
+                <h3 className="text-slate-950 font-black text-base flex items-center gap-1.5">
                   <span>📋</span> Paste Information from Saved Lobby
                 </h3>
-                <p className="text-xs text-white/40 mt-0.5">
+                <p className="text-xs text-slate-500 mt-0.5">
                   Click any lobby to instantly auto-fill its maps, entry fee, prize pool &amp; schedule
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setImportLobbyModalOpen(false)}
-                className="text-white/40 hover:text-white text-sm"
+                className="text-slate-400 hover:text-slate-700 text-sm p-1 rounded-lg hover:bg-slate-100 transition-colors"
               >
                 ✕
               </button>
@@ -1327,14 +1334,14 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
               value={importSearch}
               onChange={(e) => setImportSearch(e.target.value)}
               placeholder="Search saved lobbies by title, mode, or map…"
-              className="bg-black/40 border border-white/[0.1] rounded-xl px-3.5 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-emerald-500"
+              className="bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-600"
             />
 
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
               {loadingImport ? (
-                <div className="py-12 text-center text-xs text-white/40">Loading saved lobbies…</div>
+                <div className="py-12 text-center text-xs text-slate-400">Loading saved lobbies…</div>
               ) : existingEventsForImport.length === 0 ? (
-                <div className="py-12 text-center text-xs text-white/30">
+                <div className="py-12 text-center text-xs text-slate-400">
                   No saved lobbies found in database yet. Create your first lobby to use as template!
                 </div>
               ) : (
@@ -1351,17 +1358,17 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
                   .map((ev) => (
                     <div
                       key={ev.id}
-                      className="p-3 bg-white/[0.02] border border-white/[0.06] hover:border-emerald-500/40 hover:bg-emerald-500/[0.04] rounded-xl flex items-center justify-between gap-3 transition-all"
+                      className="p-3 bg-slate-50 border border-slate-200 hover:border-blue-500 hover:bg-blue-50/30 rounded-xl flex items-center justify-between gap-3 transition-all"
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <p className="text-xs font-bold text-white truncate">{ev.title}</p>
-                          <span className="text-[10px] uppercase font-bold text-emerald-400 px-1.5 py-0.5 rounded bg-emerald-500/10">
+                          <p className="text-xs font-bold text-slate-900 truncate">{ev.title}</p>
+                          <span className="text-[10px] uppercase font-bold text-blue-700 px-1.5 py-0.5 rounded bg-blue-100">
                             {ev.kind}
                           </span>
-                          <span className="text-[10px] text-white/50">{ev.mode}</span>
+                          <span className="text-[10px] text-slate-500 font-semibold">{ev.mode}</span>
                         </div>
-                        <p className="text-[11px] text-white/40 mt-1">
+                        <p className="text-[11px] text-slate-500 mt-1">
                           Maps: {ev.maps?.join(", ") || "Erangel"} · Entry: ₹{Math.round(ev.entry_fee_paise / 100)} · Prize: ₹{Math.round(ev.prize_pool_paise / 100)}
                         </p>
                       </div>
@@ -1369,7 +1376,7 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
                       <button
                         type="button"
                         onClick={() => importFromSavedLobby(ev)}
-                        className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 text-black hover:bg-emerald-400 transition-colors shrink-0 shadow-sm"
+                        className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-[#FFB800] text-slate-950 hover:bg-[#E5A600] transition-colors shrink-0 shadow-sm"
                       >
                         📋 Paste
                       </button>
@@ -1378,11 +1385,11 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
               )}
             </div>
 
-            <div className="pt-2 border-t border-white/[0.08] flex justify-end">
+            <div className="pt-2 border-t border-slate-100 flex justify-end">
               <button
                 type="button"
                 onClick={() => setImportLobbyModalOpen(false)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold border border-white/10 text-white/70 hover:bg-white/5 transition-colors"
+                className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-300 text-slate-700 hover:bg-slate-100 transition-colors"
               >
                 Close
               </button>
@@ -1393,21 +1400,21 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
 
       {/* ── MODAL 3: Manage Presets ── */}
       {manageModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="bg-[#0E1118] border border-white/[0.1] rounded-2xl p-6 max-w-xl w-full shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-xl w-full shadow-2xl space-y-4 max-h-[85vh] flex flex-col text-slate-900">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
-                <h3 className="text-white font-bold text-base flex items-center gap-1.5">
+                <h3 className="text-slate-950 font-black text-base flex items-center gap-1.5">
                   <span>⚙️</span> Manage Automated Esports Presets
                 </h3>
-                <p className="text-xs text-white/40 mt-0.5">
+                <p className="text-xs text-slate-500 mt-0.5">
                   Update, apply, or delete 1-click presets saved in this browser
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setManageModalOpen(false)}
-                className="text-white/40 hover:text-white text-sm"
+                className="text-slate-400 hover:text-slate-700 text-sm p-1 rounded-lg hover:bg-slate-100 transition-colors"
               >
                 ✕
               </button>
@@ -1421,25 +1428,25 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
                     key={p.id}
                     className={`p-3.5 rounded-xl border transition-all ${
                       isActive
-                        ? "bg-emerald-500/[0.06] border-emerald-500/40"
-                        : "bg-white/[0.02] border-white/[0.06]"
+                        ? "bg-blue-50/50 border-blue-400"
+                        : "bg-slate-50 border-slate-200"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="text-base">{p.badge}</span>
-                          <span className="text-xs font-bold text-white">{p.name}</span>
+                          <span className="text-xs font-bold text-slate-900">{p.name}</span>
                           {isActive && (
-                            <span className="text-[10px] font-bold text-emerald-400 px-1.5 py-0.5 rounded bg-emerald-500/15">
+                            <span className="text-[10px] font-bold text-blue-700 px-1.5 py-0.5 rounded bg-blue-100">
                               Active
                             </span>
                           )}
                         </div>
-                        <p className="text-[11px] text-white/50 mt-1">
+                        <p className="text-[11px] text-slate-600 mt-1">
                           {p.description || `${p.kind.toUpperCase()} · ${p.mode} · ₹${p.entryFee} Entry · ₹${p.prizePool} Prize`}
                         </p>
-                        <p className="text-[10px] text-white/30 font-mono mt-0.5">
+                        <p className="text-[10px] text-slate-400 font-mono mt-0.5">
                           Maps: {p.selectedMaps.join(", ")} | Starts: {p.firstTime} IST
                         </p>
                       </div>
@@ -1451,7 +1458,7 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
                             applyPreset(p);
                             setManageModalOpen(false);
                           }}
-                          className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30"
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold bg-[#FFB800] text-slate-950 hover:bg-[#E5A600] transition-colors shadow-sm"
                           title="Apply this preset to the generator"
                         >
                           ⚡ Apply
@@ -1459,7 +1466,7 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
                         <button
                           type="button"
                           onClick={() => updateExistingPreset(p.id)}
-                          className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-white/[0.05] text-white/80 border border-white/10 hover:bg-white/10"
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold bg-white text-slate-700 border border-slate-300 hover:bg-slate-100 transition-colors"
                           title="Overwrite this preset with current form state"
                         >
                           🔄 Overwrite
@@ -1467,7 +1474,7 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
                         <button
                           type="button"
                           onClick={() => deletePreset(p.id)}
-                          className="px-2 py-1 rounded-lg text-xs text-red-400 hover:bg-red-500/20"
+                          className="px-2 py-1 rounded-lg text-xs text-red-600 hover:bg-red-50 transition-colors"
                           title="Remove preset"
                         >
                           🗑️
@@ -1479,18 +1486,18 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
               })}
             </div>
 
-            <div className="pt-3 border-t border-white/[0.08] flex items-center justify-between">
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
               <button
                 type="button"
                 onClick={resetToDefaultPresets}
-                className="text-xs text-white/40 hover:text-white underline"
+                className="text-xs text-slate-500 hover:text-slate-800 underline font-semibold"
               >
                 Reset to Standard Defaults
               </button>
               <button
                 type="button"
                 onClick={() => setManageModalOpen(false)}
-                className="px-5 py-2 rounded-xl text-xs font-bold bg-white/[0.08] text-white hover:bg-white/15 transition-colors"
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 transition-colors"
               >
                 Done
               </button>
@@ -1500,13 +1507,13 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
       )}
 
       {/* 1-Click Automated Presets Bar */}
-      <div className="bg-[#0E1118] border border-emerald-500/20 rounded-2xl p-5 shadow-lg space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] pb-3">
+      <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
           <div>
-            <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
               <span>⚡</span> Automated Esports Presets (1-Click Fill)
             </span>
-            <p className="text-[11px] text-white/40 mt-0.5">
+            <p className="text-[11px] text-slate-500 mt-0.5">
               Instant 1-click tournament tiers · Consistent timings, maps, fees &amp; prizes
             </p>
           </div>
@@ -1517,7 +1524,7 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
               <button
                 type="button"
                 onClick={() => updateExistingPreset(activePreset.id)}
-                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:bg-amber-500/25 transition-all flex items-center gap-1"
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-50 border border-amber-300 text-amber-900 hover:bg-amber-100 transition-all flex items-center gap-1"
                 title={`Overwrite "${activePreset.name}" with current form values`}
               >
                 <span>🔄</span>
@@ -1533,7 +1540,7 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
                 setPresetBadgeInput(activePreset ? activePreset.badge : "⭐");
                 setSaveModalOpen(true);
               }}
-              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/30 transition-all flex items-center gap-1"
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 transition-all flex items-center gap-1"
               title="Save current lobby settings as a new 1-click preset"
             >
               <span>💾</span>
@@ -1547,7 +1554,7 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
                 loadExistingEventsForImport();
                 setImportLobbyModalOpen(true);
               }}
-              className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white/[0.05] border border-white/10 text-white/80 hover:text-white hover:bg-white/10 transition-all flex items-center gap-1"
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 border border-slate-200 text-slate-800 hover:text-slate-950 hover:bg-slate-200 transition-all flex items-center gap-1"
               title="Load full settings from any previously saved live lobby"
             >
               <span>📋</span>
@@ -1558,7 +1565,7 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
             <button
               type="button"
               onClick={() => setManageModalOpen(true)}
-              className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-white/[0.04] border border-white/[0.08] text-white/60 hover:text-white hover:bg-white/10 transition-all flex items-center gap-1"
+              className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-slate-100 border border-slate-200 text-slate-700 hover:text-slate-950 hover:bg-slate-200 transition-all flex items-center gap-1"
               title="Manage and reorder presets"
             >
               <span>⚙️</span>
@@ -1575,15 +1582,15 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
                 key={p.id}
                 type="button"
                 onClick={() => applyPreset(p)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm ${
                   isActive
-                    ? "bg-emerald-500/25 border border-emerald-500/60 text-emerald-300 ring-1 ring-emerald-500/40 shadow-emerald-950/60 scale-[1.02]"
-                    : "bg-white/[0.04] border border-white/10 hover:border-emerald-500/40 hover:bg-emerald-500/10 text-white"
+                    ? "bg-[#0A1128] text-white border border-[#0A1128] shadow-md scale-[1.02]"
+                    : "bg-slate-50 border border-slate-200 hover:border-slate-300 hover:bg-slate-100 text-slate-800"
                 }`}
               >
                 <span>{p.badge}</span>
                 <span>{p.name}</span>
-                {isActive && <span className="text-[10px] text-emerald-400 font-bold">●</span>}
+                {isActive && <span className="text-[10px] text-[#FFB800] font-bold">●</span>}
               </button>
             );
           })}
@@ -1594,20 +1601,20 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
       <div className="flex gap-2">
         <button
           onClick={() => setSubTab("quick")}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${
+          className={`px-4 py-2 rounded-xl text-xs font-black transition-all duration-200 shadow-sm ${
             subTab === "quick"
-              ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-              : "text-white/40 border border-white/[0.08] hover:text-white/70"
+              ? "bg-[#0A1128] text-white"
+              : "bg-white text-slate-600 border border-slate-200 hover:text-slate-900 hover:bg-slate-50"
           }`}
         >
           ⚡ Quick Generator
         </button>
         <button
           onClick={() => setSubTab("clone")}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${
+          className={`px-4 py-2 rounded-xl text-xs font-black transition-all duration-200 shadow-sm ${
             subTab === "clone"
-              ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-              : "text-white/40 border border-white/[0.08] hover:text-white/70"
+              ? "bg-[#0A1128] text-white"
+              : "bg-white text-slate-600 border border-slate-200 hover:text-slate-900 hover:bg-slate-50"
           }`}
         >
           📋 Clone From Date
@@ -1617,20 +1624,20 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
       {subTab === "quick" ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left / Middle — Generator Form */}
-          <div className="lg:col-span-2 bg-[#0E1118] border border-white/[0.08] rounded-2xl p-6 space-y-5">
+          <div className="lg:col-span-2 bg-white border border-slate-200/90 rounded-2xl p-6 shadow-sm space-y-5">
             {/* Kind & Mode */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs text-white/40 mb-2 uppercase tracking-widest">Kind</label>
+                <label className="block text-xs font-bold text-slate-600 mb-2 uppercase tracking-wider">Kind</label>
                 <div className="flex gap-2">
                   {(["scrim", "tournament", "league"] as const).map((k) => (
                     <button
                       key={k}
                       onClick={() => setKind(k)}
-                      className={`flex-1 py-2 rounded-lg text-xs font-bold capitalize transition-all duration-200 ${
+                      className={`flex-1 py-2 rounded-xl text-xs font-bold capitalize transition-all duration-200 ${
                         kind === k
-                          ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                          : "bg-black/40 text-white/40 border border-white/[0.08] hover:text-white/60"
+                          ? "bg-[#0A1128] text-white shadow-sm"
+                          : "bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200/70"
                       }`}
                     >
                       {k}
@@ -1639,28 +1646,28 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-white/40 mb-2 uppercase tracking-widest">Mode</label>
+                <label className="block text-xs font-bold text-slate-600 mb-2 uppercase tracking-wider">Mode</label>
                 <input
                   value={mode}
                   onChange={(e) => setMode(e.target.value)}
                   placeholder="Squad / Duo / Solo"
-                  className="w-full bg-black/40 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/40 transition-colors"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 focus:bg-white focus:border-blue-600 focus:outline-none transition-colors"
                 />
               </div>
             </div>
 
             {/* Maps selection */}
             <div>
-              <label className="block text-xs text-white/40 mb-2 uppercase tracking-widest">Maps</label>
+              <label className="block text-xs font-bold text-slate-600 mb-2 uppercase tracking-wider">Maps</label>
               <div className="flex flex-wrap gap-2">
                 {ALL_MAPS.map((m) => (
                   <button
                     key={m}
                     onClick={() => toggleMap(m)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 ${
                       selectedMaps.includes(m)
-                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                        : "bg-black/40 text-white/40 border border-white/[0.08] hover:text-white/60"
+                        ? "bg-emerald-600 text-white shadow-sm"
+                        : "bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200/70"
                     }`}
                   >
                     {m}
@@ -1672,10 +1679,10 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
             {/* Title / Count */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <label className="text-xs text-white/40 uppercase tracking-widest">Lobby Titles</label>
+                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Lobby Titles</label>
                 <button
                   onClick={() => setUseManual(!useManual)}
-                  className="text-xs text-emerald-400/80 hover:text-emerald-300 transition-colors"
+                  className="text-xs font-bold text-blue-600 hover:text-blue-700 transition-colors"
                 >
                   {useManual ? "Use Prefix + Count" : "Enter Custom Titles"}
                 </button>
@@ -1685,28 +1692,28 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
                   value={manualTitles}
                   onChange={(e) => setManualTitles(e.target.value)}
                   placeholder="L1, L2, L3, L4 (comma separated)"
-                  className="w-full bg-black/40 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/40 transition-colors"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 focus:bg-white focus:border-blue-600 focus:outline-none transition-colors"
                 />
               ) : (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[10px] text-white/30 mb-1">Prefix</label>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Prefix</label>
                     <input
                       value={prefix}
                       onChange={(e) => setPrefix(e.target.value)}
                       placeholder="e.g. L"
-                      className="w-full bg-black/40 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/40 transition-colors"
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 focus:bg-white focus:border-blue-600 focus:outline-none transition-colors"
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] text-white/30 mb-1">Count (1-10)</label>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Count (1-10)</label>
                     <input
                       type="number"
                       min={1}
                       max={10}
                       value={count}
                       onChange={(e) => setCount(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
-                      className="w-full bg-black/40 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/40 transition-colors"
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 focus:bg-white focus:border-blue-600 focus:outline-none transition-colors"
                     />
                   </div>
                 </div>
@@ -1716,34 +1723,34 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
             {/* Timing */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="block text-xs text-white/40 mb-2 uppercase tracking-widest">Start Date</label>
+                <label className="block text-xs font-bold text-slate-600 mb-2 uppercase tracking-wider">Start Date</label>
                 <input
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full bg-black/40 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/40 transition-colors [color-scheme:dark]"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 focus:bg-white focus:border-blue-600 focus:outline-none transition-colors [color-scheme:light]"
                 />
               </div>
               <div>
-                <label className="block text-xs text-white/40 mb-2 uppercase tracking-widest">First Match</label>
+                <label className="block text-xs font-bold text-slate-600 mb-2 uppercase tracking-wider">First Match</label>
                 <input
                   type="time"
                   value={firstTime}
                   onChange={(e) => setFirstTime(e.target.value)}
-                  className="w-full bg-black/40 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/40 transition-colors [color-scheme:dark]"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 focus:bg-white focus:border-blue-600 focus:outline-none transition-colors [color-scheme:light]"
                 />
               </div>
               <div>
-                <label className="block text-xs text-white/40 mb-2 uppercase tracking-widest">Interval</label>
+                <label className="block text-xs font-bold text-slate-600 mb-2 uppercase tracking-wider">Interval</label>
                 <div className="flex gap-1">
                   {INTERVAL_OPTIONS.map((opt) => (
                     <button
                       key={opt.value}
                       onClick={() => setIntervalVal(opt.value)}
-                      className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${
+                      className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
                         intervalVal === opt.value
-                          ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                          : "bg-black/40 text-white/40 border border-white/[0.08] hover:text-white/60"
+                          ? "bg-[#0A1128] text-white shadow-sm"
+                          : "bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200/70"
                       }`}
                     >
                       {opt.label}
@@ -1756,153 +1763,153 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
             {/* Financials & Slots */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div>
-                <label className="block text-xs text-white/40 mb-1 uppercase tracking-widest">Entry (₹)</label>
+                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">Entry (₹)</label>
                 <input
                   type="number"
                   value={entryFee}
                   onChange={(e) => setEntryFee(e.target.value)}
-                  className="w-full bg-black/40 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/40 transition-colors"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 font-semibold focus:bg-white focus:border-blue-600 focus:outline-none transition-colors"
                 />
               </div>
               <div>
-                <label className="block text-xs text-white/40 mb-1 uppercase tracking-widest">Prize Pool (₹)</label>
+                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">Prize Pool (₹)</label>
                 <input
                   type="number"
                   value={prizePool}
                   onChange={(e) => autoCalculatePrizes(e.target.value)}
-                  className="w-full bg-black/40 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/40 transition-colors"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 font-semibold focus:bg-white focus:border-blue-600 focus:outline-none transition-colors"
                 />
               </div>
               <div>
-                <label className="block text-xs text-white/40 mb-1 uppercase tracking-widest">Early Bird (₹)</label>
+                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">Early Bird (₹)</label>
                 <input
                   type="number"
                   value={ebFee}
                   onChange={(e) => setEbFee(e.target.value)}
                   placeholder="Optional"
-                  className="w-full bg-black/40 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-emerald-500/40 transition-colors"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:border-blue-600 focus:outline-none transition-colors"
                 />
               </div>
               <div>
-                <label className="block text-xs text-white/40 mb-1 uppercase tracking-widest">Max Slots</label>
+                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">Max Slots</label>
                 <input
                   type="number"
                   value={maxSlots}
                   onChange={(e) => setMaxSlots(e.target.value)}
-                  className="w-full bg-black/40 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/40 transition-colors"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 font-semibold focus:bg-white focus:border-blue-600 focus:outline-none transition-colors"
                 />
               </div>
             </div>
 
             {/* Top 4 Prize Breakdown */}
-            <div className="bg-black/40 border border-white/[0.08] rounded-xl p-3.5 space-y-2.5">
+            <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-3.5 space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                <span className="text-xs font-black text-amber-950 flex items-center gap-1.5">
                   <span>🏆</span> Top 4 Prize Pool Distribution (₹{prizePool} Total)
                 </span>
                 <button
                   type="button"
                   onClick={() => autoCalculatePrizes(prizePool)}
-                  className="text-[10px] text-emerald-400 hover:text-emerald-300 font-semibold underline"
+                  className="text-[10px] text-blue-700 hover:text-blue-800 font-bold underline"
                 >
                   ⚡ Auto-Calculate Top 4
                 </button>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <div>
-                  <label className="text-[10px] text-white/40 block mb-1">🥇 1st Place (₹)</label>
+                  <label className="text-[10px] font-bold text-slate-600 block mb-1">🥇 1st Place (₹)</label>
                   <input
                     type="number"
                     value={prizeFirst}
                     onChange={(e) => setPrizeFirst(e.target.value)}
-                    className="w-full bg-[#0E1118] border border-amber-500/30 text-amber-300 text-xs px-2.5 py-1.5 rounded-lg font-bold"
+                    className="w-full bg-white border border-amber-300 text-amber-950 text-xs px-2.5 py-1.5 rounded-lg font-black focus:outline-none focus:ring-1 focus:ring-amber-500"
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-white/40 block mb-1">🥈 2nd Place (₹)</label>
+                  <label className="text-[10px] font-bold text-slate-600 block mb-1">🥈 2nd Place (₹)</label>
                   <input
                     type="number"
                     value={prizeSecond}
                     onChange={(e) => setPrizeSecond(e.target.value)}
-                    className="w-full bg-[#0E1118] border border-slate-400/30 text-slate-200 text-xs px-2.5 py-1.5 rounded-lg font-bold"
+                    className="w-full bg-white border border-slate-300 text-slate-900 text-xs px-2.5 py-1.5 rounded-lg font-black focus:outline-none focus:ring-1 focus:ring-slate-400"
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-white/40 block mb-1">🥉 3rd Place (₹)</label>
+                  <label className="text-[10px] font-bold text-slate-600 block mb-1">🥉 3rd Place (₹)</label>
                   <input
                     type="number"
                     value={prizeThird}
                     onChange={(e) => setPrizeThird(e.target.value)}
-                    className="w-full bg-[#0E1118] border border-orange-500/30 text-orange-300 text-xs px-2.5 py-1.5 rounded-lg font-bold"
+                    className="w-full bg-white border border-orange-300 text-orange-950 text-xs px-2.5 py-1.5 rounded-lg font-black focus:outline-none focus:ring-1 focus:ring-orange-500"
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-white/40 block mb-1">🏅 4th Place (₹)</label>
+                  <label className="text-[10px] font-bold text-slate-600 block mb-1">🏅 4th Place (₹)</label>
                   <input
                     type="number"
                     value={prizeFourth}
                     onChange={(e) => setPrizeFourth(e.target.value)}
-                    className="w-full bg-[#0E1118] border border-emerald-500/30 text-emerald-300 text-xs px-2.5 py-1.5 rounded-lg font-bold"
+                    className="w-full bg-white border border-emerald-300 text-emerald-950 text-xs px-2.5 py-1.5 rounded-lg font-black focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   />
                 </div>
               </div>
-              <div className="text-[10px] text-white/40 flex justify-between">
+              <div className="text-[10px] text-slate-600 font-medium flex justify-between">
                 <span>Sum: ₹{(parseInt(prizeFirst) || 0) + (parseInt(prizeSecond) || 0) + (parseInt(prizeThird) || 0) + (parseInt(prizeFourth) || 0)}</span>
-                <span className="text-emerald-400/70">Host can customize anytime</span>
+                <span className="text-blue-700 font-semibold">Host can customize anytime</span>
               </div>
             </div>
 
             {/* IDP & Start Times with Auto-Calculate Button */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-white/40 uppercase tracking-widest">Schedules</span>
+                <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Schedules</span>
                 <button
                   type="button"
                   onClick={autoGenerateIDP}
-                  className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1"
+                  className="text-xs font-bold text-blue-600 hover:text-blue-700 transition-colors flex items-center gap-1"
                 >
                   <span>⚡</span> Auto-Calculate IDP Times (-6m)
                 </button>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] text-white/30 mb-1">IDP Times (free-form / pipe separated)</label>
+                  <label className="block text-[10px] font-bold text-slate-500 mb-1">IDP Times (free-form / pipe separated)</label>
                   <input
                     value={idpTimes}
                     onChange={(e) => setIdpTimes(e.target.value)}
                     placeholder="07:24 PM | 08:04 PM"
-                    className="w-full bg-black/40 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-emerald-500/40 transition-colors font-mono text-xs"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-600 transition-colors font-mono text-xs"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-white/30 mb-1">Start Times</label>
+                  <label className="block text-[10px] font-bold text-slate-500 mb-1">Start Times</label>
                   <input
                     value={startTimes}
                     onChange={(e) => setStartTimes(e.target.value)}
                     placeholder="07:30 PM | 08:10 PM"
-                    className="w-full bg-black/40 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-emerald-500/40 transition-colors font-mono text-xs"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-600 transition-colors font-mono text-xs"
                   />
                 </div>
               </div>
             </div>
 
             {/* Publish Immediately Toggle */}
-            <div className="flex items-center justify-between p-3.5 bg-black/40 border border-white/[0.08] rounded-xl">
+            <div className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
               <div>
-                <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                <p className="text-xs font-black text-slate-900 flex items-center gap-1.5">
                   <span>{publishImmediately ? "🚀" : "🔒"}</span>
                   <span>Publish Status</span>
                   <span
                     className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                       publishImmediately
-                        ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                        : "bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                        ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                        : "bg-amber-100 text-amber-800 border border-amber-300"
                     }`}
                   >
                     {publishImmediately ? "PUBLISH LIVE" : "SAVE AS DRAFT"}
                   </span>
                 </p>
-                <p className="text-[11px] text-white/40 mt-0.5">
+                <p className="text-[11px] text-slate-500 mt-0.5">
                   {publishImmediately
                     ? "Visible immediately to all players on homepage for registration"
                     : "Hidden from homepage, only visible in Admin Dashboard"}
@@ -1912,11 +1919,11 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
                 type="button"
                 onClick={() => setPublishImmediately(!publishImmediately)}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  publishImmediately ? "bg-emerald-500" : "bg-white/20"
+                  publishImmediately ? "bg-emerald-600" : "bg-slate-300"
                 }`}
               >
                 <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-black transition-transform ${
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-sm ${
                     publishImmediately ? "translate-x-6" : "translate-x-1"
                   }`}
                 />
@@ -1926,7 +1933,7 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
             <button
               onClick={handleCreate}
               disabled={creating || previewLobbies.length === 0}
-              className="w-full py-3.5 rounded-xl font-bold text-sm bg-emerald-500 text-black hover:bg-emerald-400 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 shadow-lg shadow-emerald-900/20"
+              className="w-full py-3.5 rounded-xl font-black text-sm bg-[#FFB800] text-slate-950 hover:bg-[#E5A600] disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 shadow-md"
             >
               {creating
                 ? "Creating Lobbies…"
@@ -1938,26 +1945,26 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
 
           {/* Right — Live Preview */}
           <div className="space-y-4">
-            <div className="bg-[#0E1118] border border-white/[0.08] rounded-2xl p-5 space-y-4">
-              <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
-                <h3 className="text-xs font-bold text-white/50 uppercase tracking-widest">Lobby Preview</h3>
-                <span className="text-xs font-mono text-emerald-400">{previewLobbies.length} Generated</span>
+            <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">Lobby Preview</h3>
+                <span className="text-xs font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">{previewLobbies.length} Generated</span>
               </div>
 
               {previewLobbies.length === 0 ? (
-                <p className="text-white/20 text-sm text-center py-8">Configure form to preview</p>
+                <p className="text-slate-400 text-sm text-center py-8">Configure form to preview</p>
               ) : (
                 <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                   {previewLobbies.map((l, i) => (
                     <div
                       key={i}
-                      className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-white/[0.02] border border-white/[0.04]"
+                      className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200/80"
                     >
                       <div>
-                        <p className="text-sm text-white font-semibold">{l.title}</p>
-                        <p className="text-[11px] text-white/40">{selectedMaps.join(", ")}</p>
+                        <p className="text-sm text-slate-900 font-bold">{l.title}</p>
+                        <p className="text-[11px] text-slate-500">{selectedMaps.join(", ")}</p>
                       </div>
-                      <span className="text-xs text-emerald-400 font-mono font-bold">{l.startTime} IST</span>
+                      <span className="text-xs text-blue-700 font-mono font-black">{l.startTime} IST</span>
                     </div>
                   ))}
                 </div>
@@ -1965,9 +1972,9 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
             </div>
 
             {createdIds.length > 0 && (
-              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-5 space-y-2">
-                <p className="text-sm font-bold text-emerald-300">✓ {createdIds.length} Lobbies Created!</p>
-                <p className="text-xs text-white/60">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 space-y-2">
+                <p className="text-sm font-black text-emerald-900">✓ {createdIds.length} Lobbies Created!</p>
+                <p className="text-xs text-emerald-700">
                   They are now immediately live on the homepage for squads to book.
                 </p>
               </div>
@@ -1976,31 +1983,31 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
         </div>
       ) : (
         /* Clone Yesterday / Specific Date */
-        <div className="bg-[#0E1118] border border-white/[0.08] rounded-2xl p-6 max-w-md space-y-5">
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-6 max-w-md shadow-sm space-y-5">
           <div>
-            <h3 className="text-sm font-bold text-white mb-1">Clone Previous Lobbies</h3>
-            <p className="text-xs text-white/50">
+            <h3 className="text-sm font-black text-slate-950 mb-1">Clone Previous Lobbies</h3>
+            <p className="text-xs text-slate-500">
               Duplicates all lobbies from the chosen date to today with 0 filled slots.
             </p>
           </div>
           <div>
-            <label className="block text-xs text-white/40 mb-2 uppercase tracking-widest">Source Date</label>
+            <label className="block text-xs font-bold text-slate-600 mb-2 uppercase tracking-wider">Source Date</label>
             <input
               type="date"
               value={cloneDate}
               onChange={(e) => setCloneDate(e.target.value)}
-              className="w-full bg-black/40 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/40 transition-colors [color-scheme:dark]"
+              className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 focus:bg-white focus:border-blue-600 focus:outline-none transition-colors [color-scheme:light]"
             />
           </div>
           <button
             onClick={handleClone}
             disabled={cloning}
-            className="w-full py-3 rounded-xl font-bold text-sm bg-emerald-500 text-black hover:bg-emerald-400 disabled:opacity-40 transition-all duration-200"
+            className="w-full py-3 rounded-xl font-black text-sm bg-[#FFB800] text-slate-950 hover:bg-[#E5A600] disabled:opacity-40 transition-all duration-200 shadow-sm"
           >
             {cloning ? "Cloning Lobbies…" : "📋 Clone to Today"}
           </button>
           {cloneCount !== null && (
-            <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-semibold">
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold">
               <span>✓</span> {cloneCount} lobbies cloned successfully!
             </div>
           )}
@@ -2102,12 +2109,12 @@ function LobbyIdpEditor({
   };
 
   return (
-    <div className="space-y-3.5 p-3.5 sm:p-4 bg-black/40 border border-emerald-500/25 rounded-xl">
+    <div className="space-y-4 p-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900">
       {/* 1. Individual Lobby WhatsApp Group Section */}
-      <div className="rounded-lg bg-[#0E1118]/80 border border-white/[0.06] p-3 space-y-1.5">
+      <div className="rounded-xl bg-white border border-emerald-200 p-3.5 space-y-2 shadow-xs">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <label className="text-[11px] text-emerald-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
-            <span className="px-2 py-0.5 rounded bg-emerald-500 text-black font-black text-[10px]">
+          <label className="text-[11px] text-emerald-800 font-black uppercase tracking-wider flex items-center gap-1.5">
+            <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-black text-[10px] border border-emerald-300">
               {lobbyTag}
             </span>
             <span>Official WhatsApp Group Invite Link</span>
@@ -2117,7 +2124,7 @@ function LobbyIdpEditor({
               href={draft.whatsapp_group_link}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[11px] text-[#25D366] hover:underline flex items-center gap-1 font-semibold"
+              className="text-[11px] text-emerald-700 hover:text-emerald-900 hover:underline flex items-center gap-1 font-bold"
             >
               <span>Open {lobbyTag} Group</span>
               <span>↗</span>
@@ -2128,21 +2135,21 @@ function LobbyIdpEditor({
           value={draft.whatsapp_group_link}
           onChange={(e) => onUpdateDraft("whatsapp_group_link", e.target.value)}
           placeholder={`https://chat.whatsapp.com/... (Dedicated group link for ${lobbyTag} players)`}
-          className="w-full bg-black/60 border border-white/[0.1] rounded-lg px-3 py-2 text-xs text-white/90 placeholder-white/20 focus:outline-none focus:border-emerald-500 transition-colors"
+          className="w-full bg-slate-50 border border-slate-300 focus:bg-white focus:border-emerald-600 rounded-lg px-3 py-2 text-xs text-slate-900 placeholder-slate-400 font-mono transition-colors outline-none"
         />
-        <p className="text-[10px] text-white/40 leading-relaxed">
+        <p className="text-[10px] text-slate-500 leading-relaxed font-medium">
           🎯 Players registering for <strong>{lobbyTag}</strong> will receive this link directly on checkout and can join to receive IDP drops.
         </p>
       </div>
 
       {/* 2. 3-Match IDP Manager (1 for Each Match) */}
-      <div className="space-y-2.5">
-        <div className="flex items-center justify-between gap-2 flex-wrap border-t border-white/[0.06] pt-3">
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap border-t border-slate-200 pt-3">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-black text-white uppercase tracking-wider">
+            <span className="text-xs font-black text-slate-900 uppercase tracking-wider">
               🎮 3 Matches · 3 Separate Room IDPs
             </span>
-            <span className="text-[10px] text-emerald-400/90 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full font-mono">
+            <span className="text-[10px] text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full font-mono font-bold">
               1 IDP per Match
             </span>
           </div>
@@ -2152,7 +2159,7 @@ function LobbyIdpEditor({
               <button
                 type="button"
                 onClick={applyPassToAll}
-                className="text-[10px] font-bold text-emerald-300 hover:text-emerald-200 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 px-2.5 py-1 rounded-md transition-colors"
+                className="text-[10px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1 rounded-md transition-colors cursor-pointer"
                 title="Apply Match 1 Password to Match 2 and Match 3"
               >
                 ⚡ Apply M1 Pass to All 3
@@ -2161,7 +2168,7 @@ function LobbyIdpEditor({
             <button
               type="button"
               onClick={() => setIsRawMode(!isRawMode)}
-              className="text-[10px] text-white/50 hover:text-white underline transition-colors"
+              className="text-[10px] text-slate-500 hover:text-slate-900 underline transition-colors cursor-pointer"
             >
               {isRawMode ? "3-Match Cards View" : "Raw Text Mode"}
             </button>
@@ -2171,106 +2178,106 @@ function LobbyIdpEditor({
         {!isRawMode ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {/* Match 1 */}
-            <div className="rounded-xl bg-[#0E1118] border border-white/[0.08] p-3 space-y-2">
+            <div className="rounded-xl bg-white border border-slate-200 p-3 space-y-2 shadow-xs">
               <div className="flex items-center justify-between gap-1">
-                <span className="text-xs font-black text-white flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-blue-600" />
                   <span>Match 1</span>
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-white/70 font-semibold">
+                <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700 font-bold">
                   {maps[0] || "Erangel"}
                 </span>
               </div>
               <div>
-                <label className="block text-[9px] text-emerald-400/80 font-mono uppercase tracking-wider mb-1 font-bold">
+                <label className="block text-[9px] text-slate-500 font-mono uppercase tracking-wider mb-1 font-bold">
                   M1 Room ID
                 </label>
                 <input
                   value={roomIds.m1}
                   onChange={(e) => handleMatchChange(1, "roomId", e.target.value)}
                   placeholder="e.g. 5421980"
-                  className="w-full bg-black/60 border border-white/[0.1] rounded-lg px-2.5 py-1.5 text-xs text-emerald-300 font-mono tracking-wider focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-slate-50 border border-slate-300 focus:bg-white focus:border-blue-600 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 font-mono tracking-wider outline-none"
                 />
               </div>
               <div>
-                <label className="block text-[9px] text-emerald-400/80 font-mono uppercase tracking-wider mb-1 font-bold">
+                <label className="block text-[9px] text-slate-500 font-mono uppercase tracking-wider mb-1 font-bold">
                   M1 Password
                 </label>
                 <input
                   value={effectiveM1Pass}
                   onChange={(e) => handleMatchChange(1, "password", e.target.value)}
                   placeholder="e.g. apex77"
-                  className="w-full bg-black/60 border border-white/[0.1] rounded-lg px-2.5 py-1.5 text-xs text-emerald-300 font-mono tracking-wider focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-slate-50 border border-slate-300 focus:bg-white focus:border-blue-600 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 font-mono tracking-wider outline-none"
                 />
               </div>
             </div>
 
             {/* Match 2 */}
-            <div className="rounded-xl bg-[#0E1118] border border-white/[0.08] p-3 space-y-2">
+            <div className="rounded-xl bg-white border border-slate-200 p-3 space-y-2 shadow-xs">
               <div className="flex items-center justify-between gap-1">
-                <span className="text-xs font-black text-white flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-blue-600" />
                   <span>Match 2</span>
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-white/70 font-semibold">
+                <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700 font-bold">
                   {maps[1] || "Miramar"}
                 </span>
               </div>
               <div>
-                <label className="block text-[9px] text-emerald-400/80 font-mono uppercase tracking-wider mb-1 font-bold">
+                <label className="block text-[9px] text-slate-500 font-mono uppercase tracking-wider mb-1 font-bold">
                   M2 Room ID
                 </label>
                 <input
                   value={roomIds.m2}
                   onChange={(e) => handleMatchChange(2, "roomId", e.target.value)}
                   placeholder="e.g. 5421981"
-                  className="w-full bg-black/60 border border-white/[0.1] rounded-lg px-2.5 py-1.5 text-xs text-emerald-300 font-mono tracking-wider focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-slate-50 border border-slate-300 focus:bg-white focus:border-blue-600 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 font-mono tracking-wider outline-none"
                 />
               </div>
               <div>
-                <label className="block text-[9px] text-emerald-400/80 font-mono uppercase tracking-wider mb-1 font-bold">
+                <label className="block text-[9px] text-slate-500 font-mono uppercase tracking-wider mb-1 font-bold">
                   M2 Password
                 </label>
                 <input
                   value={effectiveM2Pass}
                   onChange={(e) => handleMatchChange(2, "password", e.target.value)}
                   placeholder="e.g. apex77"
-                  className="w-full bg-black/60 border border-white/[0.1] rounded-lg px-2.5 py-1.5 text-xs text-emerald-300 font-mono tracking-wider focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-slate-50 border border-slate-300 focus:bg-white focus:border-blue-600 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 font-mono tracking-wider outline-none"
                 />
               </div>
             </div>
 
             {/* Match 3 */}
-            <div className="rounded-xl bg-[#0E1118] border border-white/[0.08] p-3 space-y-2">
+            <div className="rounded-xl bg-white border border-slate-200 p-3 space-y-2 shadow-xs">
               <div className="flex items-center justify-between gap-1">
-                <span className="text-xs font-black text-white flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-blue-600" />
                   <span>Match 3</span>
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-white/70 font-semibold">
+                <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700 font-bold">
                   {maps[2] || "Erangel"}
                 </span>
               </div>
               <div>
-                <label className="block text-[9px] text-emerald-400/80 font-mono uppercase tracking-wider mb-1 font-bold">
+                <label className="block text-[9px] text-slate-500 font-mono uppercase tracking-wider mb-1 font-bold">
                   M3 Room ID
                 </label>
                 <input
                   value={roomIds.m3}
                   onChange={(e) => handleMatchChange(3, "roomId", e.target.value)}
                   placeholder="e.g. 5421982"
-                  className="w-full bg-black/60 border border-white/[0.1] rounded-lg px-2.5 py-1.5 text-xs text-emerald-300 font-mono tracking-wider focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-slate-50 border border-slate-300 focus:bg-white focus:border-blue-600 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 font-mono tracking-wider outline-none"
                 />
               </div>
               <div>
-                <label className="block text-[9px] text-emerald-400/80 font-mono uppercase tracking-wider mb-1 font-bold">
+                <label className="block text-[9px] text-slate-500 font-mono uppercase tracking-wider mb-1 font-bold">
                   M3 Password
                 </label>
                 <input
                   value={effectiveM3Pass}
                   onChange={(e) => handleMatchChange(3, "password", e.target.value)}
                   placeholder="e.g. apex77"
-                  className="w-full bg-black/60 border border-white/[0.1] rounded-lg px-2.5 py-1.5 text-xs text-emerald-300 font-mono tracking-wider focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-slate-50 border border-slate-300 focus:bg-white focus:border-blue-600 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 font-mono tracking-wider outline-none"
                 />
               </div>
             </div>
@@ -2278,7 +2285,7 @@ function LobbyIdpEditor({
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-[10px] text-emerald-400/80 mb-1 uppercase font-bold tracking-widest">
+              <label className="block text-[10px] text-slate-600 mb-1 uppercase font-bold tracking-widest">
                 Raw Room IDs (Text / M1: ..., M2: ...)
               </label>
               <textarea
@@ -2286,11 +2293,11 @@ function LobbyIdpEditor({
                 value={draft.room_id}
                 onChange={(e) => onUpdateDraft("room_id", e.target.value)}
                 placeholder={"M1: 5421980\nM2: 5421981\nM3: 5421982"}
-                className="w-full bg-[#0E1118] border border-white/[0.1] rounded-lg px-3 py-2 text-xs text-emerald-300 font-mono tracking-wider focus:outline-none focus:border-emerald-500 transition-colors"
+                className="w-full bg-white border border-slate-300 focus:border-blue-600 rounded-lg px-3 py-2 text-xs text-slate-900 font-mono tracking-wider outline-none transition-colors"
               />
             </div>
             <div>
-              <label className="block text-[10px] text-emerald-400/80 mb-1 uppercase font-bold tracking-widest">
+              <label className="block text-[10px] text-slate-600 mb-1 uppercase font-bold tracking-widest">
                 Raw Passwords (Text / M1: ..., M2: ...)
               </label>
               <textarea
@@ -2298,7 +2305,7 @@ function LobbyIdpEditor({
                 value={draft.room_password}
                 onChange={(e) => onUpdateDraft("room_password", e.target.value)}
                 placeholder={"M1: apex77\nM2: apex77\nM3: apex77"}
-                className="w-full bg-[#0E1118] border border-white/[0.1] rounded-lg px-3 py-2 text-xs text-emerald-300 font-mono tracking-wider focus:outline-none focus:border-emerald-500 transition-colors"
+                className="w-full bg-white border border-slate-300 focus:border-blue-600 rounded-lg px-3 py-2 text-xs text-slate-900 font-mono tracking-wider outline-none transition-colors"
               />
             </div>
           </div>
@@ -2703,27 +2710,27 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
         />
       )}
       {deleteEventTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="bg-[#0E1118] border border-red-500/30 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
-            <div className="flex items-center gap-3 text-red-400">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-in zoom-in-95 duration-200 text-slate-900">
+            <div className="flex items-center gap-3 text-rose-600">
               <span className="text-2xl">⚠️</span>
-              <h3 className="font-bold text-base text-white">Delete Lobby Permanently</h3>
+              <h3 className="font-black text-base text-slate-900">Delete Lobby Permanently</h3>
             </div>
-            <p className="text-sm text-white/70">
+            <p className="text-sm text-slate-600 leading-relaxed font-medium">
               Are you sure you want to delete{" "}
-              <strong className="text-white">"{deleteEventTarget.title}"</strong>? This will remove the lobby and all associated slot data.
+              <strong className="text-slate-900">"{deleteEventTarget.title}"</strong>? This will remove the lobby and all associated slot data.
             </p>
             {(regStats[deleteEventTarget.id]?.total || 0) > 0 && (
-              <div className="p-3 bg-red-500/10 border border-red-500/25 rounded-xl text-xs text-red-300">
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 font-bold">
                 ⚠️ Warning: This lobby has {regStats[deleteEventTarget.id].total} registered squad(s).
               </div>
             )}
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2.5 pt-2">
               <button
                 type="button"
                 onClick={() => setDeleteEventTarget(null)}
                 disabled={deletingId === deleteEventTarget.id}
-                className="px-4 py-2 rounded-xl text-xs font-semibold border border-white/15 text-white/70 hover:bg-white/5 transition-colors"
+                className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
               >
                 Cancel
               </button>
@@ -2731,7 +2738,7 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
                 type="button"
                 onClick={confirmDeleteEvent}
                 disabled={deletingId === deleteEventTarget.id}
-                className="px-5 py-2 rounded-xl text-xs font-bold bg-red-600 text-white hover:bg-red-500 transition-colors shadow-lg shadow-red-900/40"
+                className="px-5 py-2 rounded-xl text-xs font-black bg-rose-600 text-white hover:bg-rose-700 transition-colors shadow-sm cursor-pointer"
               >
                 {deletingId === deleteEventTarget.id ? "Deleting…" : "🗑️ Yes, Delete Lobby"}
               </button>
@@ -2742,7 +2749,7 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
 
       {/* Filters & Search */}
       <div className="flex flex-col sm:flex-row gap-3">
-        <div className="flex gap-1.5 p-1 bg-white/[0.04] border border-white/[0.08] rounded-xl overflow-x-auto">
+        <div className="flex gap-1.5 p-1 bg-slate-200/80 rounded-xl overflow-x-auto no-scrollbar">
           {[
             { id: "all", label: `All (${events.length})` },
             { id: "published", label: `🌐 Published (${publishedCount})` },
@@ -2755,10 +2762,10 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
             <button
               key={tab.id}
               onClick={() => setStatusFilter(tab.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-black whitespace-nowrap transition-all cursor-pointer ${
                 statusFilter === tab.id
-                  ? "bg-emerald-500 text-black shadow-md shadow-emerald-900/30"
-                  : "text-white/40 hover:text-white"
+                  ? "bg-white text-slate-950 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
               }`}
             >
               {tab.label}
@@ -2771,7 +2778,7 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
           <button
             onClick={handleCleanEmptyDrafts}
             disabled={cleaningEmptyDrafts}
-            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-red-500/10 border border-red-500/25 text-red-400 hover:bg-red-500/20 transition-all flex items-center gap-1.5 shrink-0"
+            className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
             title="Delete all draft lobbies with 0 registered squads in 1-click"
           >
             <span>🧹</span>
@@ -2783,12 +2790,14 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search lobbies by title or mode…"
-          className="flex-1 bg-black/40 border border-white/[0.08] rounded-xl px-4 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-emerald-500/40 transition-colors"
+          className="flex-1 bg-white border border-slate-300 rounded-xl px-4 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-600 shadow-xs transition-colors"
         />
       </div>
 
       {filtered.length === 0 ? (
-        <div className="text-center py-16 text-white/20 text-sm">No lobbies found matching criteria.</div>
+        <div className="text-center py-16 bg-white border border-slate-200 rounded-2xl text-slate-400 text-sm font-semibold">
+          No lobbies found matching criteria.
+        </div>
       ) : (
         <div className="space-y-4">
           {filtered.map((event) => {
@@ -2807,32 +2816,32 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
             return (
               <div
                 key={event.id}
-                className={`border rounded-2xl p-5 space-y-4 transition-all duration-200 ${
+                className={`border rounded-2xl p-5 sm:p-6 space-y-4 transition-all duration-200 shadow-sm ${
                   isPublished
-                    ? "bg-[#0E1118] border-white/[0.08]"
-                    : "bg-[#0A0D12] border-amber-500/20"
+                    ? "bg-white border-slate-200/90 text-slate-900"
+                    : "bg-amber-50/30 border-2 border-amber-300 text-slate-900"
                 }`}
               >
                 {/* Header row */}
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-white font-bold text-base">{event.title}</span>
+                      <span className="text-slate-900 font-black text-base sm:text-lg">{event.title}</span>
                       <StatusBadge status={event.status} />
                       <Badge text={event.kind} color="gray" />
                       {event.mode && <Badge text={event.mode} color="purple" />}
                       {/* Publish status badge */}
                       {isPublished ? (
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-800 border border-emerald-300">
                           ● LIVE ON HOMEPAGE
                         </span>
                       ) : (
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300">
                           🔒 UNPUBLISHED DRAFT
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-white/40 mt-1">
+                    <p className="text-xs text-slate-500 font-medium mt-1">
                       {formatTimestamp(event.starts_at)} IST · Maps: {event.maps?.join(", ")}
                     </p>
                   </div>
@@ -2843,10 +2852,10 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
                     <button
                       onClick={() => togglePublish(event.id, isPublished)}
                       disabled={togglingPublish[event.id]}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer ${
                         isPublished
-                          ? "bg-amber-500/10 border border-amber-500/30 text-amber-300 hover:bg-amber-500/20"
-                          : "bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25"
+                          ? "bg-amber-50 border border-amber-300 text-amber-800 hover:bg-amber-100"
+                          : "bg-emerald-50 border border-emerald-300 text-emerald-800 hover:bg-emerald-100"
                       }`}
                       title={isPublished ? "Unpublish and hide from homepage" : "Publish live on homepage for registration"}
                     >
@@ -2857,13 +2866,13 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
                     {/* Squads roster button with real registration counts */}
                     <button
                       onClick={() => setRosterEvent(event)}
-                      className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white/[0.05] border border-white/10 hover:bg-white/10 text-white/90 transition-colors flex items-center gap-1.5"
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-800 transition-colors flex items-center gap-1.5 cursor-pointer"
                       title="View all registered teams"
                     >
                       <span>👥</span>
                       <span>Squads ({realSquads})</span>
                       {pendingSquads > 0 && (
-                        <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-amber-500/30 text-amber-300">
+                        <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-amber-200 text-amber-900">
                           +{pendingSquads} review
                         </span>
                       )}
@@ -2872,7 +2881,7 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
                     {/* Direct registration link copy */}
                     <button
                       onClick={() => copyDirectLink(event.id)}
-                      className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white/[0.04] border border-white/[0.08] hover:bg-white/10 text-white/70 hover:text-white transition-colors flex items-center gap-1.5"
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer"
                       title="Copy direct registration URL"
                     >
                       <span>🔗</span> Link
@@ -2881,7 +2890,7 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
                     {/* Broadcast WhatsApp */}
                     <button
                       onClick={() => setBroadcastEvent(event)}
-                      className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-green-500/10 border border-green-500/30 text-green-300 hover:bg-green-500/20 transition-colors flex items-center gap-1.5"
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 border border-emerald-300 text-emerald-800 hover:bg-emerald-100 transition-colors flex items-center gap-1.5 cursor-pointer"
                     >
                       <span>📢</span> Broadcast
                     </button>
@@ -2890,7 +2899,7 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
                     <button
                       onClick={() => handleDuplicateLobby(event)}
                       disabled={duplicating[event.id]}
-                      className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-white/[0.03] border border-white/[0.06] hover:bg-white/10 text-white/50 hover:text-white transition-colors"
+                      className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer"
                       title="Duplicate this lobby"
                     >
                       <span>📑</span>
@@ -2899,10 +2908,10 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
                     {/* Direct In-Place Edit Match Info Toggle */}
                     <button
                       onClick={() => updateDraft(event.id, "isEditingDetails", !draft.isEditingDetails)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                         draft.isEditingDetails
-                          ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
-                          : "bg-white/[0.04] text-white/80 hover:text-white border border-white/10"
+                          ? "bg-amber-100 text-amber-900 border border-amber-300"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200"
                       }`}
                       title="Edit title, date/time, maps, mode, kind, fee and prize directly"
                     >
@@ -2912,7 +2921,7 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
                     {/* Delete Lobby Button */}
                     <button
                       onClick={() => setDeleteEventTarget(event)}
-                      className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-colors flex items-center gap-1"
+                      className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 transition-colors flex items-center gap-1 cursor-pointer"
                       title="Permanently delete this lobby"
                     >
                       <span>🗑️</span>
@@ -2923,50 +2932,50 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
 
                 {/* In-Place Full Match/Scrim Details Editor */}
                 {draft.isEditingDetails && (
-                  <div className="p-4 rounded-xl bg-black/60 border border-amber-500/30 space-y-3">
-                    <div className="flex items-center justify-between border-b border-white/[0.06] pb-2">
-                      <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                  <div className="p-4 rounded-2xl bg-amber-50/50 border border-amber-200 space-y-3 text-slate-900">
+                    <div className="flex items-center justify-between border-b border-amber-200/60 pb-2">
+                      <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
                         <span>✏️</span> Edit Match &amp; Lobby Information
                       </span>
-                      <span className="text-[10px] text-white/40">
+                      <span className="text-[10px] text-amber-700 font-medium">
                         Saved when clicking &quot;Push Updates to Players&quot;
                       </span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-[10px] text-white/50 mb-1 uppercase tracking-wider font-semibold">
+                        <label className="block text-[10px] text-slate-600 mb-1 uppercase tracking-wider font-bold">
                           Lobby / Tournament Title
                         </label>
                         <input
                           value={draft.title}
                           onChange={(e) => updateDraft(event.id, "title", e.target.value)}
                           placeholder="e.g. Apex 1-3 PM L1"
-                          className="w-full bg-[#0E1118] border border-white/[0.1] rounded-lg px-3 py-2 text-sm text-white font-medium focus:outline-none focus:border-amber-400"
+                          className="w-full bg-white border border-slate-300 focus:border-amber-500 rounded-lg px-3 py-2 text-sm text-slate-900 font-bold outline-none"
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] text-white/50 mb-1 uppercase tracking-wider font-semibold">
+                        <label className="block text-[10px] text-slate-600 mb-1 uppercase tracking-wider font-bold">
                           Start Date &amp; Time (IST)
                         </label>
                         <input
                           type="datetime-local"
                           value={draft.starts_at}
                           onChange={(e) => updateDraft(event.id, "starts_at", e.target.value)}
-                          className="w-full bg-[#0E1118] border border-white/[0.1] rounded-lg px-3 py-2 text-xs text-white/90 focus:outline-none focus:border-amber-400"
+                          className="w-full bg-white border border-slate-300 focus:border-amber-500 rounded-lg px-3 py-2 text-xs text-slate-900 font-medium outline-none"
                         />
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       <div>
-                        <label className="block text-[10px] text-white/50 mb-1 uppercase tracking-wider font-semibold">
+                        <label className="block text-[10px] text-slate-600 mb-1 uppercase tracking-wider font-bold">
                           Kind
                         </label>
                         <select
                           value={draft.kind}
                           onChange={(e) => updateDraft(event.id, "kind", e.target.value)}
-                          className="w-full bg-[#0E1118] border border-white/[0.1] rounded-lg px-2.5 py-2 text-xs text-white"
+                          className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-xs text-slate-900 font-bold outline-none"
                         >
                           <option value="scrim">Scrim</option>
                           <option value="tournament">Tournament</option>
@@ -2975,13 +2984,13 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
                       </div>
 
                       <div>
-                        <label className="block text-[10px] text-white/50 mb-1 uppercase tracking-wider font-semibold">
+                        <label className="block text-[10px] text-slate-600 mb-1 uppercase tracking-wider font-bold">
                           Mode
                         </label>
                         <select
                           value={draft.mode}
                           onChange={(e) => updateDraft(event.id, "mode", e.target.value)}
-                          className="w-full bg-[#0E1118] border border-white/[0.1] rounded-lg px-2.5 py-2 text-xs text-white"
+                          className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-xs text-slate-900 font-bold outline-none"
                         >
                           <option value="Squad">Squad</option>
                           <option value="Duo">Duo</option>
@@ -2990,32 +2999,32 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
                       </div>
 
                       <div>
-                        <label className="block text-[10px] text-white/50 mb-1 uppercase tracking-wider font-semibold">
+                        <label className="block text-[10px] text-slate-600 mb-1 uppercase tracking-wider font-bold">
                           Entry Fee (₹)
                         </label>
                         <input
                           type="number"
                           value={draft.entry_fee_paise}
                           onChange={(e) => updateDraft(event.id, "entry_fee_paise", e.target.value)}
-                          className="w-full bg-[#0E1118] border border-white/[0.1] rounded-lg px-3 py-2 text-xs text-white font-mono"
+                          className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 font-mono font-bold outline-none"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-[10px] text-white/50 mb-1 uppercase tracking-wider font-semibold">
+                        <label className="block text-[10px] text-slate-600 mb-1 uppercase tracking-wider font-bold">
                           Total Prize Pool (₹)
                         </label>
                         <input
                           type="number"
                           value={draft.prize_pool_paise}
                           onChange={(e) => updateDraft(event.id, "prize_pool_paise", e.target.value)}
-                          className="w-full bg-[#0E1118] border border-white/[0.1] rounded-lg px-3 py-2 text-xs text-white font-mono"
+                          className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 font-mono font-bold outline-none"
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-[10px] text-white/50 mb-1.5 uppercase tracking-wider font-semibold">
+                      <label className="block text-[10px] text-slate-600 mb-1.5 uppercase tracking-wider font-bold">
                         Maps (Click to toggle)
                       </label>
                       <div className="flex flex-wrap gap-1.5">
@@ -3032,10 +3041,10 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
                                   : [...current, map];
                                 updateDraft(event.id, "maps", updated.length > 0 ? updated : [map]);
                               }}
-                              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                 isSelected
-                                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                                  : "bg-white/[0.04] text-white/40 border border-white/[0.06] hover:text-white"
+                                  ? "bg-blue-600 text-white"
+                                  : "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50"
                               }`}
                             >
                               {isSelected ? `✓ ${map}` : `+ ${map}`}
@@ -3049,26 +3058,26 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
 
                 {/* Real-time Fill bar strictly from registrations */}
                 <div>
-                  <div className="flex justify-between items-center text-xs text-white/50 mb-1.5 flex-wrap gap-2">
+                  <div className="flex justify-between items-center text-xs text-slate-600 mb-1.5 flex-wrap gap-2 font-medium">
                     <span className="flex items-center gap-2">
-                      <span className="font-bold text-white">Registered Teams:</span>
-                      <span className="font-mono text-emerald-400 font-bold text-sm">
+                      <span className="font-bold text-slate-900">Registered Teams:</span>
+                      <span className="font-mono text-blue-700 font-black text-sm">
                         {realSquads}
                       </span>
-                      <span className="text-white/40">/ {event.max_slots} slots</span>
+                      <span className="text-slate-500">/ {event.max_slots} slots</span>
                     </span>
-                    <span className="text-[11px] text-white/50 font-mono">
-                      <span className="text-emerald-400">{confirmedSquads} confirmed</span>
+                    <span className="text-[11px] text-slate-500 font-mono">
+                      <span className="text-emerald-700 font-bold">{confirmedSquads} confirmed</span>
                       {pendingSquads > 0 && (
-                        <span className="text-amber-400"> · {pendingSquads} in review</span>
+                        <span className="text-amber-700 font-bold"> · {pendingSquads} in review</span>
                       )}
                       <span> · {remainingSlots} remaining</span>
                     </span>
                   </div>
-                  <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
+                  <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${
-                        fillPct >= 100 ? "bg-red-500" : fillPct >= 75 ? "bg-amber-500" : "bg-emerald-500"
+                        fillPct >= 100 ? "bg-rose-500" : fillPct >= 75 ? "bg-amber-500" : "bg-gradient-to-r from-blue-600 to-indigo-600"
                       }`}
                       style={{ width: `${Math.max(fillPct > 0 ? 3 : 0, fillPct)}%` }}
                     />
@@ -3085,38 +3094,38 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
                 {/* Schedules & Limits */}
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                   <div>
-                    <label className="block text-[10px] text-white/30 mb-1 uppercase tracking-widest">IDP Times</label>
+                    <label className="block text-[10px] text-slate-500 mb-1 uppercase tracking-widest font-bold">IDP Times</label>
                     <input
                       value={draft.idp_times}
                       onChange={(e) => updateDraft(event.id, "idp_times", e.target.value)}
                       placeholder="07:24 PM"
-                      className="w-full bg-black/40 border border-white/[0.08] rounded-lg px-3 py-2 text-xs text-white/80 font-mono"
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 font-mono focus:bg-white focus:border-blue-600 outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] text-white/30 mb-1 uppercase tracking-widest">Start Times</label>
+                    <label className="block text-[10px] text-slate-500 mb-1 uppercase tracking-widest font-bold">Start Times</label>
                     <input
                       value={draft.start_times}
                       onChange={(e) => updateDraft(event.id, "start_times", e.target.value)}
                       placeholder="07:30 PM"
-                      className="w-full bg-black/40 border border-white/[0.08] rounded-lg px-3 py-2 text-xs text-white/80 font-mono"
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 font-mono focus:bg-white focus:border-blue-600 outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] text-white/30 mb-1 uppercase tracking-widest">Max Slots</label>
+                    <label className="block text-[10px] text-slate-500 mb-1 uppercase tracking-widest font-bold">Max Slots</label>
                     <input
                       type="number"
                       value={draft.max_slots}
                       onChange={(e) => updateDraft(event.id, "max_slots", e.target.value)}
-                      className="w-full bg-black/40 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white"
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 font-bold focus:bg-white focus:border-blue-600 outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] text-white/30 mb-1 uppercase tracking-widest">Status</label>
+                    <label className="block text-[10px] text-slate-500 mb-1 uppercase tracking-widest font-bold">Status</label>
                     <select
                       value={draft.status}
                       onChange={(e) => handleStatusChange(event.id, e.target.value)}
-                      className="w-full bg-black/40 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none"
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 font-bold focus:bg-white focus:border-blue-600 outline-none"
                     >
                       <option value="open">Open</option>
                       <option value="live">Live Now</option>
@@ -3127,72 +3136,72 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
                 </div>
 
                 {/* Top 4 Prize Distribution Editor */}
-                <div className="bg-black/40 border border-white/[0.08] rounded-xl p-3.5 space-y-2.5">
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                       <span>🏆</span> Top 4 Prize Pool Distribution (₹{draft.prize_pool_paise} Total)
                     </span>
                     <button
                       type="button"
                       onClick={() => autoCalcDraftPrize(event.id, parseInt(draft.prize_pool_paise) || 0)}
-                      className="text-[10px] text-emerald-400 hover:text-emerald-300 font-semibold underline"
+                      className="text-[10px] text-blue-700 hover:text-blue-900 font-bold underline cursor-pointer"
                     >
                       ⚡ Auto-Calculate Top 4
                     </button>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <div>
-                      <label className="text-[10px] text-white/40 block mb-1">🥇 1st Place (₹)</label>
+                      <label className="text-[10px] text-slate-500 font-bold block mb-1">🥇 1st Place (₹)</label>
                       <input
                         type="number"
                         value={draft.prize_first}
                         onChange={(e) => updateDraft(event.id, "prize_first", e.target.value)}
-                        className="w-full bg-[#0E1118] border border-amber-500/30 text-amber-300 text-xs px-2.5 py-1.5 rounded-lg font-bold"
+                        className="w-full bg-white border border-amber-300 text-amber-900 text-xs px-2.5 py-1.5 rounded-lg font-bold"
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] text-white/40 block mb-1">🥈 2nd Place (₹)</label>
+                      <label className="text-[10px] text-slate-500 font-bold block mb-1">🥈 2nd Place (₹)</label>
                       <input
                         type="number"
                         value={draft.prize_second}
                         onChange={(e) => updateDraft(event.id, "prize_second", e.target.value)}
-                        className="w-full bg-[#0E1118] border border-slate-400/30 text-slate-200 text-xs px-2.5 py-1.5 rounded-lg font-bold"
+                        className="w-full bg-white border border-slate-300 text-slate-800 text-xs px-2.5 py-1.5 rounded-lg font-bold"
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] text-white/40 block mb-1">🥉 3rd Place (₹)</label>
+                      <label className="text-[10px] text-slate-500 font-bold block mb-1">🥉 3rd Place (₹)</label>
                       <input
                         type="number"
                         value={draft.prize_third}
                         onChange={(e) => updateDraft(event.id, "prize_third", e.target.value)}
-                        className="w-full bg-[#0E1118] border border-orange-500/30 text-orange-300 text-xs px-2.5 py-1.5 rounded-lg font-bold"
+                        className="w-full bg-white border border-orange-300 text-orange-900 text-xs px-2.5 py-1.5 rounded-lg font-bold"
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] text-white/40 block mb-1">🏅 4th Place (₹)</label>
+                      <label className="text-[10px] text-slate-500 font-bold block mb-1">🏅 4th Place (₹)</label>
                       <input
                         type="number"
                         value={draft.prize_fourth}
                         onChange={(e) => updateDraft(event.id, "prize_fourth", e.target.value)}
-                        className="w-full bg-[#0E1118] border border-emerald-500/30 text-emerald-300 text-xs px-2.5 py-1.5 rounded-lg font-bold"
+                        className="w-full bg-white border border-emerald-300 text-emerald-900 text-xs px-2.5 py-1.5 rounded-lg font-bold"
                       />
                     </div>
                   </div>
-                  <div className="text-[10px] text-white/40 flex justify-between">
+                  <div className="text-[10px] text-slate-500 flex justify-between font-medium">
                     <span>Sum: ₹{(parseInt(draft.prize_first) || 0) + (parseInt(draft.prize_second) || 0) + (parseInt(draft.prize_third) || 0) + (parseInt(draft.prize_fourth) || 0)}</span>
-                    <span className="text-emerald-400/70">Shown in player Prize Pool popup</span>
+                    <span className="text-blue-700 font-bold">Shown in player Prize Pool popup</span>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-2 border-t border-white/[0.06] flex-wrap gap-2">
+                <div className="flex items-center justify-between pt-2 border-t border-slate-100 flex-wrap gap-2">
                   <div className="flex items-center gap-3">
-                    <p className="text-xs text-white/40">
+                    <p className="text-xs text-slate-500 font-medium">
                       ₹{draft.entry_fee_paise} entry · ₹{draft.prize_pool_paise} prize
                     </p>
                     <button
                       type="button"
                       onClick={() => setDeleteEventTarget(event)}
-                      className="text-xs text-red-400/60 hover:text-red-400 transition-colors flex items-center gap-1 font-semibold"
+                      className="text-xs text-rose-600 hover:text-rose-800 transition-colors flex items-center gap-1 font-bold cursor-pointer"
                       title="Permanently delete this lobby"
                     >
                       <span>🗑️</span>
@@ -3209,7 +3218,7 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
                           await togglePublish(event.id, false);
                         }}
                         disabled={draft.saving}
-                        className="px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition-all flex items-center gap-1.5 shadow-sm"
+                        className="px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
                         title="Save all changes and publish live immediately"
                       >
                         <span>🚀</span>
@@ -3219,7 +3228,7 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
                     <button
                       onClick={() => saveEvent(event.id)}
                       disabled={draft.saving}
-                      className="px-6 py-2.5 rounded-xl text-xs font-bold bg-emerald-500 text-black hover:bg-emerald-400 disabled:opacity-40 transition-all shadow-md"
+                      className="px-6 py-2.5 rounded-xl text-xs font-black bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 disabled:opacity-40 transition-all shadow-md shadow-amber-500/20 cursor-pointer"
                     >
                       {draft.saving ? "Saving…" : "💾 Push Updates to Players"}
                     </button>
@@ -3330,15 +3339,15 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
 
       {/* Filter Tabs + Mass Approve Action */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        <div className="flex gap-1.5 p-1 bg-white/[0.04] border border-white/[0.08] rounded-xl overflow-x-auto">
+        <div className="flex gap-1.5 p-1 bg-slate-200/80 rounded-xl overflow-x-auto no-scrollbar">
           {STATUS_TABS.map((t) => (
             <button
               key={String(t.value)}
               onClick={() => setStatusFilter(t.value)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
                 statusFilter === t.value
-                  ? "bg-emerald-500 text-black shadow"
-                  : "text-white/40 hover:text-white"
+                  ? "bg-white text-slate-950 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
               }`}
             >
               {t.label}
@@ -3350,7 +3359,7 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
           <button
             onClick={handleBulkApprove}
             disabled={bulkApproving}
-            className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition-all flex items-center justify-center gap-1.5 shrink-0"
+            className="px-4 py-2 rounded-xl text-xs font-black bg-emerald-600 text-white hover:bg-emerald-700 transition-all flex items-center justify-center gap-1.5 shrink-0 shadow-sm cursor-pointer"
           >
             <span>⚡</span> {bulkApproving ? "Approving…" : `Approve All Pending (${pendingCount})`}
           </button>
@@ -3361,28 +3370,30 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Search by 12-digit UTR or WhatsApp number…"
-        className="w-full bg-black/40 border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-emerald-500/40 transition-colors"
+        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-600 transition-colors shadow-xs"
       />
 
       {loading ? (
         <Spinner />
       ) : filtered.length === 0 ? (
-        <div className="text-center py-16 text-white/20 text-sm">No payment records found.</div>
+        <div className="text-center py-16 bg-white border border-slate-200 rounded-2xl text-slate-400 text-sm font-semibold">
+          No payment records found.
+        </div>
       ) : (
         <div className="space-y-3">
           {filtered.map((p) => (
-            <div key={p.utr} className="bg-[#0E1118] border border-white/[0.08] rounded-2xl p-5 shadow-lg">
+            <div key={p.utr} className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm text-slate-900">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="space-y-2 min-w-0 flex-1">
                   {/* UTR + Status */}
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-sm text-emerald-300 font-bold tracking-wider">{p.utr}</span>
+                    <span className="font-mono text-base text-blue-700 font-black tracking-wider">{p.utr}</span>
                     <button
                       onClick={() => {
                         copyToClipboard(p.utr);
                         showToast("UTR copied!", "success");
                       }}
-                      className="text-white/30 hover:text-white text-xs px-2 py-0.5 rounded bg-white/[0.05]"
+                      className="text-slate-500 hover:text-slate-900 text-xs px-2 py-0.5 rounded bg-slate-100 border border-slate-200 font-bold cursor-pointer"
                       title="Copy UTR"
                     >
                       Copy
@@ -3391,17 +3402,17 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
                   </div>
 
                   {/* Amount */}
-                  <p className="text-2xl font-extrabold text-white">₹{paiseToRupees(p.amount_paise)}</p>
+                  <p className="text-2xl font-black text-slate-900 font-mono tracking-tight">₹{paiseToRupees(p.amount_paise)}</p>
 
                   {/* WhatsApp with 1-Click WhatsApp Button */}
-                  <div className="flex items-center gap-2 text-sm text-white/60">
-                    <span>Captain WhatsApp:</span>
-                    <span className="font-mono text-white font-semibold">+91 {p.whatsapp}</span>
+                  <div className="flex items-center gap-2 text-xs sm:text-sm text-slate-600 flex-wrap">
+                    <span className="font-bold">Captain WhatsApp:</span>
+                    <span className="font-mono text-slate-900 font-bold">+91 {p.whatsapp}</span>
                     <a
                       href={`https://wa.me/91${p.whatsapp}?text=Hi+Captain,+regarding+your+Apex+Esports+payment+(UTR:+${p.utr})`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="ml-2 px-2.5 py-0.5 rounded-lg text-xs font-semibold bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25 transition-colors flex items-center gap-1"
+                      className="ml-2 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 transition-colors flex items-center gap-1"
                     >
                       <span>💬</span> WhatsApp
                     </a>
@@ -3417,7 +3428,7 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
                     ))}
                   </div>
 
-                  <p className="text-[11px] text-white/30">{formatTimestamp(p.created_at)}</p>
+                  <p className="text-[11px] text-slate-400 font-medium">{formatTimestamp(p.created_at)}</p>
                 </div>
 
                 {/* Approve / Reject Actions */}
@@ -3426,14 +3437,14 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
                     <button
                       onClick={() => handleVerify(p.utr, "approve")}
                       disabled={acting[p.utr]}
-                      className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-500 text-black hover:bg-emerald-400 disabled:opacity-40 transition-all shadow-md"
+                      className="px-5 py-2.5 rounded-xl text-xs font-black bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 transition-all shadow-sm cursor-pointer"
                     >
                       ✓ Approve
                     </button>
                     <button
                       onClick={() => setConfirmReject(p.utr)}
                       disabled={acting[p.utr]}
-                      className="px-5 py-2.5 rounded-xl text-xs font-bold bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25 disabled:opacity-40 transition-all"
+                      className="px-5 py-2.5 rounded-xl text-xs font-bold bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-100 disabled:opacity-40 transition-all cursor-pointer"
                     >
                       ✗ Reject
                     </button>
@@ -3539,9 +3550,9 @@ function RoleManagerTab({ showToast }: { showToast: (m: string, t: "success" | "
       )}
 
       {/* Grant role form */}
-      <div className="bg-[#0E1118] border border-white/[0.08] rounded-2xl p-6 space-y-4">
-        <h3 className="font-bold text-white text-base">Grant Team Member Access</h3>
-        <p className="text-xs text-white/50">
+      <div className="bg-white border border-slate-200/90 rounded-2xl p-6 space-y-4 shadow-sm text-slate-900">
+        <h3 className="font-black text-slate-900 text-base">Grant Team Member Access</h3>
+        <p className="text-xs text-slate-500">
           Assign moderator or finance permissions to another team member using their signup email.
         </p>
 
@@ -3552,12 +3563,12 @@ function RoleManagerTab({ showToast }: { showToast: (m: string, t: "success" | "
             value={grantEmail}
             onChange={(e) => setGrantEmail(e.target.value)}
             placeholder="member@gmail.com"
-            className="flex-1 bg-black/40 border border-white/[0.08] rounded-xl px-4 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-emerald-500/40 transition-colors"
+            className="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-600 transition-colors shadow-xs"
           />
           <select
             value={grantRole}
             onChange={(e) => setGrantRole(e.target.value as "moderator" | "finance")}
-            className="bg-black/40 border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-white focus:outline-none"
+            className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:bg-white focus:border-blue-600 font-bold"
           >
             <option value="moderator">Moderator</option>
             <option value="finance">Finance</option>
@@ -3565,34 +3576,34 @@ function RoleManagerTab({ showToast }: { showToast: (m: string, t: "success" | "
           <button
             type="submit"
             disabled={granting}
-            className="px-6 py-2.5 rounded-xl text-xs font-bold bg-emerald-500 text-black hover:bg-emerald-400 disabled:opacity-40 transition-all shrink-0"
+            className="px-6 py-2.5 rounded-xl text-xs font-black bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 disabled:opacity-40 transition-all shrink-0 shadow-md shadow-amber-500/20 cursor-pointer"
           >
-            {granting ? "Granting…" : "Grant Role"}
+            {granting ? "Granting…" : "Grant Role →"}
           </button>
         </form>
       </div>
 
       {/* Existing roles */}
-      <div className="bg-[#0E1118] border border-white/[0.08] rounded-2xl p-6 space-y-4">
-        <h3 className="font-bold text-white text-base">Active Admin Roles</h3>
+      <div className="bg-white border border-slate-200/90 rounded-2xl p-6 space-y-4 shadow-sm text-slate-900">
+        <h3 className="font-black text-slate-900 text-base">Active Admin Roles</h3>
         {loading ? (
           <Spinner />
         ) : roles.length === 0 ? (
-          <p className="text-xs text-white/30 py-6 text-center">No secondary roles granted yet.</p>
+          <p className="text-xs text-slate-400 py-6 text-center font-semibold">No secondary roles granted yet.</p>
         ) : (
-          <div className="divide-y divide-white/[0.04]">
+          <div className="divide-y divide-slate-100">
             {roles.map((r, i) => (
               <div key={i} className="flex items-center justify-between py-3">
                 <div>
-                  <p className="text-sm font-semibold text-white">{r.email}</p>
-                  <p className="text-xs text-white/30">{formatTimestamp(r.granted_at)}</p>
+                  <p className="text-sm font-black text-slate-900">{r.email}</p>
+                  <p className="text-xs text-slate-400 font-medium">{formatTimestamp(r.granted_at)}</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <StatusBadge status={r.role} />
                   {r.role !== "owner" && (
                     <button
                       onClick={() => setConfirmRevoke(r)}
-                      className="text-xs text-red-400 hover:text-red-300 font-semibold"
+                      className="text-xs text-rose-600 hover:text-rose-800 font-bold cursor-pointer"
                     >
                       Revoke
                     </button>
@@ -3682,26 +3693,26 @@ export default function AdminPage() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-[#06070B] flex items-center justify-center">
-        <div className="w-10 h-10 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
+      <div className="min-h-screen bg-[#F4F6FB] flex items-center justify-center">
+        <div className="w-10 h-10 border-2 border-slate-300 border-t-[#FFB800] rounded-full animate-spin" />
       </div>
     );
   }
 
   if (userRoles.length === 0) {
     return (
-      <div className="min-h-screen bg-[#06070B] flex items-center justify-center p-4">
-        <div className="bg-[#0E1118] border border-white/[0.08] rounded-2xl p-10 text-center max-w-sm w-full">
+      <div className="min-h-screen bg-[#F4F6FB] flex items-center justify-center p-4">
+        <div className="bg-white border border-slate-200 rounded-3xl p-8 sm:p-10 text-center max-w-sm w-full shadow-xl">
           <div className="text-5xl mb-4">🚫</div>
-          <h1 className="text-xl font-bold text-white mb-2">Access Denied</h1>
-          <p className="text-white/40 text-sm mb-6 leading-relaxed">
+          <h1 className="text-xl font-black text-slate-900 mb-2">Access Denied</h1>
+          <p className="text-slate-500 text-xs sm:text-sm mb-6 leading-relaxed">
             You do not have administrative privileges. Contact the platform owner to get assigned a role.
           </p>
           <button
             onClick={() => router.push("/")}
-            className="px-5 py-2.5 rounded-xl text-xs font-bold bg-white/10 text-white hover:bg-white/15 transition-colors"
+            className="w-full py-3 rounded-xl text-xs font-black bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 transition-colors shadow-md"
           >
-            Return to Lobbies
+            Return to Public Lobbies
           </button>
         </div>
       </div>
@@ -3720,136 +3731,217 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#06070B] text-white flex flex-col lg:flex-row">
-      {/* Background layers */}
-      <div className="pointer-events-none fixed inset-0 tactical-grid opacity-60" />
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute -top-48 -left-48 w-[500px] h-[500px] rounded-full bg-emerald-500/5 blur-3xl" />
-        <div className="absolute -bottom-48 -right-48 w-[500px] h-[500px] rounded-full bg-purple-500/6 blur-3xl" />
-      </div>
-
+    <div className="min-h-screen bg-[#F4F6FB] text-slate-900 flex flex-col lg:flex-row w-full max-w-full overflow-x-hidden">
       {toast && <Toast message={toast.message} type={toast.type} />}
 
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm lg:hidden animate-in fade-in duration-200"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      {/* Sidebar Navigation */}
+      {/* Sidebar Navigation (Deep Midnight Navy #0A1128) */}
       <aside
-        className={`fixed left-0 top-0 bottom-0 z-50 w-64 bg-[#0E1118] border-r border-white/[0.08] flex flex-col transition-transform duration-200 ease-out ${
+        className={`fixed left-0 top-0 bottom-0 z-50 w-64 bg-[#0A1128] border-r border-white/10 flex flex-col transition-transform duration-200 ease-out text-white ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         } lg:translate-x-0`}
       >
-        <div className="px-6 py-6 border-b border-white/[0.06]">
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 glow-pulse" />
-            <span className="text-xs font-bold text-white/50 uppercase tracking-widest">Command Center</span>
+        <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-1.5 mb-1">
+              <span className="text-[#FFB800] text-sm">◆</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-[#FFB800]">Command Center</span>
+            </div>
+            <p className="text-white font-black text-lg tracking-tight">{ORG_NAME}</p>
           </div>
-          <p className="text-white font-extrabold text-base tracking-wider">{ORG_NAME}</p>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="lg:hidden w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-slate-400 hover:text-white"
+          >
+            ✕
+          </button>
         </div>
 
-        <nav className="flex-1 py-5 px-3 space-y-1.5">
-          {visibleTabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => { setActiveTab(tab.id); setSidebarOpen(false); }}
-              className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all text-left relative ${
-                activeTab === tab.id
-                  ? "bg-emerald-500 text-black shadow-lg shadow-emerald-900/30"
-                  : "text-white/50 hover:text-white hover:bg-white/[0.04]"
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-base">{tab.icon}</span>
-                <span>{tab.label}</span>
-              </div>
-              {tab.id === "payments" && metrics.pendingPayments > 0 && (
-                <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                    activeTab === tab.id ? "bg-black/30 text-black" : "bg-amber-500/20 text-amber-300"
-                  }`}
-                >
-                  {metrics.pendingPayments}
-                </span>
-              )}
-            </button>
-          ))}
+        {/* Tab Navigation List */}
+        <nav className="flex-1 py-5 px-3 space-y-1.5 overflow-y-auto no-scrollbar">
+          {visibleTabs.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => { setActiveTab(tab.id); setSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-black transition-all text-left relative cursor-pointer ${
+                  isActive
+                    ? "bg-[#FFB800] text-slate-950 shadow-md shadow-amber-500/20"
+                    : "text-slate-300 hover:text-white hover:bg-white/5"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-base">{tab.icon}</span>
+                  <span>{tab.label}</span>
+                </div>
+                {tab.id === "payments" && metrics.pendingPayments > 0 && (
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                      isActive ? "bg-slate-950 text-white" : "bg-rose-500/30 text-rose-300 border border-rose-500/50"
+                    }`}
+                  >
+                    {metrics.pendingPayments}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </nav>
 
-        {/* Back to Site link */}
-        <div className="p-4 border-t border-white/[0.06] space-y-3">
-          <a
-            href="/"
-            className="w-full block text-center py-2 rounded-xl text-xs font-semibold border border-white/10 hover:bg-white/5 text-white/60 hover:text-white transition-colors"
-          >
-            ← View Public Site
-          </a>
-          <div className="px-2">
-            <p className="text-[11px] text-white/30 truncate">{userEmail}</p>
-            <div className="flex flex-wrap gap-1 mt-1.5">
+        {/* Sidebar Footer with Account info & Sign Out */}
+        <div className="p-4 border-t border-white/10 space-y-3">
+          <div className="rounded-xl bg-white/5 border border-white/10 p-3 space-y-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Admin Account</p>
+            <p className="text-xs font-bold text-white truncate" title={userEmail || ""}>{userEmail}</p>
+            <div className="flex flex-wrap gap-1 pt-1">
               {userRoles.map((r) => (
-                <StatusBadge key={r} status={r} />
+                <span
+                  key={r}
+                  className="px-2 py-0.5 rounded text-[9px] font-extrabold uppercase bg-amber-400/20 text-amber-300 border border-amber-400/30"
+                >
+                  {r}
+                </span>
               ))}
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <a
+              href="/"
+              className="text-center py-2 rounded-xl text-xs font-bold border border-white/15 hover:bg-white/10 text-slate-200 transition-colors"
+            >
+              ← Public Site
+            </a>
+            <button
+              onClick={async () => {
+                await supabase.auth.signOut();
+                window.location.href = "/";
+              }}
+              className="text-center py-2 rounded-xl text-xs font-bold bg-rose-500/20 border border-rose-500/40 text-rose-200 hover:bg-rose-500/30 transition-colors cursor-pointer"
+            >
+              Sign Out
+            </button>
           </div>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <div className="lg:ml-64 flex-1 min-h-screen flex flex-col">
-        {/* Top Header */}
-        <header className="sticky top-0 z-30 bg-[#06070B]/85 backdrop-blur-md border-b border-white/[0.06] px-4 sm:px-8 py-4 flex items-center justify-between gap-4">
+      <div className="lg:ml-64 flex-1 min-h-screen flex flex-col w-full max-w-full overflow-x-hidden">
+        {/* Top Header (Midnight Navy) */}
+        <header className="sticky top-0 z-30 bg-[#0A1128] text-white border-b border-white/10 px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setSidebarOpen(true)}
-              className="lg:hidden text-white/40 hover:text-white p-1"
+              className="lg:hidden rounded-lg border border-white/20 bg-white/10 p-1.5 text-white hover:bg-white/20 transition-colors"
+              aria-label="Open admin navigation"
             >
-              ☰
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
             </button>
             <div>
-              <h1 className="text-base sm:text-lg font-bold text-white">
+              <h1 className="text-base sm:text-lg font-black text-white">
                 {TABS.find((t) => t.id === activeTab)?.label}
               </h1>
-              <p className="text-[11px] text-white/40 hidden sm:block">
-                Apex Esports Production Management Panel
+              <p className="text-[11px] text-slate-400 hidden sm:block">
+                Apex Esports Production &amp; Tournament Command Center
               </p>
             </div>
           </div>
 
-          {/* Quick Stats Pill Strip */}
-          <div className="flex items-center gap-3">
-            <div className="hidden md:flex items-center gap-4 text-xs font-semibold px-4 py-2 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-              <div>
-                <span className="text-white/40">Active Lobbies: </span>
-                <span className="text-emerald-400 font-bold">{metrics.activeLobbies}</span>
-              </div>
-              <div className="w-px h-3 bg-white/10" />
-              <div>
-                <span className="text-white/40">Squads Locked: </span>
-                <span className="text-white font-bold">{metrics.lockedSquads}</span>
-              </div>
-              <div className="w-px h-3 bg-white/10" />
-              <div>
-                <span className="text-white/40">Revenue: </span>
-                <span className="text-emerald-400 font-bold">₹{metrics.totalRevenue.toLocaleString("en-IN")}</span>
-              </div>
-            </div>
-
+          {/* Quick Action Links */}
+          <div className="flex items-center gap-2 sm:gap-3">
             <a
               href="/"
-              className="text-xs text-white/40 hover:text-white transition-colors"
+              className="rounded-xl border border-white/20 bg-white/10 hover:bg-white/20 text-xs font-bold text-white px-3 py-1.5 transition-colors hidden sm:inline-flex items-center gap-1.5"
             >
-              Exit Dashboard
+              <span>🌐</span>
+              <span>View Public Site</span>
             </a>
+            <button
+              onClick={async () => {
+                await supabase.auth.signOut();
+                window.location.href = "/";
+              }}
+              className="rounded-xl bg-rose-500/20 border border-rose-500/40 text-xs font-bold text-rose-200 hover:bg-rose-500/30 px-3 py-1.5 transition-colors cursor-pointer"
+            >
+              Sign out
+            </button>
           </div>
         </header>
 
         {/* Dashboard Workspace */}
-        <main className="flex-1 px-4 sm:px-8 py-8 max-w-7xl w-full mx-auto">
+        <main className="flex-1 px-3 sm:px-8 py-6 sm:py-8 max-w-7xl w-full mx-auto space-y-6">
+          {/* ── Top Platform Metrics Banner (4 Modern Cards) ── */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            {/* Metric 1: Active Lobbies */}
+            <div className="rounded-2xl border border-blue-200 bg-white p-4 sm:p-5 shadow-sm space-y-1">
+              <div className="flex items-center justify-between text-xs font-bold text-blue-700">
+                <span className="uppercase tracking-wider text-[10px]">Active Lobbies</span>
+                <span className="w-7 h-7 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center text-sm font-black">
+                  🎮
+                </span>
+              </div>
+              <p className="text-2xl sm:text-3xl font-black text-slate-900 font-mono tracking-tight">
+                {metrics.activeLobbies}
+              </p>
+              <p className="text-[11px] text-slate-500">Open on public website</p>
+            </div>
+
+            {/* Metric 2: Squads Locked */}
+            <div className="rounded-2xl border border-amber-200 bg-white p-4 sm:p-5 shadow-sm space-y-1">
+              <div className="flex items-center justify-between text-xs font-bold text-amber-800">
+                <span className="uppercase tracking-wider text-[10px]">Squads Locked</span>
+                <span className="w-7 h-7 rounded-lg bg-amber-50 text-amber-800 flex items-center justify-center text-sm font-black">
+                  👥
+                </span>
+              </div>
+              <p className="text-2xl sm:text-3xl font-black text-slate-900 font-mono tracking-tight">
+                {metrics.lockedSquads}
+              </p>
+              <p className="text-[11px] text-slate-500">Total verified registrations</p>
+            </div>
+
+            {/* Metric 3: Total Revenue */}
+            <div className="rounded-2xl border border-emerald-200 bg-white p-4 sm:p-5 shadow-sm space-y-1">
+              <div className="flex items-center justify-between text-xs font-bold text-emerald-800">
+                <span className="uppercase tracking-wider text-[10px]">Total Revenue</span>
+                <span className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-800 flex items-center justify-center text-sm font-black">
+                  💰
+                </span>
+              </div>
+              <p className="text-2xl sm:text-3xl font-black text-emerald-700 font-mono tracking-tight">
+                ₹{metrics.totalRevenue.toLocaleString("en-IN")}
+              </p>
+              <p className="text-[11px] text-slate-500">Collected entry fees</p>
+            </div>
+
+            {/* Metric 4: Pending Payments */}
+            <div className="rounded-2xl border border-rose-200 bg-white p-4 sm:p-5 shadow-sm space-y-1">
+              <div className="flex items-center justify-between text-xs font-bold text-rose-800">
+                <span className="uppercase tracking-wider text-[10px]">Pending UTRs</span>
+                <span className="w-7 h-7 rounded-lg bg-rose-50 text-rose-800 flex items-center justify-center text-sm font-black">
+                  ⏳
+                </span>
+              </div>
+              <p className="text-2xl sm:text-3xl font-black text-rose-700 font-mono tracking-tight">
+                {metrics.pendingPayments}
+              </p>
+              <p className="text-[11px] text-slate-500">
+                {metrics.pendingPayments > 0 ? "Needs admin verification" : "All payments verified"}
+              </p>
+            </div>
+          </div>
+
+          {/* ── Active Tab Workspace ── */}
           {renderTab()}
         </main>
       </div>
