@@ -317,7 +317,7 @@ AS $$
     r.created_at
   FROM registrations r
   LEFT JOIN orders o ON o.id = r.order_id
-  WHERE r.status NOT IN ('cancelled', 'rejected')
+  WHERE r.status::text != 'cancelled'
   ORDER BY r.event_id, r.created_at ASC;
 $$;
 
@@ -384,7 +384,7 @@ BEGIN
   LEFT JOIN orders o ON o.id = r.order_id
   LEFT JOIN payments p ON p.order_id = r.order_id
   WHERE
-    r.status NOT IN ('cancelled', 'rejected')
+    r.status::text != 'cancelled'
     AND (
       (p_utr IS NOT NULL AND (p.utr = p_utr OR EXISTS (SELECT 1 FROM payments p2 WHERE p2.order_id = r.order_id AND p2.utr = p_utr)))
       OR
@@ -423,7 +423,7 @@ BEGIN
       SELECT COUNT(*)::int
       FROM registrations
       WHERE event_id = v_eid
-        AND status NOT IN ('cancelled', 'rejected')
+        AND status::text != 'cancelled'
     )
     WHERE id = v_eid;
   END IF;
