@@ -8,6 +8,7 @@ DROP FUNCTION IF EXISTS has_role(text);
 DROP FUNCTION IF EXISTS has_role(varchar);
 DROP FUNCTION IF EXISTS has_role(text[]);
 DROP FUNCTION IF EXISTS has_role(admin_role_t);
+DROP FUNCTION IF EXISTS has_role(admin_role_t[]);
 
 CREATE OR REPLACE FUNCTION has_role(roles admin_role_t[])
 RETURNS boolean
@@ -145,6 +146,7 @@ END;
 $$;
 
 -- 7. AUTO-TRANSITION LOBBY STATUSES (OPEN -> LIVE -> COMPLETED 20M AFTER MATCH 3 IDP)
+DROP FUNCTION IF EXISTS public.auto_update_lobby_statuses();
 CREATE OR REPLACE FUNCTION auto_update_lobby_statuses()
 RETURNS void
 LANGUAGE plpgsql
@@ -217,6 +219,8 @@ DROP POLICY IF EXISTS "allow_public_all_points_tables" ON points_tables;
 CREATE POLICY "allow_public_all_points_tables" ON points_tables FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
 -- 9. PAYMENT PIPELINE (Resilient LEFT JOIN, accessible by owner & all admins)
+DROP FUNCTION IF EXISTS public.admin_list_payments(text);
+DROP FUNCTION IF EXISTS public.admin_list_payments();
 CREATE OR REPLACE FUNCTION admin_list_payments(p_status text DEFAULT NULL)
 RETURNS TABLE (
   utr          text,
@@ -254,6 +258,7 @@ $$;
 
 GRANT EXECUTE ON FUNCTION admin_list_payments(text) TO authenticated, anon;
 
+DROP FUNCTION IF EXISTS public.admin_verify_payment(text, text);
 CREATE OR REPLACE FUNCTION admin_verify_payment(p_utr text, p_action text)
 RETURNS void
 LANGUAGE plpgsql

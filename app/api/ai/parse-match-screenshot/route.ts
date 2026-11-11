@@ -79,21 +79,31 @@ Return ONLY a valid JSON array of objects with no markdown code fences, matching
       },
     };
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       "x-goog-api-key": apiKey,
     };
-    if (apiKey.startsWith("AQ.")) {
-      headers["Authorization"] = `Bearer ${apiKey}`;
-    }
 
-    const geminiRes = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(geminiPayload),
-    });
+    let geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify(geminiPayload),
+      }
+    );
+
+    // Fallback to gemini-2.0-flash if 1.5-flash model not found (404)
+    if (geminiRes.status === 404) {
+      geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify(geminiPayload),
+        }
+      );
+    }
 
     if (!geminiRes.ok) {
       const errText = await geminiRes.text();
