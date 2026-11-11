@@ -1,15 +1,15 @@
 "use client";
-import { useEffect, useState } from "react";
+
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { ORG_NAME, SUPPORT_WHATSAPP } from "@/lib/config";
-import { Suspense } from "react";
+import Link from "next/link";
 
 function LoginForm() {
   const params = useSearchParams();
   const nextUrl = params.get("next");
 
-  // Primary method is "password" (Sign in / Sign up), secondary is "otp"
   const [authMethod, setAuthMethod] = useState<"password" | "otp">("password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -98,130 +98,143 @@ function LoginForm() {
 
   // 1-Click Google Sign-In with auto-unfreeze protection
   const handleGoogleSignIn = async () => {
-    setGoogleBusy(true);
     setMsg({ text: "", type: "info" });
+    setGoogleBusy(true);
 
-    // Safety fallback: if user cancels or stays on page, unfreeze after 5 seconds
-    const timer = setTimeout(() => {
+    const resetTimer = setTimeout(() => {
       setGoogleBusy(false);
-    }, 5000);
+    }, 6000);
 
     try {
-      const origin = typeof window !== "undefined" ? window.location.origin : "";
-      const redirectUri = `${origin}/login${nextUrl ? `?next=${encodeURIComponent(nextUrl)}` : ""}`;
+      const redirectTo =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/login?next=${encodeURIComponent(nextUrl || "/")}`
+          : undefined;
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: redirectUri,
+          redirectTo,
+          queryParams: {
+            prompt: "select_account",
+            access_type: "offline",
+          },
         },
       });
+
       if (error) {
-        clearTimeout(timer);
+        clearTimeout(resetTimer);
         setGoogleBusy(false);
-        throw error;
+        setMsg({ text: error.message, type: "error" });
       }
     } catch (err: unknown) {
-      clearTimeout(timer);
+      clearTimeout(resetTimer);
       setGoogleBusy(false);
       setMsg({
-        text: (err as Error).message || "Google sign-in could not be initiated.",
+        text: (err as Error).message || "Google sign-in could not be opened. Please try again.",
         type: "error",
       });
     }
   };
 
-  // Primary: Password Login / Sign-Up
-  const handlePasswordSubmit = async (ev: React.FormEvent) => {
-    ev.preventDefault();
-    setBusy(true);
+  // Email & Password Auth (Primary)
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setMsg({ text: "", type: "info" });
+    setBusy(true);
 
-    if (mode === "up") {
-      // Sign Up Flow: Creates account & triggers verification email
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
-        password: password.trim(),
-      });
-      setBusy(false);
-      if (error) return setMsg({ text: error.message, type: "error" });
-
-      if (!data.session) {
-        return setMsg({
-          text: `📧 Account created! A confirmation link has been sent to ${email.trim()}. Check your inbox or spam, click the link to activate your account, then sign in.`,
-          type: "success",
+    try {
+      if (mode === "in") {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
         });
-      }
-    } else {
-      // Sign In Flow
-      const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password: password.trim(),
-      });
-      if (error) {
-        setBusy(false);
-        return setMsg({ text: error.message, type: "error" });
-      }
-    }
+        if (error) throw error;
+        setMsg({ text: "Signed in successfully!", type: "success" });
+        await handleRedirectAfterLogin();
+      } else {
+        const emailRedirectTo =
+          typeof window !== "undefined"
+            ? `${window.location.origin}/login?next=${encodeURIComponent(nextUrl || "/")}`
+            : undefined;
 
-    await handleRedirectAfterLogin();
-    setBusy(false);
+        const { data, error } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: {
+            emailRedirectTo,
+          },
+        });
+        if (error) throw error;
+
+        if (data.session) {
+          setMsg({ text: "Account created and signed in!", type: "success" });
+          await handleRedirectAfterLogin();
+        } else {
+          setMsg({
+            text: `Verification email sent to ${email}. Please check your inbox and click the link to activate your account.`,
+            type: "success",
+          });
+        }
+      }
+    } catch (err: unknown) {
+      setMsg({ text: (err as Error).message || "Authentication error", type: "error" });
+    } finally {
+      setBusy(false);
+    }
   };
 
-  // Secondary: Send 6-Digit OTP Code
-  const handleSendOtp = async (ev: React.FormEvent) => {
-    ev.preventDefault();
-    if (!email.trim()) return;
-    setBusy(true);
+  // OTP Login Flow (Secondary alternative)
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
     setMsg({ text: "", type: "info" });
+    setBusy(true);
+
     try {
-      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      const emailRedirectTo =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/login?next=${encodeURIComponent(nextUrl || "/")}`
+          : undefined;
+
       const { error } = await supabase.auth.signInWithOtp({
         email: email.trim(),
         options: {
           shouldCreateUser: true,
-          emailRedirectTo: `${origin}/login${nextUrl ? `?next=${encodeURIComponent(nextUrl)}` : ""}`,
+          emailRedirectTo,
         },
       });
-
       if (error) throw error;
 
       setOtpSent(true);
       setMsg({
-        text: "✓ 6-digit login code sent! Check your inbox or spam folder.",
+        text: `6-digit login code sent to ${email}! Enter it below to sign in.`,
         type: "success",
       });
     } catch (err: unknown) {
-      setMsg({
-        text: (err as Error).message || "Failed to send verification code. Please check your email.",
-        type: "error",
-      });
+      setMsg({ text: (err as Error).message || "Could not send OTP", type: "error" });
     } finally {
       setBusy(false);
     }
   };
 
-  // Secondary: Verify 6-Digit OTP Code
-  const handleVerifyOtp = async (ev: React.FormEvent) => {
-    ev.preventDefault();
-    if (!otpCode.trim()) return;
-    setBusy(true);
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
     setMsg({ text: "", type: "info" });
+    setBusy(true);
+
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
+      const { error } = await supabase.auth.verifyOtp({
         email: email.trim(),
         token: otpCode.trim(),
         type: "email",
       });
-
       if (error) throw error;
 
-      if (data.session) {
-        setMsg({ text: "✓ Verified successfully! Logging in…", type: "success" });
-        await handleRedirectAfterLogin();
-      }
+      setMsg({ text: "Code verified! Signing you in…", type: "success" });
+      await handleRedirectAfterLogin();
     } catch (err: unknown) {
       setMsg({
-        text: (err as Error).message || "Invalid or expired code. Please try again.",
+        text: (err as Error).message || "Invalid or expired code. Please request a new one.",
         type: "error",
       });
     } finally {
@@ -229,85 +242,82 @@ function LoginForm() {
     }
   };
 
-  async function signOut() {
+  const signOut = async () => {
     await supabase.auth.signOut();
     setUser(null);
     setIsAdmin(false);
-  }
+    setMsg({ text: "Signed out successfully", type: "info" });
+  };
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center bg-[#06070B] px-5 py-12 text-white overflow-hidden">
-      {/* Tactical grid background */}
-      <div
-        className="fixed inset-0 pointer-events-none opacity-100 tactical-grid"
-        aria-hidden="true"
-      />
-      {/* Ambient glows */}
-      <div className="fixed inset-0 pointer-events-none" aria-hidden="true">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 right-1/4 w-72 h-72 bg-purple-500/5 rounded-full blur-3xl" />
-      </div>
+    <div className="min-h-screen bg-[#F4F6FB] flex flex-col justify-between text-slate-900">
+      {/* ── Top Navbar ── */}
+      <header className="border-b border-white/10 bg-[#0A1128] text-white">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 sm:px-6 py-3.5">
+          <Link href="/" className="flex items-center gap-1.5 font-black text-lg">
+            <span className="text-[#FFB800]">◆</span>
+            <span>{ORG_NAME}</span>
+          </Link>
+          <Link
+            href="/"
+            className="text-xs font-bold text-slate-300 hover:text-white transition-colors"
+          >
+            ← Back to home
+          </Link>
+        </div>
+      </header>
 
-      <div className="relative z-10 w-full max-w-sm">
-        {/* Back link */}
-        <a
-          href="/"
-          className="inline-flex items-center gap-1.5 text-sm text-white/50 hover:text-white transition-colors mb-6"
-        >
-          <span>←</span> Back to home
-        </a>
-
-        <div className="rounded-3xl border border-white/[0.08] bg-[#0E1118] p-7 shadow-2xl backdrop-blur-xl">
+      {/* ── Centered Card ── */}
+      <div className="w-full max-w-sm mx-auto px-4 py-12">
+        <div className="rounded-3xl border border-slate-200/90 bg-white p-7 shadow-xl">
           {/* Logo & Header */}
           <div className="mb-6 text-center">
-            <span className="text-2xl font-black tracking-widest uppercase">
-              {ORG_NAME.split(" ")[0]}{" "}
-              <span className="text-emerald-400">
-                {ORG_NAME.split(" ").slice(1).join(" ")}
-              </span>
-            </span>
-            <p className="text-white/40 text-xs mt-1">Player &amp; Host Esports Portal</p>
+            <div className="inline-flex items-center gap-1.5 text-xl font-black text-slate-900 tracking-tight">
+              <span className="text-[#FFB800]">◆</span>
+              <span>{ORG_NAME}</span>
+            </div>
+            <p className="text-slate-500 text-xs mt-1">Player &amp; Host Esports Portal</p>
           </div>
 
           {user ? (
             /* Signed-in state */
-            <div>
-              <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.06] px-4 py-3.5 mb-5">
-                <p className="text-[11px] uppercase tracking-wider text-emerald-400 font-bold mb-0.5">
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+                <p className="text-[10px] uppercase font-black text-emerald-800 tracking-wider mb-0.5">
                   Logged In As
                 </p>
-                <p className="font-bold text-sm truncate text-white">{user}</p>
+                <p className="font-bold text-sm text-slate-900 truncate">{user}</p>
                 {isAdmin && (
-                  <span className="mt-2 inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-[10px] font-bold text-amber-400 uppercase tracking-wider">
+                  <span className="mt-2 inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2.5 py-0.5 text-[10px] font-black text-amber-900 uppercase">
                     <span>👑</span> Owner / Admin Access
                   </span>
                 )}
               </div>
 
-              <div className="flex flex-col gap-2.5">
+              <div className="space-y-2">
                 {isAdmin && (
-                  <a
+                  <Link
                     href="/admin"
-                    className="w-full text-center rounded-xl bg-amber-500 px-4 py-3 font-bold text-sm text-black hover:bg-amber-400 transition-colors shadow-lg shadow-amber-900/30 flex items-center justify-center gap-2"
+                    className="w-full text-center rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-black px-4 py-3 text-xs block transition-colors shadow-sm"
                   >
-                    <span>⚡</span> Open Admin Dashboard
-                  </a>
+                    ⚡ Open Admin Dashboard
+                  </Link>
                 )}
-                <a
+                <Link
                   href="/profile"
-                  className="w-full text-center rounded-xl bg-emerald-500 px-4 py-3 font-bold text-sm text-black hover:bg-emerald-400 transition-colors shadow-md shadow-emerald-900/20"
+                  className="w-full text-center rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 font-black px-4 py-3 text-xs block transition-colors shadow-sm"
                 >
                   My Tournaments &amp; IDP →
-                </a>
-                <a
+                </Link>
+                <Link
                   href="/"
-                  className="w-full text-center rounded-xl border border-white/10 px-4 py-2.5 font-medium text-sm text-white/70 hover:bg-white/5 hover:text-white transition-colors"
+                  className="w-full text-center rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold px-4 py-2.5 text-xs block transition-colors"
                 >
                   Browse Lobbies
-                </a>
+                </Link>
                 <button
                   onClick={signOut}
-                  className="w-full rounded-xl border border-white/15 px-4 py-2.5 font-medium text-xs text-white/40 hover:text-white hover:bg-white/5 transition-colors mt-2"
+                  className="w-full rounded-xl border border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-50 py-2.5 text-xs font-semibold transition-colors mt-1"
                 >
                   Sign out
                 </button>
@@ -321,7 +331,7 @@ function LoginForm() {
                 type="button"
                 onClick={handleGoogleSignIn}
                 disabled={googleBusy}
-                className="w-full py-3 px-4 rounded-xl border border-white/[0.12] bg-white/[0.04] hover:bg-white/[0.08] hover:border-white/20 transition-all flex items-center justify-center gap-3 text-sm font-semibold text-white shadow-sm disabled:opacity-80"
+                className="w-full py-3 px-4 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 transition-all flex items-center justify-center gap-2.5 text-xs sm:text-sm font-bold text-slate-800 shadow-sm disabled:opacity-80 cursor-pointer"
               >
                 <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
                   <path
@@ -345,20 +355,20 @@ function LoginForm() {
               </button>
 
               {/* Divider */}
-              <div className="flex items-center gap-3 text-white/30 my-2">
-                <div className="h-px flex-1 bg-white/[0.08]" />
-                <span className="text-[11px] uppercase tracking-wider font-semibold">or email</span>
-                <div className="h-px flex-1 bg-white/[0.08]" />
+              <div className="flex items-center gap-3 text-slate-400 my-2">
+                <div className="h-px flex-1 bg-slate-200" />
+                <span className="text-[10px] uppercase tracking-wider font-bold">or email</span>
+                <div className="h-px flex-1 bg-slate-200" />
               </div>
 
-              {/* 2. PRIMARY: Email & Password (Default Sign In / Sign Up) */}
+              {/* 2. PRIMARY: Email & Password */}
               {authMethod === "password" && (
-                <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-3">
+                <form onSubmit={handlePasswordSubmit} className="space-y-3">
                   <div className="text-left mb-1">
-                    <p className="text-xs font-bold text-white uppercase tracking-wider">
-                      {mode === "in" ? "Sign In with Password" : "Create a Free Account"}
+                    <p className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                      {mode === "in" ? "Sign In with Password" : "Create an Account"}
                     </p>
-                    <p className="text-[11px] text-white/40 mt-0.5">
+                    <p className="text-[11px] text-slate-500">
                       {mode === "in"
                         ? "Enter your email & password to continue"
                         : "Enter password to receive confirmation email"}
@@ -371,7 +381,7 @@ function LoginForm() {
                     placeholder="Email address"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="rounded-xl border border-white/10 bg-[#06070B] px-4 py-3 text-sm outline-none focus:border-emerald-500 transition-colors placeholder:text-white/30"
+                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-colors placeholder:text-slate-400"
                   />
                   <input
                     type="password"
@@ -380,12 +390,12 @@ function LoginForm() {
                     placeholder="Password (8+ characters)"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="rounded-xl border border-white/10 bg-[#06070B] px-4 py-3 text-sm outline-none focus:border-emerald-500 transition-colors placeholder:text-white/30"
+                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-colors placeholder:text-slate-400"
                   />
 
                   <button
                     disabled={busy}
-                    className="rounded-xl bg-emerald-500 px-4 py-3 font-bold text-sm text-black hover:bg-emerald-400 disabled:opacity-50 transition-colors shadow-md shadow-emerald-900/30"
+                    className="w-full rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] px-4 py-3 font-black text-xs sm:text-sm text-slate-950 disabled:opacity-50 transition-colors shadow-md shadow-amber-500/20 cursor-pointer"
                   >
                     {busy
                       ? "Please wait…"
@@ -394,7 +404,6 @@ function LoginForm() {
                       : "Create Account & Send Verification →"}
                   </button>
 
-                  {/* Toggle between Sign In and Sign Up */}
                   <div className="pt-1 text-center">
                     <button
                       type="button"
@@ -402,24 +411,24 @@ function LoginForm() {
                         setMode(mode === "in" ? "up" : "in");
                         setMsg({ text: "", type: "info" });
                       }}
-                      className="text-xs text-white/60 hover:text-white transition-colors"
+                      className="text-xs text-slate-600 hover:text-slate-900 transition-colors"
                     >
                       {mode === "in" ? (
                         <>
                           Don&apos;t have an account?{" "}
-                          <span className="text-emerald-400 font-bold underline">Sign up</span>
+                          <span className="text-blue-600 font-bold underline">Sign up</span>
                         </>
                       ) : (
                         <>
                           Already have an account?{" "}
-                          <span className="text-emerald-400 font-bold underline">Sign in</span>
+                          <span className="text-blue-600 font-bold underline">Sign in</span>
                         </>
                       )}
                     </button>
                   </div>
 
-                  {/* 3. Subtle Alternative Option: Sign in with OTP */}
-                  <div className="pt-3 border-t border-white/[0.06] text-center">
+                  {/* Subtle Alternative Option: Sign in with OTP */}
+                  <div className="pt-2 border-t border-slate-100 text-center">
                     <button
                       type="button"
                       onClick={() => {
@@ -428,54 +437,54 @@ function LoginForm() {
                         setOtpCode("");
                         setMsg({ text: "", type: "info" });
                       }}
-                      className="text-xs text-white/40 hover:text-emerald-400 transition-colors flex items-center justify-center gap-1.5 mx-auto"
+                      className="text-xs text-slate-400 hover:text-blue-600 transition-colors flex items-center justify-center gap-1 mx-auto cursor-pointer"
                     >
                       <span>⚡</span>
                       <span>
                         {mode === "in"
                           ? "Can't remember password? Sign in with OTP instead"
-                          : "Prefer one-time code? Continue with OTP instead"}
+                          : "Prefer code? Continue with OTP instead"}
                       </span>
                     </button>
                   </div>
                 </form>
               )}
 
-              {/* 3. SECONDARY: OTP Login Flow (Only when chosen) */}
+              {/* 3. SECONDARY: OTP Login Flow */}
               {authMethod === "otp" && (
                 <div className="space-y-3">
                   <div className="text-left mb-1">
-                    <p className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <p className="text-xs font-black text-blue-700 uppercase tracking-wider flex items-center gap-1.5">
                       <span>⚡</span> One-Time Code (OTP) Login
                     </p>
-                    <p className="text-[11px] text-white/40 mt-0.5">
+                    <p className="text-[11px] text-slate-500">
                       We will send a 6-digit login code to your email
                     </p>
                   </div>
 
                   {!otpSent ? (
-                    <form onSubmit={handleSendOtp} className="flex flex-col gap-3">
+                    <form onSubmit={handleSendOtp} className="space-y-3">
                       <input
                         type="email"
                         required
                         placeholder="Enter your email address"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        className="rounded-xl border border-white/10 bg-[#06070B] px-4 py-3 text-sm outline-none focus:border-emerald-500 transition-colors placeholder:text-white/30"
+                        className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-colors"
                       />
                       <button
                         type="submit"
                         disabled={busy || !email.trim()}
-                        className="w-full py-3 rounded-xl bg-emerald-500 text-black font-extrabold text-sm hover:bg-emerald-400 disabled:opacity-50 transition-all shadow-md shadow-emerald-900/30"
+                        className="w-full py-3 rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 font-black text-xs sm:text-sm disabled:opacity-50 transition-all shadow-md"
                       >
                         {busy ? "Sending Code…" : "Send 6-Digit Code →"}
                       </button>
                     </form>
                   ) : (
-                    <form onSubmit={handleVerifyOtp} className="flex flex-col gap-3 animate-in fade-in duration-200">
+                    <form onSubmit={handleVerifyOtp} className="space-y-3 animate-in fade-in duration-200">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="text-white/50">Code sent to:</span>
-                        <span className="font-bold text-emerald-400 truncate max-w-[180px]">{email}</span>
+                        <span className="text-slate-500">Code sent to:</span>
+                        <span className="font-bold text-slate-900 truncate max-w-[170px]">{email}</span>
                       </div>
                       <input
                         type="text"
@@ -485,12 +494,12 @@ function LoginForm() {
                         placeholder="Enter 6-digit code"
                         value={otpCode}
                         onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ""))}
-                        className="rounded-xl border border-emerald-500/40 bg-[#06070B] px-4 py-3 text-center text-lg font-mono tracking-widest font-black outline-none focus:border-emerald-400 transition-colors placeholder:text-white/20 placeholder:font-normal placeholder:tracking-normal placeholder:text-sm"
+                        className="w-full rounded-xl border border-blue-400 bg-slate-50 px-4 py-2.5 text-center text-lg font-mono font-black tracking-widest text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-colors"
                       />
                       <button
                         type="submit"
                         disabled={busy || otpCode.length < 6}
-                        className="w-full py-3 rounded-xl bg-emerald-500 text-black font-extrabold text-sm hover:bg-emerald-400 disabled:opacity-50 transition-all shadow-md shadow-emerald-900/30"
+                        className="w-full py-3 rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 font-black text-xs sm:text-sm disabled:opacity-50 transition-all shadow-md"
                       >
                         {busy ? "Verifying…" : "Verify & Sign In →"}
                       </button>
@@ -500,22 +509,21 @@ function LoginForm() {
                           setOtpSent(false);
                           setOtpCode("");
                         }}
-                        className="text-xs text-white/40 hover:text-white transition-colors text-center"
+                        className="text-xs text-slate-400 hover:text-slate-800 transition-colors text-center w-full block"
                       >
                         ← Resend code or change email
                       </button>
                     </form>
                   )}
 
-                  {/* Switch back to Password */}
-                  <div className="pt-2 text-center border-t border-white/[0.06]">
+                  <div className="pt-2 text-center border-t border-slate-100">
                     <button
                       type="button"
                       onClick={() => {
                         setAuthMethod("password");
                         setMsg({ text: "", type: "info" });
                       }}
-                      className="text-xs text-white/50 hover:text-white transition-colors"
+                      className="text-xs text-slate-500 hover:text-slate-900 transition-colors"
                     >
                       ← Back to Password login
                     </button>
@@ -526,12 +534,12 @@ function LoginForm() {
               {/* Feedback messages */}
               {msg.text && (
                 <p
-                  className={`text-xs rounded-xl px-3.5 py-2.5 font-medium leading-relaxed ${
+                  className={`text-xs rounded-xl p-3 font-semibold leading-relaxed ${
                     msg.type === "error"
-                      ? "text-red-300 bg-red-500/10 border border-red-500/25"
+                      ? "text-red-700 bg-red-50 border border-red-200"
                       : msg.type === "success"
-                      ? "text-emerald-300 bg-emerald-500/10 border border-emerald-500/30"
-                      : "text-amber-300 bg-amber-500/10 border border-amber-500/25"
+                      ? "text-emerald-800 bg-emerald-50 border border-emerald-200"
+                      : "text-amber-800 bg-amber-50 border border-amber-200"
                   }`}
                 >
                   {msg.text}
@@ -541,26 +549,35 @@ function LoginForm() {
           )}
         </div>
 
-        {/* Support link */}
-        <p className="mt-5 text-center text-xs text-white/30">
+        <p className="mt-6 text-center text-xs text-slate-500">
           Need help?{" "}
           <a
             href={`https://wa.me/${SUPPORT_WHATSAPP}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-emerald-500 hover:text-emerald-400 transition-colors font-semibold"
+            className="text-emerald-700 hover:underline font-bold"
           >
             WhatsApp Support
           </a>
         </p>
       </div>
+
+      <footer className="text-center py-4 text-xs text-slate-400 border-t border-slate-200 bg-white">
+        © 2026 {ORG_NAME}. All rights reserved.
+      </footer>
     </div>
   );
 }
 
 export default function LoginPage() {
   return (
-    <Suspense>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#F4F6FB] flex items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-[#FFB800]" />
+        </div>
+      }
+    >
       <LoginForm />
     </Suspense>
   );

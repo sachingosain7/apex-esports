@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { ORG_NAME, SUPPORT_WHATSAPP } from "@/lib/config";
 import { MatchIDPSection } from "@/components/MatchIDPSection";
+import Link from "next/link";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -60,141 +61,116 @@ const STATUS_CONFIG: Record<
 > = {
   confirmed: {
     label: "CONFIRMED",
-    cls: "text-emerald-400 bg-emerald-500/10 border-emerald-500/30",
+    cls: "text-emerald-800 bg-emerald-100 border-emerald-300",
   },
   pending_payment: {
     label: "PENDING PAYMENT",
-    cls: "text-amber-400 bg-amber-500/10 border-amber-500/30",
+    cls: "text-amber-800 bg-amber-100 border-amber-300",
   },
   cancelled: {
     label: "CANCELLED",
-    cls: "text-red-400 bg-red-500/10 border-red-500/30",
+    cls: "text-red-800 bg-red-100 border-red-300",
   },
 };
 
 const KIND_CONFIG: Record<string, string> = {
-  scrim: "text-sky-400 bg-sky-500/10 border-sky-500/30",
-  tournament: "text-purple-400 bg-purple-500/10 border-purple-500/30",
-  league: "text-orange-400 bg-orange-500/10 border-orange-500/30",
+  scrim: "text-blue-700 bg-blue-50 border-blue-200",
+  tournament: "text-purple-700 bg-purple-50 border-purple-200",
+  league: "text-amber-800 bg-amber-50 border-amber-200",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Hook: useCopyToClipboard
+// Sub-components
 // ─────────────────────────────────────────────────────────────────────────────
 
-function useCopyToClipboard(resetMs = 2000): [string | null, (text: string, key: string) => void] {
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const copy = useCallback((text: string, key: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopiedKey(key);
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => setCopiedKey(null), resetMs);
-    });
-  }, [resetMs]);
-
-  return [copiedKey, copy];
+function SkeletonCard() {
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex justify-between items-start">
+        <div className="space-y-2 flex-1">
+          <div className="h-5 w-2/3 rounded-lg skeleton" />
+          <div className="h-3 w-1/3 rounded skeleton" />
+        </div>
+        <div className="h-6 w-20 rounded-full skeleton" />
+      </div>
+      <div className="h-16 rounded-xl skeleton" />
+      <div className="h-12 rounded-xl skeleton" />
+    </div>
+  );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Registration Card
-// ─────────────────────────────────────────────────────────────────────────────
-
-function RegCard({
+function RegistrationCard({
   reg,
-  clientNow,
+  onCancel,
+  cancelling,
 }: {
   reg: MyRegistration;
-  clientNow: number;
+  onCancel: (id: string) => void;
+  cancelling: boolean;
 }) {
-  const [copiedKey, copy] = useCopyToClipboard();
-  const sc = STATUS_CONFIG[reg.status] ?? STATUS_CONFIG.cancelled;
-  const kc = KIND_CONFIG[reg.event_kind] ?? KIND_CONFIG.scrim;
-  const isUpcoming = clientNow > 0 ? new Date(reg.event_starts_at).getTime() > clientNow : true;
-  const isPending = reg.status === "pending_payment";
-  const isConfirmed = reg.status === "confirmed";
-  const orderExpired =
-    reg.order_expires_at && clientNow > 0
-      ? new Date(reg.order_expires_at).getTime() < clientNow
-      : false;
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  function CopyBtn({ value, label, copyKey }: { value: string; label: string; copyKey: string }) {
-    const isCopied = copiedKey === copyKey;
-    return (
-      <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.06] bg-[#06070B] px-4 py-3">
-        <div className="min-w-0">
-          <p className="text-[10px] text-white/40 uppercase tracking-wider mb-0.5">
-            {label}
-          </p>
-          <p className="font-mono font-bold text-emerald-300 tracking-widest text-sm truncate">
-            {value}
-          </p>
-        </div>
-        <button
-          onClick={() => copy(value, copyKey)}
-          className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
-            isCopied
-              ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-              : "border border-white/10 text-white/50 hover:text-white hover:border-white/20"
-          }`}
-        >
-          {isCopied ? "Copied ✓" : "Copy"}
-        </button>
-      </div>
-    );
-  }
+  const copy = (text: string, key: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 2000);
+    });
+  };
+
+  const sc = STATUS_CONFIG[reg.status] ?? {
+    label: reg.status.toUpperCase(),
+    cls: "text-slate-600 bg-slate-100 border-slate-200",
+  };
+
+  const isConfirmed = reg.status === "confirmed";
+  const isPending = reg.status === "pending_payment";
+  const orderExpired =
+    reg.order_expires_at != null &&
+    new Date(reg.order_expires_at).getTime() < Date.now();
 
   return (
-    <div
-      className={`rounded-2xl border bg-[#0E1118] p-5 flex flex-col gap-4 ${
-        reg.status === "cancelled"
-          ? "border-white/[0.04] opacity-60"
-          : reg.status === "confirmed"
-          ? "border-white/[0.08]"
-          : "border-amber-500/20"
-      }`}
-    >
+    <div className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm text-slate-900">
       {/* ── Header ── */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-            <span
-              className={`rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase ${kc}`}
-            >
-              {reg.event_kind}
-            </span>
-            {isUpcoming && isConfirmed && (
-              <span className="rounded-full border border-emerald-500/20 bg-emerald-500/5 px-2 py-0.5 text-[10px] text-emerald-400 font-medium">
-                Upcoming
+          <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+            {reg.event_kind && (
+              <span
+                className={`rounded-md border px-2 py-0.5 text-[10px] font-black tracking-wider uppercase ${
+                  KIND_CONFIG[reg.event_kind] ?? "text-slate-600 bg-slate-100 border-slate-200"
+                }`}
+              >
+                {reg.event_kind}
               </span>
             )}
           </div>
-          <h3 className="font-bold text-base leading-tight">{reg.event_title}</h3>
-          <p className="text-xs text-white/40 mt-0.5">
+          <h3 className="font-black text-base sm:text-lg text-slate-900 leading-snug">
+            {reg.event_title}
+          </h3>
+          <p className="text-xs text-slate-500 font-medium mt-0.5">
             {when(reg.event_starts_at)} IST
           </p>
         </div>
         <span
-          className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold tracking-wider ${sc.cls}`}
+          className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[10px] font-black tracking-wider ${sc.cls}`}
         >
           {sc.label}
         </span>
       </div>
 
       {/* ── Team / Amount ── */}
-      <div className="grid grid-cols-2 gap-3 rounded-xl bg-white/[0.03] border border-white/[0.04] px-4 py-3">
+      <div className="grid grid-cols-2 gap-3 rounded-2xl bg-slate-50 border border-slate-200 p-3.5">
         <div>
-          <p className="text-[10px] text-white/40 uppercase tracking-wider mb-0.5">
+          <p className="text-[10px] text-slate-500 uppercase font-extrabold tracking-wider mb-0.5">
             Team
           </p>
-          <p className="font-semibold text-sm truncate">{reg.team_name}</p>
+          <p className="font-bold text-sm text-slate-900 truncate">{reg.team_name}</p>
         </div>
         <div>
-          <p className="text-[10px] text-white/40 uppercase tracking-wider mb-0.5">
+          <p className="text-[10px] text-slate-500 uppercase font-extrabold tracking-wider mb-0.5">
             Amount Paid
           </p>
-          <p className="font-bold text-sm text-emerald-400">
+          <p className="font-black text-sm text-blue-700 font-mono">
             {reg.amount_paise === 0 ? "Free" : rupees(reg.amount_paise)}
           </p>
         </div>
@@ -202,16 +178,16 @@ function RegCard({
 
       {/* ── Pending payment warning ── */}
       {isPending && !orderExpired && (
-        <div className="flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/[0.07] px-4 py-3 text-xs text-amber-400">
+        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
           <span className="text-base -mt-0.5">⏳</span>
           <div>
-            <p className="font-semibold">Payment pending</p>
-            <p className="text-amber-400/70 mt-0.5">
-              Your slot is held.{" "}
+            <p className="font-bold">Payment pending</p>
+            <p className="text-amber-800 mt-0.5">
+              Your slot is temporarily held.{" "}
               {reg.order_id && (
                 <a
                   href={`/register?resume=${reg.order_id}`}
-                  className="underline underline-offset-2 hover:text-amber-300 transition-colors"
+                  className="underline font-bold text-amber-950 hover:text-black"
                 >
                   Complete payment →
                 </a>
@@ -220,28 +196,24 @@ function RegCard({
           </div>
         </div>
       )}
-      {isPending && orderExpired && (
-        <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/[0.07] px-4 py-3 text-xs text-red-400">
-          <span className="text-base -mt-0.5">❌</span>
-          <p>Slot hold expired. Register again to book a new slot.</p>
-        </div>
-      )}
 
       {/* ── UTR ── */}
       {reg.utr && (
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.06] bg-[#06070B] px-4 py-3">
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5">
           <div>
-            <p className="text-[10px] text-white/40 uppercase tracking-wider mb-0.5">
+            <p className="text-[9px] text-slate-400 uppercase font-black tracking-wider mb-0.5">
               UTR Reference
             </p>
-            <p className="font-mono font-bold text-sm tracking-widest">{reg.utr}</p>
+            <p className="font-mono font-bold text-xs sm:text-sm text-slate-900 tracking-wider">
+              {reg.utr}
+            </p>
           </div>
           <button
             onClick={() => copy(reg.utr!, `utr-${reg.id}`)}
-            className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+            className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
               copiedKey === `utr-${reg.id}`
-                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                : "border border-white/10 text-white/50 hover:text-white hover:border-white/20"
+                ? "bg-emerald-600 text-white"
+                : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-100"
             }`}
           >
             {copiedKey === `utr-${reg.id}` ? "Copied ✓" : "Copy"}
@@ -260,15 +232,15 @@ function RegCard({
         isConfirmed={isConfirmed}
       />
 
-      <p className="text-[10px] text-white/20 mt-auto">
-        Booked {new Date(reg.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+      <p className="text-[11px] text-slate-400 mt-auto">
+        Booked on {new Date(reg.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
       </p>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Main Component
+// Main Page Component
 // ─────────────────────────────────────────────────────────────────────────────
 
 type TabFilter = "all" | "upcoming" | "past" | "pending";
@@ -280,24 +252,7 @@ export default function ProfilePage() {
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<TabFilter>("all");
 
-  useEffect(() => {
-    supabase.auth.getUser().then(async ({ data }) => {
-      const email = data.user?.email ?? null;
-      setUserEmail(email);
-      if (data.user) {
-        const { data: roles } = await supabase
-          .from("admin_roles")
-          .select("role")
-          .eq("user_id", data.user.id);
-        setIsAdmin((roles && roles.length > 0) ?? false);
-      }
-      if (email) loadRegistrations();
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const loadRegistrations = useCallback(async () => {
-    // Fetch registrations with joined event + order data
     const { data: regData, error: regErr } = await supabase
       .from("registrations")
       .select(`
@@ -331,7 +286,6 @@ export default function ProfilePage() {
       return;
     }
 
-    // Fetch UTRs for all orders in one go
     const orderIds = (regData ?? [])
       .map((r) => (r as unknown as { order_id: string }).order_id)
       .filter(Boolean);
@@ -347,7 +301,6 @@ export default function ProfilePage() {
       });
     }
 
-    // Flatten nested joins
     const flat: MyRegistration[] = (regData ?? []).map((r) => {
       const ev = (r as unknown as { events: Record<string, unknown> }).events ?? {};
       const ord = (r as unknown as { orders: Record<string, unknown> }).orders ?? {};
@@ -360,16 +313,16 @@ export default function ProfilePage() {
         created_at: r.created_at,
         event_id: r.event_id,
         order_id: r.order_id,
-        event_title: (ev.title as string) ?? "Unknown Event",
+        event_title: (ev.title as string) ?? "Tournament",
         event_kind: (ev.kind as string) ?? "scrim",
-        event_starts_at: (ev.starts_at as string) ?? "",
-        event_room_id: (ev.room_id as string | null) ?? null,
-        event_room_password: (ev.room_password as string | null) ?? null,
-        event_whatsapp_group_link: (ev.whatsapp_group_link as string | null) ?? null,
-        event_idp_times: (ev.idp_times as string | null) ?? null,
-        event_start_times: (ev.start_times as string | null) ?? null,
-        order_expires_at: (ord.expires_at as string | null) ?? null,
-        order_status: (ord.status as string) ?? "",
+        event_starts_at: (ev.starts_at as string) ?? new Date().toISOString(),
+        event_room_id: (ev.room_id as string) ?? null,
+        event_room_password: (ev.room_password as string) ?? null,
+        event_whatsapp_group_link: (ev.whatsapp_group_link as string) ?? null,
+        event_idp_times: (ev.idp_times as string) ?? null,
+        event_start_times: (ev.start_times as string) ?? null,
+        order_expires_at: (ord.expires_at as string) ?? null,
+        order_status: (ord.status as string) ?? "pending",
         utr: utrMap[r.order_id] ?? null,
       };
     });
@@ -377,94 +330,84 @@ export default function ProfilePage() {
     setRegs(flat);
   }, []);
 
-  const [clientNow, setClientNow] = useState<number>(0);
   useEffect(() => {
-    setClientNow(Date.now());
-  }, []);
+    supabase.auth.getUser().then(async ({ data }) => {
+      const email = data.user?.email ?? null;
+      setUserEmail(email);
+      if (data.user) {
+        const { data: roles } = await supabase
+          .from("admin_roles")
+          .select("role")
+          .eq("user_id", data.user.id);
+        setIsAdmin((roles && roles.length > 0) ?? false);
+      }
+      if (email) loadRegistrations();
+    });
+  }, [loadRegistrations]);
 
   const filtered = (regs ?? []).filter((r) => {
-    if (tab === "upcoming") {
-      if (!clientNow) return r.status === "confirmed";
-      return r.status === "confirmed" && new Date(r.event_starts_at).getTime() > clientNow;
-    }
-    if (tab === "past") {
-      if (!clientNow) return false;
-      return r.status === "confirmed" && new Date(r.event_starts_at).getTime() <= clientNow;
-    }
+    const isPast = new Date(r.event_starts_at).getTime() < Date.now();
+    if (tab === "upcoming") return !isPast && r.status === "confirmed";
+    if (tab === "past") return isPast;
     if (tab === "pending") return r.status === "pending_payment";
     return true;
   });
 
-  const orgParts = ORG_NAME.split(" ");
-
   const TABS: { key: TabFilter; label: string }[] = [
     { key: "all", label: "All" },
     { key: "upcoming", label: "Upcoming" },
-    { key: "pending", label: "Pending" },
     { key: "past", label: "Past" },
+    { key: "pending", label: "Pending" },
   ];
 
   if (!userEmail) {
     return (
-      <div className="min-h-screen bg-[#06070B] flex items-center justify-center px-5 text-white">
-        <div className="text-center max-w-sm">
-          <p className="text-4xl mb-4">🔒</p>
-          <h1 className="text-xl font-bold mb-2">Sign in to view your profile</h1>
-          <p className="text-white/40 text-sm mb-6">
-            Access your booking history, room details, and UTR references.
+      <div className="min-h-screen bg-[#F4F6FB] flex flex-col items-center justify-center p-4 text-center">
+        <div className="max-w-md w-full rounded-3xl bg-white border border-slate-200 p-8 shadow-xl space-y-4">
+          <span className="text-4xl">👤</span>
+          <h1 className="text-xl font-black text-slate-900">Sign in to view your bookings</h1>
+          <p className="text-xs text-slate-500">
+            Sign in to view your registrations, 3-Match IDP, and WhatsApp groups.
           </p>
-          <a
+          <Link
             href="/login?next=/profile"
-            className="inline-block rounded-xl bg-emerald-500 px-6 py-3 font-semibold text-sm text-black hover:bg-emerald-400 transition-colors"
+            className="w-full py-3 rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 font-black text-sm block"
           >
-            Sign in →
-          </a>
+            Sign In →
+          </Link>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#06070B] text-white">
-      {/* ── Background ── */}
-      <div className="fixed inset-0 pointer-events-none tactical-grid" aria-hidden="true" />
-      <div className="fixed inset-0 pointer-events-none" aria-hidden="true">
-        <div className="absolute -top-32 left-1/4 w-[600px] h-[600px] bg-emerald-500/[0.03] rounded-full blur-3xl" />
-        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-purple-600/[0.03] rounded-full blur-3xl" />
-      </div>
-
+    <div className="min-h-screen bg-[#F4F6FB] flex flex-col text-slate-900 pb-20">
       {/* ── Navbar ── */}
-      <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#06070B]/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 sm:px-6 py-4 gap-4">
-          <a href="/" className="text-lg font-extrabold tracking-widest shrink-0">
-            {orgParts[0]}{" "}
-            <span className="text-emerald-400">{orgParts.slice(1).join(" ")}</span>
-          </a>
-          <nav className="flex items-center gap-3 sm:gap-5 text-sm text-white/60">
-            {isAdmin && (
-              <a
-                href="/admin"
-                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 px-3 py-1.5 text-xs font-bold text-amber-400 hover:bg-amber-500/25 transition-all shadow-sm"
-              >
-                <span>⚡</span>
-                <span>Admin Panel</span>
-              </a>
-            )}
-            <a href="/" className="hover:text-white transition-colors hidden sm:inline">
+      <header className="sticky top-0 z-30 border-b border-white/10 bg-[#0A1128] text-white">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 sm:px-6 py-3.5">
+          <Link href="/" className="flex items-center gap-1.5 font-black text-lg">
+            <span className="text-[#FFB800]">◆</span>
+            <span>{ORG_NAME}</span>
+          </Link>
+
+          <nav className="flex items-center gap-4 text-xs sm:text-sm font-semibold">
+            <Link href="/" className="text-slate-300 hover:text-white transition-colors">
               Lobbies
-            </a>
-            <a href="/my-tournaments" className="hover:text-white transition-colors hidden sm:inline">
-              Room Details
-            </a>
-            <span className="text-xs rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-emerald-400 max-w-[160px] truncate hidden sm:inline">
-              {userEmail}
-            </span>
+            </Link>
+            <Link href="/my-tournaments" className="text-slate-300 hover:text-white transition-colors">
+              Find Room (UTR)
+            </Link>
+            {isAdmin && (
+              <Link href="/admin" className="text-amber-300 font-bold hover:underline">
+                ⚡ Admin
+              </Link>
+            )}
             <button
               onClick={async () => {
                 await supabase.auth.signOut();
                 window.location.href = "/";
               }}
-              className="text-xs text-white/40 hover:text-white transition-colors"
+              className="text-xs text-slate-400 hover:text-white transition-colors"
             >
               Sign out
             </button>
@@ -472,139 +415,67 @@ export default function ProfilePage() {
         </div>
       </header>
 
-      <main className="relative mx-auto max-w-5xl px-4 sm:px-6 py-10">
-        {/* ── Page heading ── */}
-        <div className="mb-8">
-          <h1 className="text-2xl sm:text-3xl font-extrabold mb-1">
-            My Bookings
-          </h1>
-          <p className="text-white/40 text-sm">
-            All your registered lobbies, room credentials, and payment references.
+      <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-6">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900">My Bookings</h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+            Manage your registered squads, 3-match custom rooms, and official lobby groups.
           </p>
         </div>
 
-        {/* ── Error ── */}
         {err && (
-          <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-            Could not load registrations: {err}
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-xs text-red-600 font-bold">
+            {err}
           </div>
         )}
 
-        {/* ── Tabs ── */}
-        {regs && regs.length > 0 && (
-          <div className="mb-6 flex gap-1 p-1 rounded-xl bg-white/[0.04] border border-white/[0.06] max-w-full overflow-x-auto no-scrollbar">
-            {TABS.map((t) => {
-              const count =
-                t.key === "all"
-                  ? regs.length
-                  : t.key === "upcoming"
-                  ? regs.filter(
-                      (r) =>
-                        r.status === "confirmed" &&
-                        (!clientNow || new Date(r.event_starts_at).getTime() > clientNow)
-                    ).length
-                  : t.key === "pending"
-                  ? regs.filter((r) => r.status === "pending_payment").length
-                  : regs.filter(
-                      (r) =>
-                        r.status === "confirmed" &&
-                        clientNow > 0 &&
-                        new Date(r.event_starts_at).getTime() <= clientNow
-                    ).length;
-              return (
-                <button
-                  key={t.key}
-                  onClick={() => setTab(t.key)}
-                  className={`rounded-lg px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium transition-all duration-150 flex items-center gap-1.5 ${
-                    tab === t.key
-                      ? "bg-emerald-500 text-black shadow"
-                      : "text-white/60 hover:text-white"
-                  }`}
-                >
-                  {t.label}
-                  {count > 0 && (
-                    <span
-                      className={`rounded-full px-1.5 text-[10px] font-bold ${
-                        tab === t.key
-                          ? "bg-black/20 text-black/70"
-                          : "bg-white/10 text-white/50"
-                      }`}
-                    >
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* ── Loading skeleton ── */}
-        {regs === null && !err && (
-          <div className="grid gap-5 sm:grid-cols-2">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div
-                key={i}
-                className="rounded-2xl border border-white/[0.06] bg-[#0E1118] p-5 flex flex-col gap-4"
-              >
-                <div className="h-4 w-2/3 rounded skeleton" />
-                <div className="h-3 w-1/3 rounded skeleton" />
-                <div className="h-14 rounded-xl skeleton" />
-                <div className="h-11 rounded-xl skeleton" />
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* ── Empty state ── */}
-        {regs !== null && filtered.length === 0 && (
-          <div className="text-center py-16">
-            <p className="text-4xl mb-4">🎮</p>
-            <h3 className="text-lg font-bold mb-2">
-              {tab === "all"
-                ? "No bookings yet"
-                : `No ${tab} bookings`}
-            </h3>
-            <p className="text-white/40 text-sm mb-6">
-              {tab === "all"
-                ? "Browse open lobbies and register your team."
-                : "Switch to 'All' to see your complete history."}
-            </p>
-            {tab === "all" && (
-              <a
-                href="/"
-                className="inline-block rounded-xl bg-emerald-500 px-6 py-3 font-semibold text-sm text-black hover:bg-emerald-400 transition-colors"
-              >
-                Browse Lobbies →
-              </a>
-            )}
-          </div>
-        )}
-
-        {/* ── Registration cards ── */}
-        {filtered.length > 0 && (
-          <div className="grid gap-5 sm:grid-cols-2">
-            {filtered.map((r) => (
-              <RegCard key={r.id} reg={r} clientNow={clientNow} />
-            ))}
-          </div>
-        )}
-
-        {/* ── Support footer ── */}
-        {regs !== null && regs.length > 0 && (
-          <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 text-sm text-white/30">
-            <span>Missing a room ID or need help?</span>
-            <a
-              href={`https://wa.me/${SUPPORT_WHATSAPP}?text=Hi+Apex+Esports+support,+I+need+help+with+my+registration.`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 text-green-400 hover:text-green-300 transition-colors font-medium"
+        {/* Tab Filters */}
+        <div className="flex gap-2 p-1 rounded-2xl bg-slate-200/80 max-w-md overflow-x-auto no-scrollbar">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`flex-1 rounded-xl px-3 py-1.5 text-xs font-bold transition-all ${
+                tab === t.key
+                  ? "bg-white text-slate-950 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
             >
-              <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
-              </svg>
-              WhatsApp Support
-            </a>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* List of Bookings */}
+        {regs === null ? (
+          <div className="space-y-4">
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="rounded-3xl border border-slate-200 bg-white p-12 text-center space-y-3 shadow-sm">
+            <span className="text-4xl">🎮</span>
+            <h3 className="text-base font-black text-slate-900">No bookings in this tab</h3>
+            <p className="text-xs text-slate-500">Pick an open tournament from the home page to compete.</p>
+            <div className="pt-2">
+              <Link
+                href="/"
+                className="inline-block rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 font-black px-6 py-2.5 text-xs shadow-md"
+              >
+                Browse Tournaments
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {filtered.map((reg) => (
+              <RegistrationCard
+                key={reg.id}
+                reg={reg}
+                onCancel={() => {}}
+                cancelling={false}
+              />
+            ))}
           </div>
         )}
       </main>

@@ -1,7 +1,9 @@
 "use client";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { ORG_NAME, SUPPORT_WHATSAPP } from "@/lib/config";
+import { extractLobbyLabel } from "@/lib/matchIdp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -24,6 +26,7 @@ type EventRow = {
   start_times: string | null;
   is_published?: boolean;
   status: string;
+  whatsapp_group_link?: string | null;
   prize_distribution?: {
     first?: number;
     second?: number;
@@ -61,20 +64,26 @@ const when = (iso: string) =>
     timeZone: "Asia/Kolkata",
   });
 
-function slotState(maxSlots: number, realFilled: number, startsAt?: string, status?: string, clientNow?: number) {
+function slotState(
+  maxSlots: number,
+  realFilled: number,
+  startsAt?: string,
+  status?: string,
+  clientNow?: number
+) {
   const isStarted = startsAt && clientNow ? new Date(startsAt).getTime() <= clientNow : false;
   const isLive = status === "live" || isStarted;
 
-  if (status === "completed") return { label: "COMPLETED", color: "#6b7280", left: 0, closed: true };
-  if (status === "cancelled") return { label: "CANCELLED", color: "#ef4444", left: 0, closed: true };
-  if (isLive) return { label: "🔴 LIVE NOW", color: "#38bdf8", left: 0, closed: true };
+  if (status === "completed") return { label: "COMPLETED", color: "#64748B", bg: "#F1F5F9", left: 0, closed: true };
+  if (status === "cancelled") return { label: "CANCELLED", color: "#DC2626", bg: "#FEE2E2", left: 0, closed: true };
+  if (isLive) return { label: "🔴 LIVE NOW", color: "#DC2626", bg: "#FEE2E2", left: 0, closed: true };
 
   const left = maxSlots - realFilled;
-  if (left <= 0) return { label: "FULL · SOLD OUT", color: "#ef4444", left: 0, closed: true };
-  if (left <= 3) return { label: `LAST ${left} SLOTS`, color: "#f59e0b", left, closed: false };
+  if (left <= 0) return { label: "FULL · SOLD OUT", color: "#64748B", bg: "#F1F5F9", left: 0, closed: true };
+  if (left <= 3) return { label: `LAST ${left} SLOTS`, color: "#D97706", bg: "#FEF3C7", left, closed: false };
   if (realFilled / maxSlots >= 0.7)
-    return { label: "FILLING FAST", color: "#f59e0b", left, closed: false };
-  return { label: "OPEN", color: "#10b981", left, closed: false };
+    return { label: "FILLING FAST", color: "#D97706", bg: "#FEF3C7", left, closed: false };
+  return { label: "OPEN", color: "#059669", bg: "#ECFDF5", left, closed: false };
 }
 
 function calculateDefaultPrizes(totalRupees: number) {
@@ -102,110 +111,124 @@ function calculateDefaultPrizes(totalRupees: number) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Design constants
+// Design constants (Vibrant, high-contrast, clean modern esports palette)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const KIND_CONFIG: Record<
-  string,
-  { label: string; cls: string }
-> = {
+const KIND_BADGES: Record<string, { label: string; cls: string }> = {
   scrim: {
     label: "SCRIM",
-    cls: "text-sky-400 bg-sky-500/10 border-sky-500/30",
+    cls: "bg-blue-50 text-blue-700 border-blue-200",
   },
   tournament: {
     label: "TOURNAMENT",
-    cls: "text-purple-400 bg-purple-500/10 border-purple-500/30",
+    cls: "bg-purple-50 text-purple-700 border-purple-200",
   },
   league: {
-    label: "LEAGUE",
-    cls: "text-orange-400 bg-orange-500/10 border-orange-500/30",
+    label: "MAJOR LEAGUE",
+    cls: "bg-amber-50 text-amber-800 border-amber-300",
   },
 };
 
-const MAP_COLORS: Record<string, string> = {
-  Erangel: "text-emerald-400 bg-emerald-500/10 border-emerald-500/30",
-  Miramar: "text-amber-400 bg-amber-500/10 border-amber-500/30",
-  Rondo: "text-purple-400 bg-purple-500/10 border-purple-500/30",
-  Sanhok: "text-sky-400 bg-sky-500/10 border-sky-500/30",
-  Livik: "text-pink-400 bg-pink-500/10 border-pink-500/30",
-  Vikendi: "text-indigo-400 bg-indigo-500/10 border-indigo-500/30",
+const MAP_BADGES: Record<string, string> = {
+  Erangel: "bg-emerald-50 text-emerald-800 border-emerald-200",
+  Miramar: "bg-amber-50 text-amber-800 border-amber-200",
+  Rondo: "bg-indigo-50 text-indigo-800 border-indigo-200",
+  Sanhok: "bg-sky-50 text-sky-800 border-sky-200",
+  Livik: "bg-pink-50 text-pink-800 border-pink-200",
+  Vikendi: "bg-cyan-50 text-cyan-800 border-cyan-200",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-components
 // ─────────────────────────────────────────────────────────────────────────────
 
-function Skeleton() {
+function SkeletonCard() {
   return (
-    <div className="flex flex-col gap-4 rounded-2xl border border-white/[0.06] bg-[#0E1118] p-5">
+    <div className="flex flex-col gap-4 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
       <div className="flex justify-between gap-3">
         <div className="flex flex-col gap-2 flex-1">
-          <div className="h-3 w-20 rounded skeleton" />
-          <div className="h-4 w-3/4 rounded skeleton" />
-          <div className="h-3 w-1/3 rounded skeleton" />
+          <div className="h-3.5 w-24 rounded skeleton" />
+          <div className="h-5 w-3/4 rounded skeleton" />
+          <div className="h-3.5 w-1/3 rounded skeleton" />
         </div>
-        <div className="h-5 w-16 rounded-full skeleton shrink-0" />
-      </div>
-      <div className="flex gap-2">
-        <div className="h-5 w-16 rounded-md skeleton" />
-        <div className="h-5 w-16 rounded-md skeleton" />
+        <div className="h-6 w-20 rounded-full skeleton shrink-0" />
       </div>
       <div className="h-14 rounded-xl skeleton" />
-      <div className="h-2 rounded-full skeleton" />
+      <div className="grid grid-cols-2 gap-3">
+        <div className="h-16 rounded-xl skeleton" />
+        <div className="h-16 rounded-xl skeleton" />
+      </div>
       <div className="h-11 rounded-xl skeleton" />
     </div>
   );
 }
 
-function IDPBox({
+/**
+ * 3-Match Timetable Schedule Box
+ */
+function MatchScheduleBox({
   idpTimes,
   startTimes,
   title,
 }: {
   idpTimes: string | null;
   startTimes: string | null;
-  title?: string;
+  title: string;
 }) {
-  const lobbyTag = title?.match(/\b(L[1-9][0-9]?)\b/i)?.[1]?.toUpperCase() || "Lobby";
+  const lobbyTag = extractLobbyLabel(title);
+  const idp = idpTimes?.trim() || "15m before each match";
+  const starts = startTimes?.trim() || "Starting per schedule";
+
   return (
-    <div className="rounded-xl border border-white/[0.08] bg-[#080B11] p-3 space-y-2 text-xs font-mono">
-      <div className="flex items-center justify-between border-b border-white/[0.05] pb-1.5 mb-1">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1 font-sans">
-          <span>⚡</span>
-          <span>3 Matches · 3 Room IDPs</span>
+    <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 space-y-2">
+      <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
+        <span className="uppercase tracking-wider flex items-center gap-1.5">
+          <span>🎯</span>
+          <span>Match Schedule (3 Matches)</span>
         </span>
-        <span className="text-[10px] text-white/50 font-semibold flex items-center gap-1 font-sans">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 glow-pulse" />
-          {lobbyTag} Group
+        <span className="text-[10px] text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded font-mono">
+          3 IDPs
         </span>
       </div>
-      {idpTimes && (
-        <div className="flex items-center gap-2.5">
-          <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-sky-500/15 text-sky-400 border border-sky-500/30 shrink-0">
+
+      <div className="grid grid-cols-1 gap-1.5 font-mono text-[11px]">
+        {/* IDP Times */}
+        <div className="flex items-center gap-2">
+          <span className="shrink-0 rounded bg-blue-100 text-blue-800 px-1.5 py-0.5 text-[10px] font-bold tracking-wider">
             IDP
           </span>
-          <span className="text-white/80 font-medium truncate">{idpTimes}</span>
+          <span className="text-slate-700 truncate font-semibold" title={idp}>
+            {idp}
+          </span>
         </div>
-      )}
-      {startTimes && (
-        <div className="flex items-center gap-2.5">
-          <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-amber-500/15 text-amber-400 border border-amber-500/30 shrink-0">
+
+        {/* Start Times */}
+        <div className="flex items-center gap-2">
+          <span className="shrink-0 rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 text-[10px] font-bold tracking-wider">
             START
           </span>
-          <span className="text-white/80 font-medium truncate">{startTimes}</span>
+          <span className="text-slate-700 truncate font-semibold" title={starts}>
+            {starts}
+          </span>
         </div>
-      )}
-      <div className="pt-1 flex items-start gap-1.5 text-[10px] text-emerald-400/90 font-sans leading-relaxed">
-        <span className="text-emerald-400 font-bold">📲</span>
-        <span>
-          Host provides dedicated <strong>{lobbyTag} WhatsApp Group</strong> link &amp; drops IDP 15m before each match.
+      </div>
+
+      {/* Lobby WhatsApp Group Notice */}
+      <div className="flex items-center gap-1.5 text-[11px] text-emerald-800 bg-emerald-50/90 border border-emerald-200 rounded-lg px-2.5 py-1.5">
+        <svg className="w-3.5 h-3.5 fill-[#25D366] shrink-0" viewBox="0 0 24 24">
+          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
+        </svg>
+        <span className="truncate">
+          IDP group link provided for <strong>{lobbyTag}</strong>. Register to get access.
         </span>
       </div>
     </div>
   );
 }
 
+/**
+ * Top 4 Prize Distribution Modal
+ */
 function PrizeModal({
   event,
   onClose,
@@ -224,113 +247,119 @@ function PrizeModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-md max-h-[88vh] overflow-y-auto no-scrollbar bg-[#0D111A] border border-white/10 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4 sm:space-y-5 animate-in zoom-in-95 duration-200"
+        className="relative w-full max-w-md max-h-[90vh] overflow-y-auto no-scrollbar bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between">
           <div>
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 mb-1.5">
-              <span>🏆 OFFICIAL PRIZE POOL</span>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 mb-1.5">
+              <span>🏆 GUARANTEED CASH PRIZES</span>
             </div>
-            <h3 className="text-xl font-black text-white">{event.title}</h3>
-            <p className="text-xs text-white/50 mt-0.5">Top 4 Squad Payout Breakdown</p>
+            <h3 className="text-xl font-black text-slate-900">{event.title}</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Top 4 Squad Payout Breakdown</p>
           </div>
           <button
             onClick={onClose}
-            className="rounded-full w-8 h-8 flex items-center justify-center bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors"
+            className="rounded-full w-8 h-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-colors"
           >
             ✕
           </button>
         </div>
 
-        {/* Total Prize Banner */}
-        <div className="rounded-2xl bg-gradient-to-r from-emerald-500/20 via-teal-500/10 to-transparent border border-emerald-500/40 p-4 flex items-center justify-between">
+        {/* Total Prize Pool Banner */}
+        <div className="rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 p-4 text-white flex items-center justify-between shadow-lg shadow-blue-500/20">
           <div>
-            <p className="text-[10px] uppercase font-bold tracking-widest text-emerald-400">Total Guaranteed Pool</p>
-            <p className="text-3xl font-black text-emerald-300 font-mono tracking-tight">₹{totalRupees.toLocaleString("en-IN")}</p>
+            <p className="text-[10px] uppercase font-bold tracking-widest text-blue-200">
+              Total Guaranteed Pool
+            </p>
+            <p className="text-3xl font-black font-mono tracking-tight text-white">
+              ₹{totalRupees.toLocaleString("en-IN")}
+            </p>
           </div>
           <span className="text-4xl">💰</span>
         </div>
 
-        {/* Top 4 Cards Grid */}
-        <div className="space-y-2.5">
+        {/* Payout breakdown cards */}
+        <div className="space-y-2">
           {/* 1st Place */}
-          <div className="flex items-center justify-between p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent border border-amber-500/40">
+          <div className="flex items-center justify-between p-3.5 rounded-xl bg-amber-50/70 border border-amber-200">
             <div className="flex items-center gap-3">
-              <span className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-300 font-black text-base flex items-center justify-center border border-amber-500/40 shadow-inner">
+              <span className="w-9 h-9 rounded-lg bg-amber-100 text-amber-800 font-black text-base flex items-center justify-center border border-amber-300">
                 🥇
               </span>
               <div>
-                <p className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                <p className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
                   <span>#1 Champion</span>
-                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/30 text-amber-300 font-bold">WINNER</span>
+                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-200 text-amber-900 font-extrabold">
+                    WINNER
+                  </span>
                 </p>
-                <p className="text-[10px] text-white/40">Winner Trophy + Direct UPI Transfer</p>
+                <p className="text-[10px] text-slate-500">Direct UPI Transfer</p>
               </div>
             </div>
-            <span className="text-xl font-black font-mono text-amber-300">
+            <span className="text-xl font-black font-mono text-amber-700">
               ₹{first.toLocaleString("en-IN")}
             </span>
           </div>
 
           {/* 2nd Place */}
-          <div className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.03] border border-slate-400/20">
+          <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200">
             <div className="flex items-center gap-3">
-              <span className="w-8 h-8 rounded-xl bg-slate-400/20 text-slate-200 font-black text-sm flex items-center justify-center border border-slate-400/30">
+              <span className="w-8 h-8 rounded-lg bg-slate-200 text-slate-700 font-black text-sm flex items-center justify-center">
                 🥈
               </span>
               <div>
-                <p className="text-xs font-bold text-white uppercase tracking-wider">#2 Runner-Up</p>
-                <p className="text-[10px] text-white/40">2nd Position Payout</p>
+                <p className="text-xs font-bold text-slate-900 uppercase tracking-wider">#2 Runner-Up</p>
+                <p className="text-[10px] text-slate-500">2nd Position Payout</p>
               </div>
             </div>
-            <span className="text-base font-black font-mono text-slate-200">
+            <span className="text-base font-black font-mono text-slate-800">
               ₹{second.toLocaleString("en-IN")}
             </span>
           </div>
 
           {/* 3rd Place */}
-          <div className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.02] border border-orange-500/20">
+          <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200">
             <div className="flex items-center gap-3">
-              <span className="w-8 h-8 rounded-xl bg-orange-500/20 text-orange-300 font-black text-sm flex items-center justify-center border border-orange-500/30">
+              <span className="w-8 h-8 rounded-lg bg-orange-100 text-orange-800 font-black text-sm flex items-center justify-center">
                 🥉
               </span>
               <div>
-                <p className="text-xs font-bold text-white uppercase tracking-wider">#3 3rd Place</p>
-                <p className="text-[10px] text-white/40">3rd Position Payout</p>
+                <p className="text-xs font-bold text-slate-900 uppercase tracking-wider">#3 3rd Place</p>
+                <p className="text-[10px] text-slate-500">3rd Position Payout</p>
               </div>
             </div>
-            <span className="text-base font-black font-mono text-orange-300">
+            <span className="text-base font-black font-mono text-orange-700">
               ₹{third.toLocaleString("en-IN")}
             </span>
           </div>
 
           {/* 4th Place */}
-          <div className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.02] border border-emerald-500/20">
+          <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200">
             <div className="flex items-center gap-3">
-              <span className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-300 font-black text-sm flex items-center justify-center border border-emerald-500/30">
+              <span className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-800 font-black text-sm flex items-center justify-center">
                 🏅
               </span>
               <div>
-                <p className="text-xs font-bold text-white uppercase tracking-wider">#4 4th Place</p>
-                <p className="text-[10px] text-white/40">4th Position Payout</p>
+                <p className="text-xs font-bold text-slate-900 uppercase tracking-wider">#4 4th Place</p>
+                <p className="text-[10px] text-slate-500">4th Position Payout</p>
               </div>
             </div>
-            <span className="text-base font-black font-mono text-emerald-300">
+            <span className="text-base font-black font-mono text-emerald-700">
               ₹{fourth.toLocaleString("en-IN")}
             </span>
           </div>
         </div>
 
-        {/* Verification and payout note */}
-        <div className="rounded-xl bg-black/40 border border-white/[0.06] p-3 text-[11px] text-white/50 leading-relaxed flex items-start gap-2">
-          <span className="text-emerald-400 mt-0.5">⚡</span>
+        {/* Verification notice */}
+        <div className="rounded-xl bg-blue-50 border border-blue-200 p-3 text-[11px] text-blue-900 leading-relaxed flex items-start gap-2">
+          <span className="text-blue-600 mt-0.5">⚡</span>
           <span>
-            Prizes are disbursed directly to the winning team captain's UPI ID within <strong>30 minutes</strong> of match completion with official screenshot verification.
+            Prizes are disbursed directly to winning captains via UPI within <strong>30 minutes</strong> of match finish after screenshot verification.
           </span>
         </div>
 
@@ -340,15 +369,18 @@ function PrizeModal({
             onClose();
             onJoin();
           }}
-          className="w-full py-3.5 rounded-xl bg-emerald-500 text-black font-extrabold text-sm hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-900/30"
+          className="w-full py-3.5 rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 font-black text-sm transition-all shadow-md shadow-amber-500/20"
         >
-          Claim Slot &amp; Compete for ₹{totalRupees.toLocaleString("en-IN")}
+          Select Lobby &amp; Compete for ₹{totalRupees.toLocaleString("en-IN")}
         </button>
       </div>
     </div>
   );
 }
 
+/**
+ * Registered Teams Accordion Component
+ */
 function TeamRoster({
   eventId,
   regs,
@@ -360,17 +392,22 @@ function TeamRoster({
   const eventRegs = regs.filter((r) => r.event_id === eventId);
 
   return (
-    <div className="rounded-xl border border-white/[0.06] overflow-hidden">
+    <div className="rounded-xl border border-slate-200/90 overflow-hidden bg-white">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-white/70 hover:text-white hover:bg-white/[0.03] transition-colors"
+        className="w-full flex items-center justify-between px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors"
       >
         <span className="flex items-center gap-2">
           <span>👥</span>
-          <span>Registered Teams ({eventRegs.length})</span>
+          <span>Registered teams</span>
+          <span className="rounded-full bg-blue-100 text-blue-800 px-2 py-0.5 text-[10px] font-extrabold font-mono">
+            {eventRegs.length}
+          </span>
         </span>
         <svg
-          className={`w-4 h-4 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+          className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${
+            open ? "rotate-180" : ""
+          }`}
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -380,37 +417,34 @@ function TeamRoster({
       </button>
 
       {open && (
-        <div className="border-t border-white/[0.06] max-h-48 overflow-y-auto">
+        <div className="border-t border-slate-100 max-h-48 overflow-y-auto divide-y divide-slate-100 bg-slate-50/50">
           {eventRegs.length === 0 ? (
-            <p className="px-4 py-3 text-xs text-white/30 italic">
-              No teams registered yet. Be the first!
+            <p className="px-4 py-3 text-xs text-slate-400 italic text-center">
+              No teams registered yet. Be the first squad!
             </p>
           ) : (
-            <div className="divide-y divide-white/[0.04]">
-              {eventRegs.map((r, i) => (
-                <div
-                  key={r.created_at + i}
-                  className="flex items-center justify-between gap-2 px-4 py-2.5 text-xs hover:bg-white/[0.02]"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-white/30 w-6 shrink-0">#{i + 1}</span>
-                    <span className="font-medium truncate">{r.team_name}</span>
-                    <span className="text-white/30 font-mono shrink-0">
-                      {r.masked_whatsapp}
-                    </span>
-                  </div>
-                  <span
-                    className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                      r.status === "confirmed"
-                        ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                        : "bg-amber-500/15 text-amber-400 border border-amber-500/30"
-                    }`}
-                  >
-                    {r.status === "confirmed" ? "LOCKED" : "HOLD"}
+            eventRegs.map((r, i) => (
+              <div
+                key={r.created_at + i}
+                className="flex items-center justify-between gap-2 px-3.5 py-2 text-xs hover:bg-white"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-5 h-5 rounded bg-slate-900 text-white text-[10px] font-black flex items-center justify-center shrink-0">
+                    {i + 1}
+                  </span>
+                  <span className="font-bold text-slate-900 truncate">{r.team_name}</span>
+                  <span className="text-slate-400 text-[11px] font-mono shrink-0">
+                    {r.masked_whatsapp}
                   </span>
                 </div>
-              ))}
-            </div>
+                <span className="shrink-0 flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
+                  <span className="w-3.5 h-3.5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[9px] font-black">
+                    ✓
+                  </span>
+                  <span className="hidden sm:inline">Locked</span>
+                </span>
+              </div>
+            ))
           )}
         </div>
       )}
@@ -418,6 +452,9 @@ function TeamRoster({
   );
 }
 
+/**
+ * EventCard — The centerpiece of the new vibrant UI
+ */
 function EventCard({
   e,
   selected,
@@ -436,8 +473,6 @@ function EventCard({
   const eventRegs = regs.filter((r) => r.event_id === e.id);
   const confirmedCount = eventRegs.filter((r) => r.status === "confirmed").length;
   const pendingCount = eventRegs.filter((r) => r.status === "pending_payment").length;
-
-  // Real team count calculated strictly from actual live registrations (no dummy data)
   const realFilled = confirmedCount + pendingCount;
   const slotsLeft = Math.max(0, e.max_slots - realFilled);
   const s = slotState(e.max_slots, realFilled, e.starts_at, e.status, clientNow);
@@ -452,70 +487,63 @@ function EventCard({
     earlyBirdRemaining != null &&
     earlyBirdRemaining > 0;
 
-  const effectiveFee = showEarlyBird
-    ? e.early_bird_fee_paise!
-    : e.entry_fee_paise;
-
-  const kc = KIND_CONFIG[e.kind] ?? KIND_CONFIG.scrim;
+  const effectiveFee = showEarlyBird ? e.early_bird_fee_paise! : e.entry_fee_paise;
+  const kindBadge = KIND_BADGES[e.kind] || KIND_BADGES.scrim;
 
   return (
     <div
-      className={`flex flex-col gap-3.5 sm:gap-4 rounded-2xl border bg-[#0E1118] p-4 sm:p-5 transition-all duration-200 ${
+      className={`flex flex-col gap-3.5 rounded-2xl border bg-white p-4 sm:p-5 transition-all duration-200 ${
         selected
-          ? "border-emerald-400 shadow-lg shadow-emerald-900/20"
-          : "border-white/[0.08] hover:border-white/[0.15] hover:scale-[1.01]"
+          ? "border-amber-400 ring-2 ring-amber-400/30 shadow-xl"
+          : "border-slate-200/90 hover:border-slate-300 hover:shadow-lg shadow-sm"
       }`}
     >
-      {/* ── Early Bird Banner ── */}
-      {showEarlyBird && (
-        <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs text-amber-400 font-medium -mb-1">
-          <span>🐦</span>
-          <span>
-            Early Bird {rupees(e.early_bird_fee_paise!)} · {earlyBirdRemaining}{" "}
-            {earlyBirdRemaining === 1 ? "slot" : "slots"} left, then{" "}
-            {rupees(e.entry_fee_paise)}
+      {/* ── Top Badge Row ── */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span
+            className={`rounded-md border px-2 py-0.5 text-[10px] font-black tracking-wider uppercase ${kindBadge.cls}`}
+          >
+            {kindBadge.label}
           </span>
-        </div>
-      )}
-
-      {/* ── Header row ── */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-            <span
-              className={`rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wider ${kc.cls}`}
-            >
-              {kc.label}
+          {e.mode && (
+            <span className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700 uppercase">
+              {e.mode}
             </span>
-            {e.mode && (
-              <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-white/50 font-medium uppercase">
-                {e.mode}
-              </span>
-            )}
-          </div>
-          <h3 className="text-base font-bold leading-tight">{e.title}</h3>
-          <p className="text-xs text-white/40 mt-0.5">{when(e.starts_at)} IST</p>
+          )}
         </div>
+
+        {/* Status Pill (Live Now / Open / Filling Fast / Sold out) */}
         <span
-          className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wider"
+          className="rounded-full px-2.5 py-0.5 text-[10px] font-black tracking-wider border shrink-0"
           style={{
             color: s.color,
-            border: `1px solid ${s.color}44`,
-            background: `${s.color}18`,
+            background: s.bg,
+            borderColor: `${s.color}33`,
           }}
         >
           {s.label}
         </span>
       </div>
 
-      {/* ── Map badges ── */}
+      {/* ── Title & Timing ── */}
+      <div>
+        <h3 className="text-base sm:text-lg font-black text-slate-900 leading-snug">
+          {e.title}
+        </h3>
+        <p className="text-xs text-slate-500 font-medium mt-0.5">
+          {when(e.starts_at)} IST
+        </p>
+      </div>
+
+      {/* ── Map Badges ── */}
       {e.maps.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {e.maps.map((m) => (
             <span
               key={m}
-              className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${
-                MAP_COLORS[m] ?? "text-white/50 bg-white/5 border-white/10"
+              className={`rounded-md border px-2 py-0.5 text-[10px] font-bold ${
+                MAP_BADGES[m] || "bg-slate-100 text-slate-700 border-slate-200"
               }`}
             >
               {m}
@@ -524,120 +552,193 @@ function EventCard({
         </div>
       )}
 
-      {/* ── IDP & Start Time box ── */}
-      <IDPBox idpTimes={e.idp_times} startTimes={e.start_times} title={e.title} />
+      {/* ── Match Schedule & WhatsApp Link Box (3 Matches) ── */}
+      <MatchScheduleBox
+        idpTimes={e.idp_times}
+        startTimes={e.start_times}
+        title={e.title}
+      />
 
-      {/* ── Prize / fee with Clickable Prize Pool ── */}
-      <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+      {/* ── High Contrast Prize Pool & Entry Fee ── */}
+      <div className="grid grid-cols-2 gap-2.5">
+        {/* Prize Pool */}
         <button
           type="button"
           onClick={(ev) => {
             ev.stopPropagation();
             onViewPrize(e);
           }}
-          className="group rounded-2xl bg-gradient-to-br from-emerald-500/15 via-emerald-500/5 to-transparent border border-emerald-500/30 p-3 sm:p-3.5 text-left hover:border-emerald-400 hover:shadow-lg hover:shadow-emerald-900/20 transition-all cursor-pointer relative overflow-hidden"
+          className="rounded-xl bg-blue-50/80 border border-blue-200/90 p-3 text-left hover:bg-blue-100/70 transition-colors group cursor-pointer"
           title="Click to view Top 4 Prize Distribution"
         >
-          <div className="flex items-center justify-between text-[10px] text-emerald-400 font-bold uppercase tracking-wider mb-1">
-            <span className="flex items-center gap-1">
-              <span>🏆</span> PRIZE POOL
-            </span>
-            <span className="text-[9px] underline group-hover:text-emerald-300 font-semibold text-emerald-400/90">
+          <div className="flex items-center justify-between text-[10px] font-extrabold text-blue-700 uppercase tracking-wider mb-0.5">
+            <span>🏆 PRIZE POOL</span>
+            <span className="text-[9px] underline text-blue-600 font-bold group-hover:text-blue-800">
               Top 4 ↗
             </span>
           </div>
-          <p className="text-lg sm:text-xl font-black text-emerald-300 font-mono tracking-tight group-hover:text-emerald-200">
+          <p className="text-xl sm:text-2xl font-black text-blue-700 font-mono tracking-tight">
             {rupees(e.prize_pool_paise)}
           </p>
-          <p className="text-[10px] text-white/40 mt-0.5">Click for Top 4 Payouts</p>
         </button>
 
-        <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-3 sm:p-3.5 flex flex-col justify-between">
-          <span className="text-[10px] text-white/40 uppercase tracking-wider font-bold">
+        {/* Entry Fee */}
+        <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 flex flex-col justify-between">
+          <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
             ENTRY FEE
           </span>
-          <div className="flex items-baseline gap-1.5 mt-1">
-            <p
-              className={`text-lg sm:text-xl font-black font-mono ${
-                showEarlyBird ? "text-amber-400" : "text-white"
-              }`}
-            >
+          <div className="flex items-baseline gap-1.5">
+            <p className="text-xl sm:text-2xl font-black text-slate-900 font-mono">
               {effectiveFee === 0 ? "Free" : rupees(effectiveFee)}
             </p>
             {showEarlyBird && e.entry_fee_paise > 0 && (
-              <p className="text-xs text-white/30 line-through">
+              <p className="text-xs text-slate-400 line-through">
                 {rupees(e.entry_fee_paise)}
               </p>
             )}
           </div>
-          <p className="text-[10px] text-white/40">per squad</p>
         </div>
       </div>
 
-      {/* ── Real-Time Squad Progress ── */}
+      {/* ── Slot Progress Bar ── */}
       <div>
         <div className="flex items-center justify-between mb-1.5 text-xs">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="font-extrabold text-white text-sm">
-              {realFilled}
-            </span>
-            <span className="text-white/40">/ {e.max_slots} squads</span>
-            {pendingCount > 0 && (
-              <span className="text-[10px] text-amber-400 font-mono bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                {confirmedCount} locked · {pendingCount} in checkout
-              </span>
-            )}
-          </div>
+          <span className="text-slate-600 font-bold">
+            <span className="text-slate-900 font-black">{realFilled}</span> of{" "}
+            {e.max_slots} slots filled
+          </span>
           {slotsLeft > 0 ? (
-            <span className="font-bold text-xs" style={{ color: s.color }}>
-              {slotsLeft} slots left
+            <span className="font-extrabold text-xs" style={{ color: s.color }}>
+              {slotsLeft} left
             </span>
           ) : (
-            <span className="text-red-400 font-bold text-xs uppercase tracking-wider">
+            <span className="text-slate-400 font-bold text-xs uppercase">
               Sold out
             </span>
           )}
         </div>
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.08]">
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
           <div
-            className="h-full rounded-full transition-all duration-700"
-            style={{ width: `${pct}%`, background: s.color }}
+            className="h-full rounded-full transition-all duration-700 bg-gradient-to-r from-blue-600 to-indigo-600"
+            style={{ width: `${pct}%` }}
           />
         </div>
       </div>
 
-      {/* ── Registered Teams accordion ── */}
+      {/* ── Registered Teams Collapsible ── */}
       <TeamRoster eventId={e.id} regs={regs} />
 
-      {/* ── CTA ── */}
+      {/* ── Action Button (Radiant Gold Select / Dark Navy Selected) ── */}
       {s.closed ? (
-        <span className="mt-auto rounded-xl bg-white/[0.04] border border-white/[0.08] px-4 py-3 min-h-[44px] flex items-center justify-center text-center text-xs font-bold uppercase tracking-wider text-white/50">
+        <span className="mt-auto rounded-xl bg-slate-100 border border-slate-200 px-4 py-3 min-h-[44px] flex items-center justify-center text-center text-xs font-bold uppercase tracking-wider text-slate-400 cursor-not-allowed">
           {s.label === "🔴 LIVE NOW"
             ? "🔴 Match In Progress · Closed"
             : s.label === "COMPLETED"
             ? "🏁 Match Completed"
             : s.label === "CANCELLED"
             ? "❌ Match Cancelled"
-            : "🚫 Slots Full · Sold Out"}
+            : "Registration closed"}
         </span>
       ) : (
         <button
           onClick={onToggle}
-          className={`mt-auto rounded-xl px-4 py-3 min-h-[44px] flex items-center justify-center text-sm font-semibold transition-all duration-150 ${
+          className={`mt-auto rounded-xl px-4 py-3 min-h-[44px] flex items-center justify-center text-sm font-black transition-all duration-150 ${
             selected
-              ? "bg-emerald-500 text-black hover:bg-emerald-400 shadow-md shadow-emerald-900/30"
-              : "border border-white/[0.12] hover:bg-white/5 hover:border-white/20 text-white"
+              ? "bg-[#0F172A] text-white hover:bg-slate-800 shadow-md"
+              : "bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 shadow-md shadow-amber-500/20"
           }`}
         >
-          {selected ? "✓  Selected" : "Select Lobby"}
+          {selected ? "Selected ✓" : "Select lobby"}
         </button>
       )}
     </div>
   );
 }
 
+/**
+ * UTR Room Finder Modal
+ */
+function UtrLookupModal({
+  onClose,
+}: {
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState("");
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!query.trim()) return;
+    window.location.href = `/my-tournaments?q=${encodeURIComponent(query.trim())}`;
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-md bg-white border border-slate-200 rounded-3xl p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-2.5">
+            <span className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-black text-lg">
+              🔍
+            </span>
+            <div>
+              <h3 className="text-lg font-black text-slate-900">Find My Room Credentials</h3>
+              <p className="text-xs text-slate-500">Retrieve 3-Match IDP using UTR or Phone</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-full w-8 h-8 flex items-center justify-center bg-slate-100 text-slate-500 hover:text-slate-800"
+          >
+            ✕
+          </button>
+        </div>
+
+        <form onSubmit={handleSearch} className="space-y-3 pt-2">
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              12-Digit UTR Number or WhatsApp Phone:
+            </label>
+            <input
+              type="text"
+              required
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="e.g. 542198012345 or 9876543210"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm font-mono text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-colors"
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="w-full py-3 rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 font-black text-sm transition-all shadow-md"
+          >
+            Fetch 3-Match IDP &amp; WhatsApp Group →
+          </button>
+        </form>
+
+        <p className="text-[11px] text-slate-500 text-center">
+          Need quick help?{" "}
+          <a
+            href={`https://wa.me/${SUPPORT_WHATSAPP}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-emerald-600 font-bold hover:underline"
+          >
+            Contact Host on WhatsApp
+          </a>
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Main Page
+// Main Home Page Component
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function Home() {
@@ -651,6 +752,7 @@ export default function Home() {
   const [sort, setSort] = useState<SortMode>("soon");
   const [search, setSearch] = useState("");
   const [prizeModalEvent, setPrizeModalEvent] = useState<EventRow | null>(null);
+  const [utrModalOpen, setUtrModalOpen] = useState(false);
   const [clientNow, setClientNow] = useState<number>(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const checkoutRef = useRef<HTMLDivElement>(null);
@@ -679,7 +781,7 @@ export default function Home() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  // ── Load events (published and active only) ──
+  // ── Load events ──
   const loadEvents = useCallback(async () => {
     try {
       await supabase.rpc("auto_update_lobby_statuses");
@@ -693,7 +795,6 @@ export default function Home() {
     if (error) setErr(error.message);
     else {
       setErr(null);
-      // Filter out unpublished lobbies: only show is_published !== false and status in ('open', 'live')
       const published = ((data as EventRow[]) || []).filter(
         (e) => e.is_published !== false && (e.status === "open" || e.status === "live")
       );
@@ -701,7 +802,7 @@ export default function Home() {
     }
   }, []);
 
-  // ── Load public registrations (with fallback to direct query) ──
+  // ── Load public registrations ──
   const loadRegs = useCallback(async () => {
     try {
       const { data, error } = await supabase.rpc("get_public_registrations");
@@ -709,50 +810,52 @@ export default function Home() {
         setRegs(data as PublicReg[]);
         return;
       }
-      // Fallback direct query if RPC is not created yet
       const { data: directData } = await supabase
         .from("registrations")
         .select("event_id, team_name, whatsapp, status, created_at");
       if (directData) {
         setRegs(
-          directData.map((r: { event_id: string; team_name: string; whatsapp: string | null; status: string; created_at: string }) => ({
-            event_id: r.event_id,
-            team_name: r.team_name,
-            masked_whatsapp: r.whatsapp ? r.whatsapp.slice(0, 3) + "••••" + r.whatsapp.slice(-3) : "",
-            status: r.status,
-            created_at: r.created_at,
-          }))
+          directData.map(
+            (r: {
+              event_id: string;
+              team_name: string;
+              whatsapp: string | null;
+              status: string;
+              created_at: string;
+            }) => ({
+              event_id: r.event_id,
+              team_name: r.team_name,
+              masked_whatsapp: r.whatsapp
+                ? r.whatsapp.slice(0, 3) + "••••" + r.whatsapp.slice(-3)
+                : "",
+              status: r.status,
+              created_at: r.created_at,
+            })
+          )
         );
       }
     } catch {
-      // Ignore fallback errors
+      // ignore
     }
   }, []);
 
   useEffect(() => {
     loadEvents();
     loadRegs();
-    // Real-time synchronization listening on BOTH events AND registrations tables
     const ch = supabase
       .channel("apex-realtime-public-board")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "events" },
-        () => {
-          loadEvents();
-          loadRegs();
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "registrations" },
-        () => {
-          loadEvents();
-          loadRegs();
-        }
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "events" }, () => {
+        loadEvents();
+        loadRegs();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "registrations" }, () => {
+        loadEvents();
+        loadRegs();
+      })
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => {
+      supabase.removeChannel(ch);
+    };
   }, [loadEvents, loadRegs]);
 
   // ── Derived data ──
@@ -770,10 +873,8 @@ export default function Home() {
   });
 
   const sorted = [...filtered].sort((a, b) => {
-    if (sort === "prize_desc")
-      return b.prize_pool_paise - a.prize_pool_paise;
-    if (sort === "fee_asc")
-      return a.entry_fee_paise - b.entry_fee_paise;
+    if (sort === "prize_desc") return b.prize_pool_paise - a.prize_pool_paise;
+    if (sort === "fee_asc") return a.entry_fee_paise - b.entry_fee_paise;
     return new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime();
   });
 
@@ -781,9 +882,7 @@ export default function Home() {
   const leagues = sorted.filter((e) => e.kind === "league");
 
   const totalLocked = regs.filter((r) => r.status === "confirmed").length;
-  const totalHeld = regs.filter((r) => r.status === "pending_payment").length;
 
-  // Strip picks that became full, closed, or started based on real active team count & match timing
   const sel = picked.filter((id) =>
     (events ?? []).some((e) => {
       if (e.id !== id) return false;
@@ -793,15 +892,17 @@ export default function Home() {
       return !isClosed;
     })
   );
+
   const totalFee = (events ?? [])
     .filter((e) => sel.includes(e.id))
     .reduce((s, e) => {
       const confirmedForEvent = regs.filter(
         (r) => r.event_id === e.id && r.status === "confirmed"
       ).length;
-      const earlyRemaining = e.early_bird_slots != null
-        ? Math.max(0, e.early_bird_slots - confirmedForEvent)
-        : 0;
+      const earlyRemaining =
+        e.early_bird_slots != null
+          ? Math.max(0, e.early_bird_slots - confirmedForEvent)
+          : 0;
       const fee =
         e.early_bird_fee_paise != null && earlyRemaining > 0
           ? e.early_bird_fee_paise
@@ -821,65 +922,48 @@ export default function Home() {
     { key: "all", label: "All" },
     { key: "scrim", label: "Daily Scrims" },
     { key: "tournament", label: "Tournaments" },
-    { key: "league", label: "Major Leagues" },
+    { key: "league", label: "Open leagues" },
   ];
 
-  const orgParts = ORG_NAME.split(" ");
-  const orgFirst = orgParts[0];
-  const orgRest = orgParts.slice(1).join(" ");
-
-  // Total prize pool across all open events
-  const totalPrize = (events ?? []).reduce(
-    (s, e) => s + e.prize_pool_paise,
-    0
-  );
-
   return (
-    <div
-      className="min-h-screen bg-[#06070B] text-white pb-24 sm:pb-12"
-    >
-      {/* ── Fixed background layers ── */}
-      <div
-        className="fixed inset-0 pointer-events-none tactical-grid"
-        aria-hidden="true"
-      />
-      <div className="fixed inset-0 pointer-events-none" aria-hidden="true">
-        <div className="absolute -top-32 left-1/4 w-[600px] h-[600px] bg-emerald-500/[0.04] rounded-full blur-3xl" />
-        <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-purple-600/[0.04] rounded-full blur-3xl" />
-      </div>
-
-      {/* ── Sticky Navbar ── */}
-      <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#06070B]/90 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-3.5 sm:px-6 py-3 sm:py-4 gap-2 sm:gap-4">
-          <a href="/" className="flex items-center gap-1.5 text-base sm:text-xl font-extrabold tracking-widest shrink-0">
-            <span>{orgFirst}</span>{" "}
-            <span className="text-emerald-400">{orgRest}</span>
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 glow-pulse sm:hidden" />
+    <div className="min-h-screen bg-[#0A1128] text-slate-900 pb-28 sm:pb-16 flex flex-col">
+      {/* ────────────────────────────────────────────────────────────────────── */}
+      {/* 1. Header / Navbar (Deep Midnight Navy) */}
+      {/* ────────────────────────────────────────────────────────────────────── */}
+      <header className="sticky top-0 z-30 border-b border-white/[0.08] bg-[#0A1128]/95 backdrop-blur-md text-white">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 gap-3">
+          {/* Brand Logo */}
+          <a href="/" className="flex items-center gap-2 text-lg sm:text-xl font-black tracking-tight shrink-0">
+            <span className="text-[#FFB800] text-xl">◆</span>
+            <span>{ORG_NAME}</span>
           </a>
 
-          {/* Desktop navigation */}
-          <nav className="hidden sm:flex items-center gap-5 text-sm text-white/60">
-            <a href="#scrims" className="hover:text-white transition-colors">
-              Scrims
+          {/* Desktop Navigation Links */}
+          <nav className="hidden md:flex items-center gap-6 text-sm font-semibold text-slate-300">
+            <a href="#tournaments" className="hover:text-white transition-colors">
+              Tournaments
             </a>
             <a href="#leagues" className="hover:text-white transition-colors">
               Leagues
             </a>
-            <a
-              href="/my-tournaments"
-              className="hover:text-white transition-colors flex items-center gap-1"
-            >
+            <a href="/my-tournaments" className="hover:text-white transition-colors flex items-center gap-1">
               <span>🔑</span>
               <span>Room ID &amp; Password</span>
             </a>
+            <button
+              onClick={() => setUtrModalOpen(true)}
+              className="hover:text-[#FFB800] transition-colors flex items-center gap-1 cursor-pointer"
+            >
+              <span>🔍</span>
+              <span>Find My Room (UTR)</span>
+            </button>
           </nav>
 
-          {/* Right actions */}
+          {/* Right Actions */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            {/* Quick mobile Room ID badge */}
             <a
               href="/my-tournaments"
-              className="sm:hidden inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-bold text-emerald-400 hover:bg-emerald-500/20 transition-all"
+              className="md:hidden inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-bold text-white hover:bg-white/20 transition-all"
             >
               <span>🔑</span>
               <span>Room ID</span>
@@ -888,10 +972,9 @@ export default function Home() {
             {isAdmin && (
               <a
                 href="/admin"
-                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs font-bold text-amber-400 hover:bg-amber-500/25 transition-all shadow-sm"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 px-2.5 sm:px-3 py-1 text-xs font-bold text-amber-300 hover:bg-amber-500/30 transition-all"
               >
-                <span>⚡</span>
-                <span className="hidden sm:inline">Admin Panel</span>
+                <span>⚡ Admin</span>
               </a>
             )}
 
@@ -899,8 +982,7 @@ export default function Home() {
               <div className="flex items-center gap-2">
                 <a
                   href="/profile"
-                  className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-400 font-medium hover:bg-emerald-500/20 transition-colors hidden sm:inline-flex max-w-[160px] truncate"
-                  title="My Bookings & Profile"
+                  className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white font-medium hover:bg-white/20 transition-colors hidden sm:inline-flex max-w-[150px] truncate"
                 >
                   {userEmail}
                 </a>
@@ -909,8 +991,7 @@ export default function Home() {
                     await supabase.auth.signOut();
                     window.location.reload();
                   }}
-                  className="text-xs text-white/40 hover:text-white transition-colors hidden sm:inline"
-                  title="Sign out"
+                  className="text-xs text-slate-400 hover:text-white transition-colors hidden sm:inline"
                 >
                   Sign out
                 </button>
@@ -918,17 +999,17 @@ export default function Home() {
             ) : (
               <a
                 href="/login"
-                className="rounded-lg bg-emerald-500 px-3 sm:px-4 py-1 sm:py-1.5 text-xs font-bold text-black hover:bg-emerald-400 transition-colors hidden sm:inline-block"
+                className="rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] px-3.5 sm:px-4 py-1.5 text-xs font-black text-slate-950 transition-colors hidden sm:inline-block shadow-sm"
               >
-                Sign in
+                Sign In
               </a>
             )}
 
-            {/* Mobile Hamburger toggle */}
+            {/* Mobile Menu Hamburger */}
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
-              className="sm:hidden rounded-xl border border-white/10 bg-white/[0.04] p-1.5 text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+              className="md:hidden rounded-lg border border-white/15 bg-white/5 p-2 text-white hover:bg-white/10 transition-colors"
               aria-label="Open navigation menu"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -939,100 +1020,95 @@ export default function Home() {
         </div>
       </header>
 
-      {/* ── Slide-over Mobile Navigation Drawer ── */}
+      {/* ────────────────────────────────────────────────────────────────────── */}
+      {/* 2. Slide-over Mobile Navigation Drawer */}
+      {/* ────────────────────────────────────────────────────────────────────── */}
       {mobileMenuOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-          <div
-            className="fixed inset-0"
-            onClick={() => setMobileMenuOpen(false)}
-          />
-          <div className="relative w-full max-w-[280px] h-full bg-[#0A0D14] border-l border-white/[0.08] p-5 shadow-2xl flex flex-col justify-between overflow-y-auto no-scrollbar animate-in slide-in-from-right duration-200 z-10">
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="fixed inset-0" onClick={() => setMobileMenuOpen(false)} />
+          <div className="relative w-full max-w-[280px] h-full bg-[#0A1128] border-l border-white/10 p-5 shadow-2xl flex flex-col justify-between overflow-y-auto no-scrollbar animate-in slide-in-from-right duration-200 z-10 text-white">
             <div>
-              <div className="flex items-center justify-between pb-4 border-b border-white/[0.08]">
-                <div>
-                  <span className="text-base font-black tracking-wider uppercase text-white">
-                    {orgFirst} <span className="text-emerald-400">{orgRest}</span>
-                  </span>
-                  <p className="text-[10px] text-white/40">Player &amp; Host Portal</p>
+              <div className="flex items-center justify-between pb-4 border-b border-white/10">
+                <div className="flex items-center gap-1.5 font-black text-lg">
+                  <span className="text-[#FFB800]">◆</span>
+                  <span>{ORG_NAME}</span>
                 </div>
                 <button
                   onClick={() => setMobileMenuOpen(false)}
-                  className="rounded-full w-7 h-7 flex items-center justify-center bg-white/5 text-white/60 hover:text-white transition-colors"
+                  className="rounded-full w-7 h-7 flex items-center justify-center bg-white/10 text-slate-400 hover:text-white"
                 >
                   ✕
                 </button>
               </div>
 
-              {/* Navigation links */}
-              <nav className="flex flex-col gap-1 pt-4">
+              <nav className="flex flex-col gap-1.5 pt-4 text-sm font-semibold">
                 <a
-                  href="#scrims"
+                  href="#tournaments"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.05] text-sm font-semibold text-white/80 hover:text-white transition-colors"
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 text-slate-200"
                 >
-                  <span className="text-base">🎮</span>
-                  <span>Daily Scrims</span>
+                  <span>🎮</span>
+                  <span>Open Tournaments</span>
                 </a>
                 <a
                   href="#leagues"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.05] text-sm font-semibold text-white/80 hover:text-white transition-colors"
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 text-slate-200"
                 >
-                  <span className="text-base">🏆</span>
+                  <span>🏆</span>
                   <span>Major Leagues</span>
                 </a>
                 <a
                   href="/my-tournaments"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-emerald-500/[0.08] border border-emerald-500/20 text-sm font-semibold text-emerald-400 transition-colors"
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-blue-500/10 text-blue-300 border border-blue-500/20"
                 >
-                  <span className="text-base">🔑</span>
-                  <span>Room ID &amp; Password</span>
+                  <span>🔑</span>
+                  <span>3-Match IDP &amp; Rooms</span>
                 </a>
-                <a
-                  href="/profile"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.05] text-sm font-semibold text-white/80 hover:text-white transition-colors"
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    setUtrModalOpen(true);
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 text-slate-200 text-left font-semibold"
                 >
-                  <span className="text-base">📋</span>
-                  <span>My Bookings</span>
-                </a>
+                  <span>🔍</span>
+                  <span>Find My Room (UTR)</span>
+                </button>
                 <a
                   href={`https://wa.me/${SUPPORT_WHATSAPP}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.05] text-sm font-semibold text-green-400 hover:text-green-300 transition-colors"
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 text-emerald-400"
                 >
-                  <span className="text-base">💬</span>
+                  <span>💬</span>
                   <span>WhatsApp Support</span>
                 </a>
                 {isAdmin && (
                   <a
                     href="/admin"
                     onClick={() => setMobileMenuOpen(false)}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm font-semibold text-amber-400 transition-colors"
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-amber-500/15 text-amber-300 border border-amber-500/30"
                   >
-                    <span className="text-base">⚡</span>
-                    <span>Admin Dashboard</span>
+                    <span>⚡</span>
+                    <span>Admin Panel</span>
                   </a>
                 )}
               </nav>
             </div>
 
-            {/* Bottom Account Controls */}
-            <div className="pt-4 border-t border-white/[0.08]">
+            <div className="pt-4 border-t border-white/10">
               {userEmail ? (
-                <div className="space-y-2.5">
-                  <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-2.5">
-                    <p className="text-[10px] uppercase font-bold text-emerald-400">Signed In</p>
-                    <p className="text-xs font-semibold text-white truncate mt-0.5">{userEmail}</p>
-                  </div>
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-400">Signed in as:</p>
+                  <p className="text-xs font-bold text-white truncate">{userEmail}</p>
                   <button
                     onClick={async () => {
                       await supabase.auth.signOut();
                       window.location.reload();
                     }}
-                    className="w-full py-2 rounded-xl border border-white/15 text-xs font-semibold text-white/50 hover:text-white hover:bg-white/5 transition-colors"
+                    className="w-full py-2 rounded-xl border border-white/20 text-xs text-slate-300 hover:bg-white/5"
                   >
                     Sign out
                   </button>
@@ -1040,9 +1116,9 @@ export default function Home() {
               ) : (
                 <a
                   href="/login"
-                  className="w-full py-2.5 rounded-xl bg-emerald-500 text-black font-extrabold text-xs flex items-center justify-center gap-2 hover:bg-emerald-400 transition-colors shadow-md shadow-emerald-900/30"
+                  className="w-full py-2.5 rounded-xl bg-[#FFB800] text-slate-950 font-black text-xs flex items-center justify-center gap-2 hover:bg-[#F59E0B]"
                 >
-                  Sign In / Create Account →
+                  Sign In / Register →
                 </a>
               )}
             </div>
@@ -1050,349 +1126,406 @@ export default function Home() {
         </div>
       )}
 
-      <main className="relative mx-auto max-w-6xl px-3.5 sm:px-6">
-        {/* ── Hero ── */}
-        <section className="pt-5 pb-6 sm:py-20">
-          {/* Live squad counter based on real registrations */}
-          <div className="mb-3 sm:mb-5 inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/[0.07] px-3 sm:px-4 py-1 sm:py-1.5 text-xs sm:text-sm text-emerald-300">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 glow-pulse shrink-0" />
-            {totalLocked > 0 ? (
+      {/* ────────────────────────────────────────────────────────────────────── */}
+      {/* 3. Hero Section (Deep Navy with High-Energy Esports Headline) */}
+      {/* ────────────────────────────────────────────────────────────────────── */}
+      <section className="bg-[#0A1128] text-white pt-8 pb-12 sm:pt-16 sm:pb-20 relative overflow-hidden hero-grid">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 relative z-10">
+          <div className="max-w-3xl">
+            {/* Live Squads locked pill */}
+            <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-400/10 px-3.5 py-1 text-xs sm:text-sm font-bold text-[#FFB800] mb-4">
+              <span className="w-2 h-2 rounded-full bg-[#FFB800] glow-pulse shrink-0" />
               <span>
-                <strong>{totalLocked}</strong> squads locked in today
-                {totalHeld > 0 && (
-                  <span className="text-white/50 text-[10px] sm:text-xs">
-                    {" "}· {totalHeld} holding slots
-                  </span>
-                )}
+                {totalLocked > 0
+                  ? `${totalLocked} squads already locked in today`
+                  : "Daily Scrims & Tournaments Live"}
               </span>
-            ) : (
-              <span>
-                Daily Scrims &amp; Tournaments Open · Claim Slot #1
-              </span>
-            )}
+            </div>
+
+            {/* Headline matching Savage reference */}
+            <h1 className="text-3xl sm:text-6xl font-black tracking-tight leading-[1.1] text-white">
+              Pick a match.
+              <br />
+              <span className="text-[#FFB800]">Lock your squad.</span>
+            </h1>
+
+            <p className="mt-4 text-sm sm:text-lg text-slate-300 leading-relaxed max-w-2xl font-normal">
+              Custom-room 3-match tournaments and daily leagues with guaranteed cash prizes.
+              Register your team, pay the entry fee via instant UPI QR, and we provide your
+              individual lobby WhatsApp group &amp; 3-Match IDP live.
+            </p>
+
+            {/* CTAs */}
+            <div className="mt-6 sm:mt-8 flex flex-wrap items-center gap-3">
+              <a
+                href="#tournaments"
+                className="rounded-full bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 font-black px-6 sm:px-7 py-3 text-sm sm:text-base transition-all shadow-lg shadow-amber-500/20"
+              >
+                See tournaments
+              </a>
+              <a
+                href="#leagues"
+                className="rounded-full bg-white/10 hover:bg-white/15 text-white font-bold px-6 py-3 text-sm sm:text-base border border-white/20 transition-all"
+              >
+                See leagues
+              </a>
+              <button
+                type="button"
+                onClick={() => setUtrModalOpen(true)}
+                className="rounded-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 font-bold px-5 py-3 text-xs sm:text-sm border border-blue-500/40 transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <span>🔍</span>
+                <span>Paid? Get Room Details</span>
+              </button>
+            </div>
           </div>
+        </div>
+      </section>
 
-          <h1 className="max-w-2xl text-2xl sm:text-6xl font-black leading-tight sm:leading-[1.1] tracking-tight">
-            Your next lobby{" "}
-            <span className="text-emerald-400">is waiting.</span>
-          </h1>
-          <p className="mt-2 sm:mt-5 max-w-xl text-xs sm:text-lg text-white/50 leading-relaxed">
-            Daily scrims, tournaments and leagues with real cash prizes.
-            Book a slot in under a minute.
-          </p>
+      {/* ────────────────────────────────────────────────────────────────────── */}
+      {/* 4. Main Content Area (Crisp Light Canvas `#F4F6FB` - Exactly like Reference) */}
+      {/* ────────────────────────────────────────────────────────────────────── */}
+      <main className="bg-[#F4F6FB] flex-1 py-8 sm:py-12 border-t border-slate-200">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 space-y-8">
+          {/* Error Banner */}
+          {err && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+              Could not load lobbies: {err}
+            </div>
+          )}
 
-          <div className="mt-4 sm:mt-8 flex flex-wrap gap-2.5 sm:gap-3">
-            <a
-              href="#scrims"
-              className="rounded-xl bg-emerald-500 px-4 sm:px-6 py-2.5 sm:py-3 font-semibold text-black hover:bg-emerald-400 transition-colors text-xs sm:text-base shadow-md shadow-emerald-900/20"
-            >
-              Browse Scrims
-            </a>
-            <a
-              href="#leagues"
-              className="rounded-xl border border-white/15 px-4 sm:px-6 py-2.5 sm:py-3 font-semibold hover:bg-white/5 transition-colors text-xs sm:text-base"
-            >
-              View Leagues
-            </a>
-            <a
-              href="/my-tournaments"
-              className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 sm:px-5 py-2.5 sm:py-3 font-semibold text-emerald-400 hover:bg-emerald-500/20 transition-colors text-xs sm:text-base flex items-center gap-1.5"
-            >
-              <span>🔑</span>
-              <span>Room ID &amp; Password</span>
-            </a>
-          </div>
-
-          {/* Quick stats grid: 2 columns on mobile, 4 on desktop */}
-          {events && events.length > 0 && (
-            <div className="mt-5 sm:mt-10 grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
-              {[
-                { label: "Active Lobbies", value: events.length.toString(), icon: "🎮" },
-                {
-                  label: "Squads Locked",
-                  value: totalLocked.toString(),
-                  icon: "👥",
-                },
-                {
-                  label: "Total Prize Pool",
-                  value: rupees(totalPrize),
-                  icon: "💰",
-                },
-                {
-                  label: "Entry From",
-                  value:
-                    events.some((e) => e.entry_fee_paise === 0)
-                      ? "Free"
-                      : rupees(
-                          Math.min(...events.map((e) => e.entry_fee_paise))
-                        ),
-                  icon: "⚡",
-                },
-              ].map((stat) => (
-                <div
-                  key={stat.label}
-                  className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-2.5 sm:p-4 hover:border-white/10 transition-colors"
+          {/* ── Filter Tabs & Search Bar ── */}
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+            {/* Filter Pills */}
+            <div className="flex gap-2 p-1 rounded-2xl bg-slate-200/80 overflow-x-auto no-scrollbar">
+              {FILTERS.map((f) => (
+                <button
+                  key={f.key}
+                  onClick={() => setFilter(f.key)}
+                  className={`shrink-0 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold transition-all duration-150 ${
+                    filter === f.key
+                      ? "bg-white text-slate-950 shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
                 >
-                  <div className="flex items-center justify-between text-white/40 mb-1">
-                    <span className="text-[10px] sm:text-xs uppercase font-bold tracking-wider">{stat.label}</span>
-                    <span className="text-xs sm:text-sm">{stat.icon}</span>
-                  </div>
-                  <p className="text-lg sm:text-2xl font-black text-white font-mono">
-                    {stat.value}
-                  </p>
-                </div>
+                  {f.label}
+                </button>
               ))}
             </div>
-          )}
-        </section>
 
-        {/* ── Error banner ── */}
-        {err && (
-          <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-            Could not load events: {err}
-          </div>
-        )}
-
-        {/* ── Filter & Search Bar ── */}
-        <div className="mb-6 sm:mb-8 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
-          {/* Filter tabs with smooth mobile horizontal swipe */}
-          <div className="flex gap-1.5 p-1 rounded-2xl bg-white/[0.04] border border-white/[0.06] overflow-x-auto no-scrollbar -mx-3.5 px-3.5 sm:mx-0 sm:px-0">
-            {FILTERS.map((f) => (
-              <button
-                key={f.key}
-                onClick={() => setFilter(f.key)}
-                className={`shrink-0 rounded-xl px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold transition-all duration-150 ${
-                  filter === f.key
-                    ? "bg-emerald-500 text-black shadow-md shadow-emerald-900/20"
-                    : "text-white/60 hover:text-white"
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Search + Sort side-by-side on mobile */}
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <div className="relative flex-1 sm:w-52">
-              <svg
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            {/* Search Input & Sort */}
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 sm:w-60">
+                <svg
+                  className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search lobby, map, time…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 py-2 text-xs sm:text-sm text-slate-900 outline-none focus:border-blue-600 transition-colors shadow-sm"
                 />
-              </svg>
-              <input
-                type="text"
-                placeholder="Search lobbies…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full rounded-xl border border-white/[0.08] bg-[#0E1118] pl-9 pr-3 py-2 text-xs sm:text-sm outline-none focus:border-emerald-500 transition-colors placeholder:text-white/25"
-              />
+              </div>
+
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value as SortMode)}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm font-semibold text-slate-700 outline-none focus:border-blue-600 transition-colors shadow-sm shrink-0"
+              >
+                <option value="soon">Starting Soon</option>
+                <option value="prize_desc">Prize: High → Low</option>
+                <option value="fee_asc">Entry: Low → High</option>
+              </select>
             </div>
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as SortMode)}
-              className="rounded-xl border border-white/[0.08] bg-[#0E1118] px-2.5 sm:px-3 py-2 text-xs sm:text-sm outline-none focus:border-emerald-500 transition-colors text-white/70 shrink-0"
-            >
-              <option value="soon">Starting Soon</option>
-              <option value="prize_desc">Prize: High → Low</option>
-              <option value="fee_asc">Entry: Low → High</option>
-            </select>
           </div>
+
+          {/* ────────────────────────────────────────────────────────────────── */}
+          {/* Section: Open Tournaments / Scrims */}
+          {/* ────────────────────────────────────────────────────────────────── */}
+          <section id="tournaments" className="scroll-mt-24 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                  Open tournaments
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-500 font-medium">
+                  3 Matches per lobby · Room ID &amp; Password released 15m before match
+                </p>
+              </div>
+              {events && scrims.length > 0 && (
+                <span className="rounded-full bg-blue-100 text-blue-800 px-3 py-0.5 text-xs font-black">
+                  {scrims.length} open
+                </span>
+              )}
+            </div>
+
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {!events && !err
+                ? Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)
+                : scrims.map((e) => (
+                    <EventCard
+                      key={e.id}
+                      e={e}
+                      selected={sel.includes(e.id)}
+                      onToggle={() => toggle(e.id)}
+                      onViewPrize={setPrizeModalEvent}
+                      regs={regs}
+                      clientNow={clientNow}
+                    />
+                  ))}
+            </div>
+
+            {events && scrims.length === 0 && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
+                <p className="text-3xl mb-2">🎮</p>
+                <p className="text-slate-600 font-bold">No open scrims right now</p>
+                <p className="text-slate-400 text-xs mt-1">Host is adding fresh lobbies shortly.</p>
+              </div>
+            )}
+          </section>
+
+          {/* ────────────────────────────────────────────────────────────────── */}
+          {/* Section: Open Leagues (from Reference Screenshot 4) */}
+          {/* ────────────────────────────────────────────────────────────────── */}
+          <section id="leagues" className="scroll-mt-24 space-y-4 pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                  Open leagues
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-500 font-medium">
+                  Multi-day major tournaments with large prize pools &amp; finals streaming
+                </p>
+              </div>
+              {events && leagues.length > 0 && (
+                <span className="rounded-full bg-amber-100 text-amber-900 px-3 py-0.5 text-xs font-black">
+                  {leagues.length} active
+                </span>
+              )}
+            </div>
+
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {!events && !err
+                ? Array.from({ length: 2 }).map((_, i) => <SkeletonCard key={i} />)
+                : leagues.map((e) => (
+                    <EventCard
+                      key={e.id}
+                      e={e}
+                      selected={sel.includes(e.id)}
+                      onToggle={() => toggle(e.id)}
+                      onViewPrize={setPrizeModalEvent}
+                      regs={regs}
+                      clientNow={clientNow}
+                    />
+                  ))}
+            </div>
+
+            {events && leagues.length === 0 && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+                <p className="text-2xl mb-1">🏆</p>
+                <p className="text-slate-700 font-bold text-sm">No active leagues right now</p>
+                <p className="text-slate-400 text-xs mt-0.5">Next season announcement dropping soon!</p>
+              </div>
+            )}
+          </section>
+
+          {/* ────────────────────────────────────────────────────────────────── */}
+          {/* Section: "Paid but didn't get room details?" (Reference Screenshot 3) */}
+          {/* ────────────────────────────────────────────────────────────────── */}
+          <section className="pt-6">
+            <div className="rounded-3xl bg-[#0D1836] text-white p-6 sm:p-8 shadow-xl border border-blue-900/50 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+              <div className="flex items-start gap-4">
+                <span className="w-12 h-12 rounded-2xl bg-[#FFB800] text-slate-950 font-black text-2xl flex items-center justify-center shrink-0 shadow-md shadow-amber-500/20">
+                  ?
+                </span>
+                <div className="space-y-2">
+                  <h3 className="text-xl sm:text-2xl font-black text-white">
+                    Paid but didn&apos;t get room details?
+                  </h3>
+                  <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-xl">
+                    No stress. Your payment is safe. Enter your 12-digit UTR or WhatsApp number
+                    and we&apos;ll show your 3-match room details instantly.
+                  </p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-300 font-semibold pt-1">
+                    <span>① Open payment app &amp; copy 12-digit UTR</span>
+                    <span>② Paste it on the next page</span>
+                    <span>③ Get 3-Match IDP &amp; WhatsApp Group</span>
+                  </div>
+                  <p className="text-xs text-slate-400 pt-1">
+                    Still stuck? WhatsApp support:{" "}
+                    <a
+                      href={`https://wa.me/${SUPPORT_WHATSAPP}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[#FFB800] font-bold hover:underline"
+                    >
+                      +91 {SUPPORT_WHATSAPP}
+                    </a>
+                  </p>
+                </div>
+              </div>
+
+              <div className="shrink-0 w-full md:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setUtrModalOpen(true)}
+                  className="w-full md:w-auto rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 font-black px-6 py-3.5 text-sm transition-all shadow-md shadow-amber-500/20 cursor-pointer"
+                >
+                  Get my room details
+                </button>
+              </div>
+            </div>
+          </section>
         </div>
-
-        {/* ── Scrims Section ── */}
-        <section id="scrims" className="scroll-mt-24 pb-16">
-          <div className="mb-6 flex items-center justify-between">
-            <h2 className="text-xl sm:text-2xl font-bold">Daily Scrims</h2>
-            {events && scrims.length > 0 && (
-              <span className="text-sm text-white/30 font-medium">
-                {scrims.length} open
-              </span>
-            )}
-          </div>
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {!events && !err
-              ? Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} />)
-              : scrims.map((e) => (
-                  <EventCard
-                    key={e.id}
-                    e={e}
-                    selected={sel.includes(e.id)}
-                    onToggle={() => toggle(e.id)}
-                    onViewPrize={setPrizeModalEvent}
-                    regs={regs}
-                    clientNow={clientNow}
-                  />
-                ))}
-          </div>
-          {events && scrims.length === 0 && (
-            <div className="text-center py-12">
-              <p className="text-3xl mb-3">🎮</p>
-              <p className="text-white/40 text-sm">
-                No open scrims right now — check back soon.
-              </p>
-            </div>
-          )}
-        </section>
-
-        {/* ── Leagues Section ── */}
-        <section id="leagues" className="scroll-mt-24 pb-16">
-          <div className="mb-6 flex items-center justify-between">
-            <h2 className="text-xl sm:text-2xl font-bold">Major Leagues</h2>
-            {events && leagues.length > 0 && (
-              <span className="text-sm text-white/30 font-medium">
-                {leagues.length} open
-              </span>
-            )}
-          </div>
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {!events && !err
-              ? Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} />)
-              : leagues.map((e) => (
-                  <EventCard
-                    key={e.id}
-                    e={e}
-                    selected={sel.includes(e.id)}
-                    onToggle={() => toggle(e.id)}
-                    onViewPrize={setPrizeModalEvent}
-                    regs={regs}
-                    clientNow={clientNow}
-                  />
-                ))}
-          </div>
-          {events && leagues.length === 0 && (
-            <div className="text-center py-12">
-              <p className="text-3xl mb-3">🏆</p>
-              <p className="text-white/40 text-sm">
-                No open leagues right now — check back soon.
-              </p>
-            </div>
-          )}
-        </section>
-
-        {/* ── Room Lookup card (above footer) ── */}
-        <section className="pb-20">
-          <div className="rounded-2xl border border-white/[0.06] bg-[#0E1118] p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5">
-            <div>
-              <h3 className="text-lg font-bold mb-1">Already paid?</h3>
-              <p className="text-sm text-white/50">
-                Enter your 12-digit UTR or WhatsApp number to get your Room ID,
-                Password &amp; IDP Group Link.
-              </p>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-3 shrink-0">
-              <a
-                href="/my-tournaments"
-                className="rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-black hover:bg-emerald-400 transition-colors whitespace-nowrap"
-              >
-                Get Room Details →
-              </a>
-              <a
-                href={`https://wa.me/${SUPPORT_WHATSAPP}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-xl border border-white/15 px-5 py-3 text-sm font-semibold hover:bg-white/5 transition-colors whitespace-nowrap text-center"
-              >
-                💬 WhatsApp Support
-              </a>
-            </div>
-          </div>
-        </section>
       </main>
 
-      {/* ── Footer ── */}
-      <footer className="border-t border-white/[0.06] py-8 text-center text-sm text-white/25 flex flex-col items-center gap-2">
-        <p>© 2026 {ORG_NAME}. All rights reserved.</p>
-        <div className="flex flex-wrap justify-center gap-4 text-xs text-white/40">
-          <a href="/my-tournaments" className="hover:text-white transition-colors">My Tournaments</a>
-          <a href="/profile" className="hover:text-white transition-colors">My Bookings</a>
-          <a href="/admin" className="hover:text-amber-400 transition-colors">Admin Dashboard</a>
-        </div>
-      </footer>
-
-      {/* ── Sticky Checkout Dock ── */}
+      {/* ────────────────────────────────────────────────────────────────────── */}
+      {/* 5. Sticky Multi-Lobby Floating Bar (Reference Screenshot 5) */}
+      {/* ────────────────────────────────────────────────────────────────────── */}
       {sel.length > 0 && (
         <div
           ref={checkoutRef}
-          className="fixed inset-x-0 bottom-0 z-40 border-t border-emerald-500/30 bg-[#0E1118]/98 backdrop-blur-xl slide-up shadow-2xl"
+          className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-700 bg-[#0A1128]/98 backdrop-blur-xl slide-up shadow-2xl text-white"
         >
-          <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3.5 sm:px-6 py-3 sm:py-4">
-            <div className="min-w-0">
-              <p className="font-extrabold text-xs sm:text-base truncate">
-                {sel.length}{" "}
-                {sel.length === 1 ? "lobby" : "lobbies"} selected
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4">
+            <div>
+              <p className="font-black text-sm sm:text-base">
+                {sel.length} {sel.length === 1 ? "lobby" : "lobbies"} selected
               </p>
-              <p className="text-[11px] sm:text-sm text-white/50 truncate">
-                Total:{" "}
-                <span className="font-bold text-emerald-400 font-mono">
+              <p className="text-xs sm:text-sm text-slate-400">
+                Total entry:{" "}
+                <span className="font-black text-[#FFB800] font-mono">
                   {totalFee === 0 ? "Free" : rupees(totalFee)}
                 </span>
               </p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+
+            <div className="flex items-center gap-2.5">
               <button
                 onClick={() => setPicked([])}
-                className="rounded-xl border border-white/15 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold hover:bg-white/5 transition-colors"
+                className="rounded-xl border border-white/20 px-3.5 py-2 text-xs sm:text-sm font-semibold hover:bg-white/10 text-slate-300"
               >
                 Clear
               </button>
               <a
                 href={"/register?e=" + sel.join(",")}
-                className="rounded-xl bg-emerald-500 px-3.5 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-extrabold text-black hover:bg-emerald-400 transition-colors shadow-lg shadow-emerald-900/40"
+                className="rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 px-5 sm:px-6 py-2.5 text-xs sm:text-sm font-black transition-colors shadow-lg shadow-amber-500/20"
               >
-                Register &amp; Pay →
+                Register selected
               </a>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Mobile Bottom Navigation Dock (App Dock) ── */}
-      {sel.length === 0 && (
-        <nav
-          aria-label="Mobile Bottom Navigation"
-          className="sm:hidden fixed inset-x-0 bottom-0 z-30 bg-[#090C14]/95 backdrop-blur-xl border-t border-white/[0.08] px-2 py-1.5 flex items-center justify-around shadow-2xl"
-        >
-          <a
-            href="#scrims"
-            className="flex flex-col items-center gap-0.5 text-[10px] font-semibold text-white/60 hover:text-emerald-400 py-1 px-3 transition-colors"
-          >
-            <span className="text-base">🎮</span>
-            <span>Scrims</span>
-          </a>
-          <a
-            href="#leagues"
-            className="flex flex-col items-center gap-0.5 text-[10px] font-semibold text-white/60 hover:text-emerald-400 py-1 px-3 transition-colors"
-          >
-            <span className="text-base">🏆</span>
-            <span>Leagues</span>
-          </a>
-          <a
-            href="/my-tournaments"
-            className="flex flex-col items-center gap-0.5 text-[10px] font-semibold text-emerald-400 hover:text-emerald-300 py-1 px-3 transition-colors"
-          >
-            <span className="text-base">🔑</span>
-            <span>Room ID</span>
-          </a>
-          <a
-            href={userEmail ? "/profile" : "/login"}
-            className="flex flex-col items-center gap-0.5 text-[10px] font-semibold text-white/60 hover:text-white py-1 px-3 transition-colors"
-          >
-            <span className="text-base">👤</span>
-            <span>{userEmail ? "Account" : "Sign In"}</span>
-          </a>
-        </nav>
-      )}
+      {/* ────────────────────────────────────────────────────────────────────── */}
+      {/* 6. Footer (Deep Midnight Navy with Clean Structure) */}
+      {/* ────────────────────────────────────────────────────────────────────── */}
+      <footer className="bg-[#070E1E] text-slate-400 pt-12 pb-16 border-t border-slate-800 text-xs">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8 mb-8">
+          {/* Col 1: Brand */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-1.5 font-black text-base text-white">
+              <span className="text-[#FFB800]">◆</span>
+              <span>{ORG_NAME}</span>
+            </div>
+            <p className="text-slate-400 leading-relaxed">
+              Custom-room tournaments with guaranteed cash prizes. Register your team, pay
+              the entry fee, and get your 3-match room details on WhatsApp.
+            </p>
+          </div>
 
-      {/* ── Top 4 Prize Distribution Modal ── */}
+          {/* Col 2: Quick Links */}
+          <div className="space-y-2.5">
+            <p className="text-white font-bold text-xs uppercase tracking-wider">Quick links</p>
+            <ul className="space-y-1.5">
+              <li>
+                <a href="#tournaments" className="hover:text-white transition-colors">
+                  Open tournaments
+                </a>
+              </li>
+              <li>
+                <a href="/register" className="hover:text-white transition-colors">
+                  Register your team
+                </a>
+              </li>
+              <li>
+                <a href="/my-tournaments" className="hover:text-white transition-colors">
+                  Room ID &amp; Password
+                </a>
+              </li>
+              <li>
+                <button
+                  onClick={() => setUtrModalOpen(true)}
+                  className="hover:text-[#FFB800] transition-colors text-left"
+                >
+                  Paid but no room details?
+                </button>
+              </li>
+            </ul>
+          </div>
+
+          {/* Col 3: Need Help */}
+          <div className="space-y-2.5">
+            <p className="text-white font-bold text-xs uppercase tracking-wider">Need help?</p>
+            <p className="leading-relaxed">
+              Payments are 100% verified UPI.
+              <br />
+              Room details &amp; lobby links are sent on WhatsApp and updated live on the site.
+            </p>
+            <p className="text-white font-semibold pt-1">
+              WhatsApp: +91 {SUPPORT_WHATSAPP}
+            </p>
+          </div>
+
+          {/* Col 4: Platform Rules */}
+          <div className="space-y-2.5">
+            <p className="text-white font-bold text-xs uppercase tracking-wider">Fair Play</p>
+            <p className="leading-relaxed">
+              Mobile devices ONLY. No emulators or tablets permitted. Guaranteed UPI payouts within 30 minutes of final match completion.
+            </p>
+            {isAdmin && (
+              <a href="/admin" className="inline-block text-amber-400 hover:underline font-bold">
+                Admin Panel →
+              </a>
+            )}
+          </div>
+        </div>
+
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-slate-500">
+          <p>© 2026 {ORG_NAME}. All rights reserved.</p>
+          <a href="#" className="hover:text-white transition-colors font-semibold">
+            Back to top ↑
+          </a>
+        </div>
+      </footer>
+
+      {/* Floating WhatsApp Support Pill */}
+      <a
+        href={`https://wa.me/${SUPPORT_WHATSAPP}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="fixed bottom-5 right-5 z-40 rounded-full bg-[#25D366] hover:bg-[#20ba59] text-black font-extrabold px-4 py-2.5 text-xs flex items-center gap-2 shadow-2xl transition-all"
+        title="Chat with WhatsApp Support"
+      >
+        <svg className="w-4 h-4 fill-black" viewBox="0 0 24 24">
+          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
+        </svg>
+        <span>Support</span>
+      </a>
+
+      {/* Top 4 Prize Distribution Modal */}
       {prizeModalEvent && (
         <PrizeModal
           event={prizeModalEvent}
@@ -1402,6 +1535,11 @@ export default function Home() {
             setPrizeModalEvent(null);
           }}
         />
+      )}
+
+      {/* UTR Room Finder Modal */}
+      {utrModalOpen && (
+        <UtrLookupModal onClose={() => setUtrModalOpen(false)} />
       )}
     </div>
   );

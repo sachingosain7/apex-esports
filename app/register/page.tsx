@@ -66,9 +66,14 @@ function effectiveFee(ev: EvSummary): number {
   return ev.entry_fee_paise;
 }
 
-function isAvailable(ev: EvSummary): boolean {
+function isEventBookable(ev: EvSummary): boolean {
   const isStarted = new Date(ev.starts_at).getTime() <= Date.now();
-  return ev.status === "open" && !isStarted && ev.filled_slots < ev.max_slots && ev.is_published !== false;
+  return (
+    ev.status === "open" &&
+    !isStarted &&
+    ev.filled_slots < ev.max_slots &&
+    ev.is_published !== false
+  );
 }
 
 function buildUpiUri(total_paise: number): string {
@@ -82,101 +87,45 @@ function buildUpiUri(total_paise: number): string {
 }
 
 // ─────────────────────────────────────────────
-// Sub-components
+// Step Indicator (Styled like Savage Reference)
 // ─────────────────────────────────────────────
-
-function TacticalGrid() {
-  return (
-    <div
-      aria-hidden
-      className="pointer-events-none fixed inset-0 z-0"
-      style={{
-        backgroundImage: `
-          linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)
-        `,
-        backgroundSize: "60px 60px",
-      }}
-    />
-  );
-}
-
-function AmbientGlows() {
-  return (
-    <>
-      <div
-        aria-hidden
-        className="pointer-events-none fixed left-0 top-0 h-[500px] w-[500px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-[0.07]"
-        style={{
-          background:
-            "radial-gradient(circle, #10B981 0%, transparent 70%)",
-        }}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none fixed bottom-0 right-0 h-[500px] w-[500px] translate-x-1/2 translate-y-1/2 rounded-full opacity-[0.06]"
-        style={{
-          background:
-            "radial-gradient(circle, #7C3AED 0%, transparent 70%)",
-        }}
-      />
-    </>
-  );
-}
 
 function StepIndicator({ phase }: { phase: Phase }) {
   const step = phase === "details" ? 1 : phase === "paying" ? 2 : 3;
-  const labels = ["Details", "Payment", "Confirmed"];
+  const steps = [
+    { num: 1, label: "Your team" },
+    { num: 2, label: "Pay entry" },
+    { num: 3, label: "Get room details" },
+  ];
+
   return (
-    <div className="mb-6 flex items-center justify-center gap-2">
-      {labels.map((label, i) => {
-        const num = i + 1;
-        const done = num < step;
-        const active = num === step;
+    <div className="flex items-center justify-center gap-1.5 sm:gap-3 mb-6 flex-wrap">
+      {steps.map((s, i) => {
+        const active = s.num === step;
+        const done = s.num < step;
+
         return (
-          <div key={label} className="flex items-center gap-2">
-            <div className="flex flex-col items-center gap-1">
-              <div
-                className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-colors duration-200 ${
-                  done
-                    ? "bg-emerald-500 text-white"
-                    : active
-                    ? "bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500"
-                    : "bg-white/5 text-white/30"
-                }`}
-              >
-                {done ? (
-                  <svg
-                    className="h-3.5 w-3.5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2.5}
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                ) : (
-                  num
-                )}
-              </div>
+          <div key={s.num} className="flex items-center gap-1.5 sm:gap-2">
+            <div
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+                active
+                  ? "bg-[#FFB800] text-slate-950 shadow-sm"
+                  : done
+                  ? "bg-slate-200 text-slate-800"
+                  : "bg-slate-100 text-slate-400"
+              }`}
+            >
               <span
-                className={`text-[10px] font-medium ${
-                  active ? "text-emerald-400" : done ? "text-white/50" : "text-white/20"
+                className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black ${
+                  active ? "bg-slate-950 text-white" : done ? "bg-emerald-600 text-white" : "bg-slate-300 text-slate-600"
                 }`}
               >
-                {label}
+                {done ? "✓" : s.num}
               </span>
+              <span>{s.label}</span>
             </div>
-            {i < labels.length - 1 && (
-              <div
-                className={`mb-4 h-px w-8 transition-colors duration-200 ${
-                  done ? "bg-emerald-500" : "bg-white/10"
-                }`}
-              />
+            {i < steps.length - 1 && (
+              <span className="text-slate-300 text-xs font-bold">→</span>
             )}
           </div>
         );
@@ -186,7 +135,7 @@ function StepIndicator({ phase }: { phase: Phase }) {
 }
 
 // ─────────────────────────────────────────────
-// Phase A — Details
+// Phase A — Details (Matching Reference Screenshot 6 & 7)
 // ─────────────────────────────────────────────
 
 interface PhaseAProps {
@@ -194,7 +143,7 @@ interface PhaseAProps {
   unavailable: EvSummary[];
   loading: boolean;
   fetchError: string | null;
-  onSubmit: (whatsapp: string, teamName: string) => Promise<void>;
+  onSubmit: (whatsapp: string, teamName: string) => void;
   submitting: boolean;
   submitError: string | null;
   isLoggedIn: boolean;
@@ -229,16 +178,16 @@ function PhaseADetails({
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center gap-4 py-16">
-        <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-emerald-400" />
-        <p className="text-sm text-white/40">Loading events…</p>
+      <div className="flex flex-col items-center gap-3 py-16">
+        <div className="h-9 w-9 animate-spin rounded-full border-2 border-slate-200 border-t-[#FFB800]" />
+        <p className="text-sm text-slate-500 font-medium">Loading tournament details…</p>
       </div>
     );
   }
 
   if (fetchError) {
     return (
-      <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-center text-sm text-red-400">
+      <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-center text-sm font-semibold text-red-700">
         {fetchError}
       </div>
     );
@@ -246,240 +195,184 @@ function PhaseADetails({
 
   if (!isLoggedIn) {
     return (
-      <div className="flex flex-col items-center gap-5 py-10 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white/5">
-          <svg
-            className="h-7 w-7 text-white/50"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-            />
-          </svg>
+      <div className="flex flex-col items-center gap-4 py-8 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100 text-[#D97706] text-2xl font-black">
+          👤
         </div>
         <div>
-          <p className="text-base font-semibold text-white">Sign in to continue</p>
-          <p className="mt-1 text-sm text-white/40">
-            You need to be signed in to register for tournaments.
+          <h2 className="text-lg font-black text-slate-900">Sign in to register</h2>
+          <p className="mt-1 text-xs text-slate-500 max-w-sm">
+            Sign in to lock your team slot and view your live 3-Match IDP.
           </p>
         </div>
         <Link
           href={`/login?next=${encodeURIComponent(currentUrl)}`}
-          className="rounded-xl bg-emerald-500 px-6 py-3 text-sm font-semibold text-white transition-colors duration-200 hover:bg-emerald-400"
+          className="rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] px-6 py-3 text-sm font-black text-slate-950 transition-colors shadow-md"
         >
-          Sign in to continue →
+          Sign In to Continue →
         </Link>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Selected events */}
-      {events.length > 0 ? (
-        <div className="flex flex-col gap-3">
-          <h2 className="text-xs font-semibold uppercase tracking-widest text-white/40">
-            Selected Events
-          </h2>
-          {events.map((ev) => {
-            const fee = effectiveFee(ev);
-            const isEarlyBird =
-              ev.early_bird_fee_paise !== null &&
-              ev.early_bird_slots !== null &&
-              ev.filled_slots < ev.early_bird_slots;
-            const slotsLeft = ev.max_slots - ev.filled_slots;
-            const fillingFast =
-              slotsLeft <= Math.ceil(ev.max_slots * 0.2);
-            return (
-              <div
-                key={ev.id}
-                className="rounded-xl border border-white/[0.08] bg-[#06070B] p-4"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="truncate font-semibold text-white">{ev.title}</p>
-                    <p className="mt-0.5 text-xs text-white/40">
-                      {formatDate(ev.starts_at)}
-                    </p>
-                    {fillingFast && (
-                      <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-400">
-                        <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                        {slotsLeft} slots left
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="font-bold text-emerald-400">{formatINR(fee)}</p>
-                    {isEarlyBird && (
-                      <p className="text-xs text-white/30 line-through">
-                        {formatINR(ev.entry_fee_paise)}
-                      </p>
-                    )}
-                    {isEarlyBird && (
-                      <span className="text-[10px] font-semibold text-amber-400">
-                        Early Bird
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-6 text-center text-sm text-white/30">
-          No valid events selected. Go back and pick tournaments.
-        </div>
-      )}
+    <div className="space-y-6">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canSubmit) onSubmit(whatsapp, teamName);
+        }}
+        className="space-y-6"
+      >
+        {/* Section 1: Your team */}
+        <div className="space-y-3.5">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-md bg-slate-900 text-white font-black text-xs flex items-center justify-center">
+              1
+            </span>
+            <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">
+              Your team
+            </h2>
+          </div>
 
-      {/* Unavailable events */}
-      {unavailable.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <h2 className="text-xs font-semibold uppercase tracking-widest text-white/30">
-            Not Available
-          </h2>
-          {unavailable.map((ev) => {
-            const isStarted = clientNow > 0 && new Date(ev.starts_at).getTime() <= clientNow;
-            const reason = isStarted
-              ? "Match already started"
-              : ev.status !== "open"
-              ? "Registrations closed"
-              : "Tournament full · Sold out";
-            const badge = isStarted ? "Started" : ev.status !== "open" ? "Closed" : "Full";
-
-            return (
-              <div
-                key={ev.id}
-                className="flex items-center justify-between rounded-xl border border-white/[0.04] bg-white/[0.02] px-4 py-3 opacity-50"
-              >
-                <div>
-                  <p className="text-sm text-white/50 line-through">{ev.title}</p>
-                  <p className="text-xs text-white/30">{reason}</p>
-                </div>
-                <span className="rounded-full bg-red-500/10 px-2 py-1 text-[10px] font-semibold text-red-400">
-                  {badge}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Form */}
-      {events.length > 0 && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (canSubmit) onSubmit(whatsapp, teamName);
-          }}
-          className="flex flex-col gap-4"
-        >
-          <h2 className="text-xs font-semibold uppercase tracking-widest text-white/40">
-            Your Details
-          </h2>
-
-          {/* Team Name */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-white/70">
-              Team / Player Name
+          {/* Team Name Input */}
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-700">
+              Team name
             </label>
             <input
               type="text"
+              required
               value={teamName}
               onChange={(e) => setTeamName(e.target.value)}
               onBlur={() => setTouched((t) => ({ ...t, teamName: true }))}
-              placeholder="e.g. Storm Riders"
+              placeholder="e.g. Jojo esports"
               maxLength={40}
-              className={`rounded-xl border bg-[#06070B] px-4 py-3 text-sm text-white outline-none transition-colors duration-200 placeholder:text-white/20 ${
+              className={`w-full rounded-xl border bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-900 outline-none transition-colors placeholder:text-slate-400 ${
                 touched.teamName && !teamNameValid
-                  ? "border-red-500/60 focus:border-red-400"
-                  : teamNameValid
-                  ? "border-emerald-500/60 focus:border-emerald-400"
-                  : "border-white/10 focus:border-emerald-400"
+                  ? "border-red-400 focus:border-red-500"
+                  : "border-slate-300 focus:border-blue-600"
               }`}
             />
             {touched.teamName && !teamNameValid && (
-              <p className="text-xs text-red-400">
-                Team name must be 2–40 characters.
+              <p className="text-[11px] text-red-500 font-medium">
+                Team name must be between 2 and 40 characters.
               </p>
             )}
           </div>
 
-          {/* WhatsApp */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-white/70">
-              WhatsApp Number
+          {/* WhatsApp Number Input with +91 box */}
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-700">
+              WhatsApp number
             </label>
-            <div className="flex items-center gap-0">
-              <span className="flex h-[46px] items-center rounded-l-xl border border-r-0 border-white/10 bg-white/5 px-3 text-sm text-white/50">
+            <div className="flex items-center">
+              <span className="flex h-[42px] items-center rounded-l-xl border border-r-0 border-slate-300 bg-slate-100 px-3.5 text-sm font-bold text-slate-600">
                 +91
               </span>
               <input
                 type="tel"
+                required
                 value={whatsapp}
                 onChange={(e) =>
                   setWhatsapp(e.target.value.replace(/\D/g, "").slice(0, 10))
                 }
                 onBlur={() => setTouched((t) => ({ ...t, whatsapp: true }))}
-                placeholder="9876543210"
+                placeholder="7565432121"
                 inputMode="numeric"
                 maxLength={10}
-                className={`flex-1 rounded-r-xl border bg-[#06070B] px-4 py-3 text-sm text-white outline-none transition-colors duration-200 placeholder:text-white/20 ${
+                className={`flex-1 rounded-r-xl border bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-900 outline-none transition-colors placeholder:text-slate-400 ${
                   touched.whatsapp && !whatsappValid
-                    ? "border-red-500/60 focus:border-red-400"
-                    : whatsappValid
-                    ? "border-emerald-500/60 focus:border-emerald-400"
-                    : "border-white/10 focus:border-emerald-400"
+                    ? "border-red-400 focus:border-red-500"
+                    : "border-slate-300 focus:border-blue-600"
                 }`}
               />
             </div>
             {touched.whatsapp && !whatsappValid && (
-              <p className="text-xs text-red-400">
+              <p className="text-[11px] text-red-500 font-medium">
                 Enter a valid 10-digit Indian mobile number.
               </p>
             )}
-            <p className="text-xs text-white/30">
-              Room codes will be sent here via WhatsApp.
+            <p className="text-[11px] text-slate-500">
+              We send your 3-match room details and WhatsApp group link to this number.
             </p>
           </div>
+        </div>
 
-          {/* Total */}
-          <div className="flex items-center justify-between rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3">
-            <span className="text-sm text-white/60">
-              Total ({events.length} event{events.length !== 1 ? "s" : ""})
+        {/* Section 2: Your lobbies */}
+        <div className="space-y-3 pt-2 border-t border-slate-100">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-md bg-slate-900 text-white font-black text-xs flex items-center justify-center">
+                2
+              </span>
+              <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">
+                Your lobbies ({events.length})
+              </h2>
+            </div>
+            <Link href="/" className="text-xs font-bold text-blue-600 hover:underline">
+              Change selection
+            </Link>
+          </div>
+
+          <div className="space-y-2">
+            {events.map((ev) => {
+              const fee = effectiveFee(ev);
+              const slotsLeft = ev.max_slots - ev.filled_slots;
+              return (
+                <div
+                  key={ev.id}
+                  className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 flex items-center justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <p className="font-bold text-slate-900 text-sm truncate">{ev.title}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{formatDate(ev.starts_at)}</p>
+                    <p className="text-[11px] text-blue-600 font-bold mt-1">
+                      {slotsLeft} slots left
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-base font-black text-slate-900 font-mono">
+                      {formatINR(fee)}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Total summary */}
+          <div className="flex items-center justify-between rounded-xl bg-blue-50/80 border border-blue-200 p-3.5">
+            <span className="text-xs font-bold text-blue-900 uppercase tracking-wider">
+              Total Entry Fee
             </span>
-            <span className="text-lg font-bold text-white">
+            <span className="text-xl font-black text-blue-700 font-mono">
               {formatINR(totalPaise)}
             </span>
           </div>
+        </div>
 
-          {submitError && (
-            <p className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-400">
-              {submitError}
-            </p>
+        {submitError && (
+          <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-600">
+            {submitError}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={!canSubmit}
+          className="w-full py-3.5 rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 font-black text-sm transition-all shadow-md shadow-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
+        >
+          {submitting ? (
+            <>
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-950 border-t-transparent" />
+              <span>Holding your slot…</span>
+            </>
+          ) : (
+            `Continue to payment (${formatINR(totalPaise)})`
           )}
-
-          <button
-            type="submit"
-            disabled={!canSubmit}
-            className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-6 py-3.5 text-sm font-bold text-white transition-all duration-200 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {submitting ? (
-              <>
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
-                Holding your slot…
-              </>
-            ) : (
-              "Hold My Slot →"
-            )}
-          </button>
-        </form>
-      )}
+        </button>
+      </form>
     </div>
   );
 }
@@ -515,7 +408,7 @@ function formatCountdown(secs: number): string {
 }
 
 // ─────────────────────────────────────────────
-// Phase B — UPI Payment
+// Phase B — Scan & Pay (Matching Reference Screenshot 8 & 9)
 // ─────────────────────────────────────────────
 
 interface PhaseBProps {
@@ -532,20 +425,16 @@ function PhaseBPaying({ order, events, teamName, onSuccess, onBack }: PhaseBProp
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const secondsLeft = useCountdown(order.expires_at);
   const expired = secondsLeft === 0;
   const upiUri = buildUpiUri(order.total_paise);
-
   const utrValid = /^\d{12}$/.test(utr);
-  const utrError = utrTouched && utr.length > 0 && !utrValid;
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(UPI_ID).then(() => {
       setCopied(true);
-      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
-      copyTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => setCopied(false), 2000);
     });
   }, []);
 
@@ -559,195 +448,163 @@ function PhaseBPaying({ order, events, teamName, onSuccess, onBack }: PhaseBProp
         p_utr: utr,
       });
       if (rpcError) throw rpcError;
-      if (!data?.success) {
-        throw new Error(data?.error ?? "Unknown error");
-      }
+      if (!data?.success) throw new Error(data?.error ?? "Verification error");
       onSuccess(data.utr ?? utr);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("invalid_utr")) {
-        setError("Invalid UTR number. Please double-check and try again.");
-      } else if (msg.includes("duplicate_utr")) {
-        setError(
-          "This UTR has already been used. Contact support if you paid."
-        );
+      if (msg.includes("duplicate_utr")) {
+        setError("This UTR has already been submitted. Contact WhatsApp host if you paid.");
       } else if (msg.includes("order_expired")) {
-        setError(
-          "Your slot hold has expired. Please go back and register again."
-        );
+        setError("Your slot hold expired. Please go back and pick your slot again.");
       } else {
-        setError(`Something went wrong: ${msg}`);
+        setError(msg || "Could not verify payment reference.");
       }
       setSubmitting(false);
     }
   }, [utr, utrValid, submitting, order.order_id, onSuccess]);
 
-  const timerColor =
-    secondsLeft < 60
-      ? "text-red-400"
-      : secondsLeft < 180
-      ? "text-amber-400"
-      : "text-emerald-400";
-
   if (expired) {
     return (
-      <div className="flex flex-col items-center gap-5 py-10 text-center">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-500/10">
-          <span className="text-3xl">⚠️</span>
-        </div>
-        <div>
-          <p className="text-base font-semibold text-red-400">Slot hold expired</p>
-          <p className="mt-1 text-sm text-white/40">
-            Your 10-minute hold has ended. Please go back and register again.
-          </p>
-        </div>
+      <div className="flex flex-col items-center gap-4 py-10 text-center">
+        <span className="text-4xl">⏱️</span>
+        <h2 className="text-lg font-black text-red-600">Slot hold expired</h2>
+        <p className="text-xs text-slate-500">
+          Your reservation expired. Return to the tournament list to re-select your lobby.
+        </p>
         <button
           onClick={onBack}
-          className="rounded-xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-semibold text-white transition-colors duration-200 hover:bg-white/10"
+          className="rounded-xl bg-slate-900 text-white font-bold px-5 py-2.5 text-xs"
         >
-          ← Back to Details
+          ← Return to Tournament List
         </button>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Timer */}
-      <div className="flex flex-col items-center gap-1 rounded-xl border border-white/[0.08] bg-[#06070B] px-4 py-4">
-        <p className="text-xs font-semibold uppercase tracking-widest text-white/40">
-          Slot held for
-        </p>
-        <p
-          className={`font-mono text-4xl font-bold tabular-nums transition-colors duration-500 ${timerColor}`}
-        >
-          {formatCountdown(secondsLeft)}
-        </p>
-        <p className="text-xs text-white/30">
-          Complete payment before the timer runs out
-        </p>
+    <div className="space-y-6">
+      {/* Real-time sync notice */}
+      <div className="rounded-xl bg-blue-50 border border-blue-200 p-3 text-xs text-blue-900 font-semibold flex items-center gap-2">
+        <span className="w-2 h-2 rounded-full bg-blue-600 glow-pulse" />
+        <span>Waiting for your payment... this page updates automatically.</span>
       </div>
 
-      {/* Order Summary */}
-      <div className="flex flex-col gap-2">
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-white/40">
-          Order Summary
-        </h2>
-        {events.map((ev) => (
-          <div
-            key={ev.id}
-            className="flex items-center justify-between rounded-xl border border-white/[0.08] bg-[#06070B] px-4 py-3"
-          >
-            <div>
-              <p className="text-sm font-medium text-white">{ev.title}</p>
-              <p className="text-xs text-white/40">Team: {teamName}</p>
+      {/* 3 Step Instructions */}
+      <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-2 text-xs text-slate-700">
+        <div className="flex items-center gap-2">
+          <span className="w-5 h-5 rounded-full bg-blue-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
+            1
+          </span>
+          <span>Scan with any UPI app (GPay, PhonePe, Paytm, BHIM)</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-5 h-5 rounded-full bg-blue-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
+            2
+          </span>
+          <span>Pay exactly {formatINR(order.total_paise)} within 5 minutes. Do not pay twice.</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-5 h-5 rounded-full bg-blue-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
+            3
+          </span>
+          <span>Enter 12-digit UTR below to get your Room ID &amp; Password.</span>
+        </div>
+      </div>
+
+      {/* Registrations summary */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-2">
+        <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">
+          Your registrations
+        </p>
+        {events.map((ev, i) => (
+          <div key={ev.id} className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              <span className="w-5 h-5 rounded bg-slate-900 text-white text-[10px] font-black flex items-center justify-center">
+                {i + 1}
+              </span>
+              <div>
+                <p className="font-bold text-slate-900">{teamName}</p>
+                <p className="text-slate-500 text-[11px]">{ev.title}</p>
+              </div>
             </div>
-            <p className="text-sm font-bold text-emerald-400">
-              {formatINR(effectiveFee(ev))}
-            </p>
+            <span className="font-black font-mono text-slate-900">{formatINR(effectiveFee(ev))}</span>
           </div>
         ))}
-        <div className="flex items-center justify-between rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3">
-          <span className="text-sm font-semibold text-white/80">Total to Pay</span>
-          <span className="text-xl font-bold text-emerald-400">
-            {formatINR(order.total_paise)}
-          </span>
-        </div>
       </div>
 
-      {/* UPI QR */}
-      <div className="flex flex-col items-center gap-4 rounded-xl border border-white/[0.08] bg-[#06070B] p-6">
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-white/40">
-          Scan &amp; Pay
-        </h2>
-        <div className="rounded-xl bg-[#0E1118] p-4 ring-1 ring-white/[0.08]">
+      {/* Scan & Pay Card (Matching Screenshot 9) */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-md flex flex-col items-center gap-4 text-center">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+            AMOUNT TO PAY
+          </p>
+          <p className="text-3xl font-black text-slate-900 font-mono tracking-tight mt-0.5">
+            {formatINR(order.total_paise)}
+          </p>
+          <p className="text-xs text-slate-500 mt-1">
+            Paying to <strong>{ORG_NAME}</strong> · QR valid for 5 minutes
+          </p>
+        </div>
+
+        {/* QR Code Container */}
+        <div className="rounded-2xl bg-white p-4 border-2 border-slate-900/10 shadow-inner relative">
           <QRCode
             value={upiUri}
-            size={200}
-            bgColor="#0E1118"
-            fgColor="#FFFFFF"
+            size={190}
+            bgColor="#FFFFFF"
+            fgColor="#0F172A"
           />
         </div>
-        <p className="text-center text-xs text-white/40">
-          Scan with any UPI app — PhonePe, GPay, Paytm, BHIM
-        </p>
 
-        {/* UPI ID row */}
-        <div className="flex w-full items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3">
-          <p className="flex-1 truncate font-mono text-sm text-white/70">
-            {UPI_ID}
-          </p>
+        {/* Live Timer Pill */}
+        <div className="inline-flex items-center gap-2 rounded-full bg-amber-50 border border-amber-200 px-3 py-1 text-xs font-mono font-bold text-amber-800">
+          <span>QR expires in:</span>
+          <span className="font-black text-sm">{formatCountdown(secondsLeft)}</span>
+        </div>
+
+        {/* UPI ID Row */}
+        <div className="w-full flex items-center justify-between gap-2 rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5">
+          <p className="font-mono text-xs text-slate-700 truncate">{UPI_ID}</p>
           <button
+            type="button"
             onClick={handleCopy}
-            className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white transition-all duration-200 hover:bg-white/10"
+            className="rounded-lg bg-white border border-slate-200 px-2.5 py-1 text-xs font-bold text-slate-800 hover:bg-slate-50 shadow-xs shrink-0"
           >
-            {copied ? "Copied ✓" : "Copy"}
+            {copied ? "Copied ✓" : "Copy UPI"}
           </button>
         </div>
 
-        {/* Open UPI app button */}
+        {/* 1-Tap UPI Apps */}
         <a
           href={upiUri}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 py-3.5 text-sm font-bold text-white transition-colors duration-200 hover:bg-emerald-400"
+          className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black text-xs sm:text-sm transition-colors shadow-md shadow-blue-500/20"
         >
-          <svg
-            className="h-4 w-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"
-            />
-          </svg>
-          Pay {formatINR(order.total_paise)} via UPI App
+          Open UPI App (GPay / PhonePe / Paytm) →
         </a>
       </div>
 
-      {/* UTR Input */}
-      <div className="flex flex-col gap-4 rounded-xl border border-white/[0.08] bg-[#06070B] p-5">
+      {/* Enter 12-Digit UTR */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-3 shadow-sm">
         <div>
-          <h2 className="font-semibold text-white">Enter Payment Reference</h2>
-          <p className="mt-1 text-xs text-white/40">
-            After payment, enter your 12-digit UPI Reference Number (UTR)
+          <h3 className="text-sm font-black text-slate-900">Enter Payment Reference (UTR)</h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            After paying in your UPI app, copy the 12-digit UTR and paste it here:
           </p>
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <input
-            type="text"
-            inputMode="numeric"
-            maxLength={12}
-            value={utr}
-            onChange={(e) => {
-              setUtr(e.target.value.replace(/\D/g, "").slice(0, 12));
-              setError(null);
-            }}
-            onBlur={() => setUtrTouched(true)}
-            placeholder="e.g. 123456789012"
-            className={`rounded-xl border bg-[#06070B] px-4 py-3 font-mono text-sm text-white outline-none transition-colors duration-200 placeholder:font-sans placeholder:text-white/20 ${
-              utrError
-                ? "border-red-500/60 focus:border-red-400"
-                : utrValid
-                ? "border-emerald-500/60 focus:border-emerald-400"
-                : "border-white/10 focus:border-emerald-400"
-            }`}
-          />
-          {utrError && (
-            <p className="text-xs text-red-400">
-              UTR must be exactly 12 digits.
-            </p>
-          )}
-          {utrValid && (
-            <p className="text-xs text-emerald-400">✓ Looks good!</p>
-          )}
-        </div>
+        <input
+          type="text"
+          inputMode="numeric"
+          maxLength={12}
+          value={utr}
+          onChange={(e) => setUtr(e.target.value.replace(/\D/g, "").slice(0, 12))}
+          onBlur={() => setUtrTouched(true)}
+          placeholder="e.g. 542198012345"
+          className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 font-mono text-sm font-bold text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-colors"
+        />
 
         {error && (
-          <p className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-400">
+          <p className="rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs font-semibold text-red-600">
             {error}
           </p>
         )}
@@ -755,106 +612,69 @@ function PhaseBPaying({ order, events, teamName, onSuccess, onBack }: PhaseBProp
         <button
           onClick={handleConfirm}
           disabled={!utrValid || submitting}
-          className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500 py-3.5 text-sm font-bold text-white transition-all duration-200 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+          className="w-full py-3.5 rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 font-black text-sm transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
         >
           {submitting ? (
             <>
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
-              Verifying…
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-950 border-t-transparent" />
+              <span>Verifying UTR Reference…</span>
             </>
           ) : (
-            "Confirm Payment →"
+            "Verify UTR & Get 3-Match IDP →"
           )}
         </button>
-
-        <p className="text-center text-xs text-white/30">
-          Find your UTR in your UPI app under payment history.
-        </p>
       </div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────
-// Phase C — Success
+// Phase C — Success (3-Match IDP & Lobby WhatsApp Group)
 // ─────────────────────────────────────────────
 
-function PhaseCSuccess({
-  utr,
-  events,
-  teamName,
-}: {
+interface PhaseCProps {
   utr: string;
   events: EvSummary[];
   teamName: string;
-}) {
+}
+
+function PhaseCSuccess({ utr, events, teamName }: PhaseCProps) {
   return (
-    <div className="flex flex-col items-center gap-5 py-4 text-center">
-      {/* Emerald check */}
-      <div className="relative flex h-16 w-16 items-center justify-center">
-        <div className="absolute inset-0 rounded-full bg-emerald-500/10" />
-        <div className="relative flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/20 ring-2 ring-emerald-500/50">
-          <svg
-            className="h-6 w-6 text-emerald-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2.5}
-              d="M5 13l4 4L19 7"
-            />
-          </svg>
+    <div className="space-y-6 text-center">
+      {/* Success Badge */}
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-16 h-16 rounded-3xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-3xl font-black shadow-md">
+          ✓
         </div>
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <h1 className="text-xl sm:text-2xl font-black text-white">Payment Received! 🎉</h1>
-        <p className="text-xs sm:text-sm text-emerald-400 font-semibold">
-          Slot Reserved for Team: <span className="text-white underline">{teamName}</span>
+        <h2 className="text-2xl font-black text-slate-900">Payment Verified &amp; Slot Locked!</h2>
+        <p className="text-xs sm:text-sm text-slate-600">
+          Slot reserved for Team: <strong className="text-slate-900">{teamName}</strong>
         </p>
-      </div>
-
-      {/* UTR display */}
-      <div className="w-full rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-2.5 flex items-center justify-between">
-        <span className="text-xs text-white/40">UTR Reference</span>
-        <span className="font-mono text-sm sm:text-base font-bold text-emerald-300">
-          {utr}
+        <span className="rounded-full bg-slate-100 border border-slate-200 px-3 py-1 font-mono text-xs font-bold text-slate-600">
+          UTR: {utr}
         </span>
       </div>
 
-      {/* ── CRITICAL IDP & WHATSAPP GROUP NOTICE ── */}
-      <div className="w-full text-left rounded-2xl border border-emerald-500/40 bg-gradient-to-b from-emerald-500/10 via-emerald-500/5 to-transparent p-4 sm:p-5 space-y-3 shadow-xl">
+      {/* ── Where will IDP be given Box ── */}
+      <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-5 text-left space-y-4 shadow-sm">
         <div className="flex items-center gap-2">
-          <span className="text-lg">📍</span>
+          <span className="text-xl">📍</span>
           <div>
-            <h2 className="text-xs sm:text-sm font-black text-white uppercase tracking-wider">
+            <h3 className="text-sm font-black text-emerald-950 uppercase tracking-wider">
               Where will your Room ID &amp; Password be given?
-            </h2>
-            <p className="text-[11px] text-emerald-300/80">Follow these 2 simple steps to get your IDP:</p>
+            </h3>
+            <p className="text-xs text-emerald-800">
+              Host releases credentials 15 minutes before every match.
+            </p>
           </div>
         </div>
 
         {/* Step 1: Join Lobby WhatsApp Group */}
-        <div className="rounded-xl bg-black/50 border border-white/[0.08] p-3.5 space-y-2">
-          <div className="flex items-start gap-2">
-            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-black text-black">
-              1
-            </span>
-            <div className="space-y-1">
-              <p className="text-xs font-bold text-white">
-                Join your Lobby&apos;s Official WhatsApp Group:
-              </p>
-              <p className="text-[11px] text-white/50 leading-relaxed">
-                Each lobby has its own individual group where the Host releases the Room ID &amp; Password before every match.
-              </p>
-            </div>
-          </div>
-
-          {/* Lobby buttons */}
-          <div className="flex flex-col gap-2 pt-1">
+        <div className="rounded-xl bg-white border border-emerald-200/80 p-4 space-y-2.5">
+          <p className="text-xs font-black text-slate-900">
+            1. Join your Official Lobby WhatsApp Group:
+          </p>
+          <div className="space-y-2">
             {events.map((ev) => {
               const label = extractLobbyLabel(ev.title);
               return ev.whatsapp_group_link ? (
@@ -863,7 +683,7 @@ function PhaseCSuccess({
                   href={ev.whatsapp_group_link}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center justify-between gap-2 rounded-xl bg-[#25D366] hover:bg-[#20bd5a] text-black font-extrabold text-xs sm:text-sm py-2.5 px-3.5 transition-all shadow-md shadow-emerald-950/40"
+                  className="flex items-center justify-between gap-2 rounded-xl bg-[#25D366] hover:bg-[#20bd5a] text-black font-extrabold text-xs sm:text-sm py-2.5 px-4 transition-all shadow-md"
                 >
                   <span className="flex items-center gap-2 truncate">
                     <span>📲</span>
@@ -876,168 +696,161 @@ function PhaseCSuccess({
               ) : (
                 <div
                   key={ev.id}
-                  className="rounded-lg bg-white/[0.04] border border-white/[0.06] p-2.5 text-[11px] text-white/40 flex items-center justify-between"
+                  className="rounded-lg bg-slate-50 border border-slate-200 p-2.5 text-xs text-slate-500 flex items-center justify-between"
                 >
                   <span>{label}: Group link will be shared by host</span>
-                  <span className="text-[10px] text-amber-400 font-bold">Coming Soon</span>
+                  <span className="text-[10px] text-amber-600 font-bold">Pending Host</span>
                 </div>
               );
             })}
           </div>
         </div>
 
-        {/* Step 2: 3 Matches · 3 Separate IDPs */}
-        <div className="rounded-xl bg-black/50 border border-white/[0.08] p-3.5 space-y-1.5">
-          <div className="flex items-start gap-2">
-            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-black text-black">
-              2
-            </span>
-            <div className="space-y-1">
-              <p className="text-xs font-bold text-white">
-                3 Matches = 3 Separate Custom Room IDPs:
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 pt-1 text-[11px] font-mono text-white/70">
-                <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-2">
-                  <p className="font-bold text-emerald-400">🎮 Match 1</p>
-                  <p className="text-[10px] text-white/40">IDP given 15m before</p>
-                </div>
-                <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-2">
-                  <p className="font-bold text-emerald-400">🎮 Match 2</p>
-                  <p className="text-[10px] text-white/40">IDP given 15m before</p>
-                </div>
-                <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-2">
-                  <p className="font-bold text-emerald-400">🎮 Match 3</p>
-                  <p className="text-[10px] text-white/40">IDP given 15m before</p>
-                </div>
-              </div>
+        {/* Step 2: 3 Matches IDP Schedule */}
+        <div className="rounded-xl bg-white border border-emerald-200/80 p-4 space-y-2">
+          <p className="text-xs font-black text-slate-900">
+            2. 3 Matches = 3 Separate Room IDPs:
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-mono">
+            <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
+              <p className="font-bold text-blue-700">🎮 Match 1</p>
+              <p className="text-[10px] text-slate-500">IDP dropped 15m before</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
+              <p className="font-bold text-blue-700">🎮 Match 2</p>
+              <p className="text-[10px] text-slate-500">IDP dropped 15m before</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
+              <p className="font-bold text-blue-700">🎮 Match 3</p>
+              <p className="text-[10px] text-slate-500">IDP dropped 15m before</p>
             </div>
           </div>
         </div>
-
-        {/* View Live IDP on Portal */}
-        <p className="text-[11px] text-white/50 text-center pt-1">
-          You can also check Room ID &amp; Password live on this website anytime:
-        </p>
       </div>
 
-      {/* CTA Buttons */}
-      <div className="flex w-full flex-col gap-2.5">
+      {/* Action links */}
+      <div className="space-y-2.5">
         <Link
           href="/my-tournaments"
-          className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500 py-3.5 text-sm font-extrabold text-black transition-colors duration-200 hover:bg-emerald-400 shadow-lg shadow-emerald-950/40"
+          className="flex items-center justify-center gap-2 rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] py-3.5 text-sm font-black text-slate-950 transition-colors shadow-md"
         >
           <span>🔑</span>
           <span>View 3-Match IDP Live on Website →</span>
         </Link>
-        <a
-          href={`https://wa.me/${SUPPORT_WHATSAPP}?text=${encodeURIComponent(
-            `Hi! I just registered for ${events.map((e) => e.title).join(", ")}. Team: ${teamName}, UTR: ${utr}. Please confirm my slot and IDP.`
-          )}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 py-3 text-xs sm:text-sm font-semibold text-white transition-colors duration-200 hover:bg-white/10"
+        <Link
+          href="/"
+          className="flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white py-3 text-xs font-bold text-slate-700 hover:bg-slate-50"
         >
-          💬 WhatsApp Host Support
-        </a>
+          ← Return to Home
+        </Link>
       </div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────
-// Inner Page (needs useSearchParams)
+// Inner Page Component
 // ─────────────────────────────────────────────
 
-function RegisterPageInner() {
+function RegisterContent() {
   const searchParams = useSearchParams();
-  const rawIds = searchParams.get("e") ?? "";
-  const eventIds = rawIds
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const eventParam = searchParams.get("e") || searchParams.get("event") || "";
 
   const [phase, setPhase] = useState<Phase>("details");
   const [events, setEvents] = useState<EvSummary[]>([]);
   const [unavailableEvents, setUnavailableEvents] = useState<EvSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [currentUrl, setCurrentUrl] = useState("");
-
-  const [order, setOrder] = useState<OrderResult | null>(null);
-  const [teamName, setTeamName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [order, setOrder] = useState<OrderResult | null>(null);
+  const [teamName, setTeamName] = useState("");
   const [confirmedUtr, setConfirmedUtr] = useState("");
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [currentUrl, setCurrentUrl] = useState("/register");
 
-  // Capture URL for redirect
   useEffect(() => {
-    setCurrentUrl(window.location.href);
+    if (typeof window !== "undefined") {
+      setCurrentUrl(window.location.pathname + window.location.search);
+    }
   }, []);
 
-  // Auth check
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setIsLoggedIn(!!data.session);
+    supabase.auth.getUser().then(({ data }) => {
+      setIsLoggedIn(Boolean(data.user));
     });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsLoggedIn(!!session);
+    const { data: listener } = supabase.auth.onAuthStateChange((_ev, session) => {
+      setIsLoggedIn(Boolean(session?.user));
     });
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  // Fetch events
   useEffect(() => {
-    if (eventIds.length === 0) {
+    const rawIds = eventParam
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (rawIds.length === 0) {
       setLoading(false);
-      setFetchError("No events specified. Please go back and select tournaments.");
+      setFetchError("No tournaments selected. Please choose a lobby from the homepage.");
       return;
     }
+
     setLoading(true);
     setFetchError(null);
+
     supabase
       .from("events")
       .select(
         "id, title, starts_at, entry_fee_paise, early_bird_fee_paise, early_bird_slots, max_slots, filled_slots, status, is_published, whatsapp_group_link"
       )
-      .in("id", eventIds)
+      .in("id", rawIds)
       .then(({ data, error }) => {
         setLoading(false);
         if (error) {
-          setFetchError(`Failed to load events: ${error.message}`);
+          setFetchError(error.message);
           return;
         }
-        const all = (data ?? []) as EvSummary[];
-        setEvents(all.filter(isAvailable));
-        setUnavailableEvents(all.filter((ev) => !isAvailable(ev)));
+        const rows = (data as EvSummary[]) || [];
+        const bookable = rows.filter(isEventBookable);
+        const nonBookable = rows.filter((ev) => !isEventBookable(ev));
+        setEvents(bookable);
+        setUnavailableEvents(nonBookable);
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawIds]);
+  }, [eventParam]);
 
   const handleHoldSlot = useCallback(
-    async (whatsapp: string, name: string) => {
+    async (whatsapp: string, team: string) => {
+      if (events.length === 0 || submitting) return;
       setSubmitting(true);
       setSubmitError(null);
-      setTeamName(name);
+      setTeamName(team);
+
       try {
-        const { data, error } = await supabase.rpc("create_order", {
-          p_whatsapp: `+91${whatsapp}`,
-          p_events: events.map((ev) => ev.id),
-          p_teams: events.map(() => name),
+        const { data, error } = await supabase.rpc("create_registration_order", {
+          p_event_ids: events.map((e) => e.id),
+          p_whatsapp: whatsapp,
+          p_team_name: team,
         });
+
         if (error) throw error;
-        if (!data) throw new Error("No order data returned.");
-        setOrder(data as OrderResult);
+        if (!data?.order_id) throw new Error("Order creation failed.");
+
+        setOrder({
+          order_id: data.order_id,
+          expires_at: data.expires_at,
+          total_paise: data.total_paise,
+        });
         setPhase("paying");
         window.scrollTo({ top: 0, behavior: "smooth" });
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        setSubmitError(`Could not hold your slot: ${msg}`);
+        setSubmitError(err instanceof Error ? err.message : String(err));
       } finally {
         setSubmitting(false);
       }
     },
-    [events]
+    [events, submitting]
   );
 
   const handlePaymentSuccess = useCallback((utr: string) => {
@@ -1054,154 +867,78 @@ function RegisterPageInner() {
   }, []);
 
   return (
-    <main
-      className="relative min-h-screen overflow-x-hidden"
-      style={{ background: "#06070B" }}
-    >
-      <TacticalGrid />
-      <AmbientGlows />
-
-      <div className="relative z-10 mx-auto max-w-lg px-4 pb-20 pt-6">
-        {/* Back link */}
-        {phase === "details" && (
+    <div className="min-h-screen bg-[#F4F6FB] flex flex-col">
+      {/* Top Navbar */}
+      <header className="sticky top-0 z-30 border-b border-white/10 bg-[#0A1128] text-white">
+        <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3.5">
+          <Link href="/" className="flex items-center gap-1.5 font-black text-lg">
+            <span className="text-[#FFB800]">◆</span>
+            <span>{ORG_NAME}</span>
+          </Link>
           <Link
             href="/"
-            className="mb-6 inline-flex items-center gap-1.5 text-sm text-white/40 transition-colors duration-200 hover:text-white/70"
+            className="text-xs font-bold text-slate-300 hover:text-white transition-colors"
           >
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
-            Back to home
+            ← Back to tournaments
           </Link>
-        )}
-        {phase === "paying" && (
-          <button
-            onClick={handleBack}
-            className="mb-6 inline-flex items-center gap-1.5 text-sm text-white/40 transition-colors duration-200 hover:text-white/70"
-          >
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
-            Back
-          </button>
-        )}
-
-        {/* Card */}
-        <div className="rounded-2xl border border-white/[0.08] bg-[#0E1118] p-6">
-          {/* Header */}
-          <div className="mb-6">
-            {phase !== "confirmed" && (
-              <StepIndicator phase={phase} />
-            )}
-            <h1 className="text-xl font-bold text-white">
-              {phase === "details"
-                ? "Register for Tournament"
-                : phase === "paying"
-                ? "Complete Payment"
-                : "Registration Complete"}
-            </h1>
-            <p className="mt-1 text-sm text-white/40">
-              {phase === "details"
-                ? `${ORG_NAME} · Secure your spot now`
-                : phase === "paying"
-                ? "Pay via UPI to confirm your slot"
-                : "Welcome to the tournament!"}
-            </p>
-          </div>
-
-          {/* Phase content */}
-          {phase === "details" && (
-            <PhaseADetails
-              events={events}
-              unavailable={unavailableEvents}
-              loading={loading}
-              fetchError={fetchError}
-              onSubmit={handleHoldSlot}
-              submitting={submitting}
-              submitError={submitError}
-              isLoggedIn={isLoggedIn}
-              currentUrl={currentUrl}
-            />
-          )}
-
-          {phase === "paying" && order && (
-            <PhaseBPaying
-              order={order}
-              events={events}
-              teamName={teamName}
-              onSuccess={handlePaymentSuccess}
-              onBack={handleBack}
-            />
-          )}
-
-          {phase === "confirmed" && (
-            <PhaseCSuccess
-              utr={confirmedUtr}
-              events={events}
-              teamName={teamName}
-            />
-          )}
         </div>
+      </header>
 
-        {/* Footer */}
-        {phase !== "confirmed" && (
-          <p className="mt-6 text-center text-xs text-white/20">
-            Need help?{" "}
-            <a
-              href={`https://wa.me/${SUPPORT_WHATSAPP}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-emerald-500/60 transition-colors duration-200 hover:text-emerald-400"
-            >
-              Contact {ORG_NAME} support
-            </a>
-          </p>
-        )}
-      </div>
-    </main>
+      {/* Main Registration Content */}
+      <main className="flex-1 py-8 sm:py-12 px-4">
+        <div className="max-w-xl mx-auto space-y-6">
+          <StepIndicator phase={phase} />
+
+          {/* White Card Container */}
+          <div className="rounded-3xl border border-slate-200/90 bg-white p-6 sm:p-8 shadow-xl">
+            {phase === "details" && (
+              <PhaseADetails
+                events={events}
+                unavailable={unavailableEvents}
+                loading={loading}
+                fetchError={fetchError}
+                onSubmit={handleHoldSlot}
+                submitting={submitting}
+                submitError={submitError}
+                isLoggedIn={isLoggedIn}
+                currentUrl={currentUrl}
+              />
+            )}
+
+            {phase === "paying" && order && (
+              <PhaseBPaying
+                order={order}
+                events={events}
+                teamName={teamName}
+                onSuccess={handlePaymentSuccess}
+                onBack={handleBack}
+              />
+            )}
+
+            {phase === "confirmed" && (
+              <PhaseCSuccess
+                utr={confirmedUtr}
+                events={events}
+                teamName={teamName}
+              />
+            )}
+          </div>
+        </div>
+      </main>
+    </div>
   );
 }
-
-// ─────────────────────────────────────────────
-// Default Export — Suspense wrapper (required for useSearchParams)
-// ─────────────────────────────────────────────
 
 export default function RegisterPage() {
   return (
     <Suspense
       fallback={
-        <main
-          className="flex min-h-screen items-center justify-center"
-          style={{ background: "#06070B" }}
-        >
-          <div className="flex flex-col items-center gap-4">
-            <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-emerald-400" />
-            <p className="text-sm text-white/40">Loading registration…</p>
-          </div>
-        </main>
+        <div className="min-h-screen bg-[#F4F6FB] flex items-center justify-center">
+          <div className="h-9 w-9 animate-spin rounded-full border-2 border-slate-300 border-t-[#FFB800]" />
+        </div>
       }
     >
-      <RegisterPageInner />
+      <RegisterContent />
     </Suspense>
   );
 }
