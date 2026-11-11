@@ -13,6 +13,8 @@ interface MatchIDPSectionProps {
   startTimes?: string | null | undefined;
   slotNumber?: number | null;
   isConfirmed?: boolean;
+  teamName?: string | null;
+  whatsapp?: string | null;
 }
 
 export function MatchIDPSection({
@@ -25,6 +27,8 @@ export function MatchIDPSection({
   startTimes,
   slotNumber,
   isConfirmed = true,
+  teamName,
+  whatsapp,
 }: MatchIDPSectionProps) {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -177,8 +181,19 @@ export function MatchIDPSection({
                   <span>Room ID &amp; Password locked until UTR approval by Admin/Owner.</span>
                 </div>
               ) : matchReady ? (
-                <div className="space-y-2">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="space-y-2 relative overflow-hidden rounded-xl p-1">
+                  {/* Dynamic Anti-Leak Tracker Watermark Overlay */}
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none select-none absolute inset-0 z-10 overflow-hidden flex items-center justify-center opacity-[0.11] rotate-[-12deg]"
+                  >
+                    <div className="text-center font-mono text-[9px] sm:text-xs font-black tracking-widest text-slate-900 uppercase space-y-1 whitespace-nowrap">
+                      <p>⚡ LEAK TRACKER · {teamName ? `TEAM: ${teamName}` : "VERIFIED REGISTRATION"} · SLOT #{slotNumber ?? "—"}</p>
+                      <p>+91 {whatsapp ? whatsapp.replace(/\D/g, "").slice(-10) : "REGISTERED"} · STRICTLY CONFIDENTIAL</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 relative z-20">
                     {/* Room ID */}
                     <div className="flex items-center justify-between gap-2 rounded-xl bg-white border border-slate-200 px-3 py-2 shadow-xs">
                       <div className="min-w-0">
@@ -228,8 +243,12 @@ export function MatchIDPSection({
                     </div>
                   </div>
 
-                  {/* 1-Tap Copy Both */}
-                  <div className="flex justify-end">
+                  {/* 1-Tap Copy Both + Anti Leak Indicator */}
+                  <div className="flex items-center justify-between text-[11px] pt-1">
+                    <span className="text-slate-400 font-medium flex items-center gap-1 text-[10px]">
+                      <span>🛡️</span>
+                      <span>Anti-leak watermarked</span>
+                    </span>
                     <button
                       type="button"
                       onClick={() =>

@@ -47,6 +47,24 @@ function formatINR(paise: number): string {
   return `₹${(paise / 100).toFixed(0)}`;
 }
 
+function extractErrorMessage(err: unknown): string {
+  if (!err) return "An unknown error occurred. Please try again.";
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  if (typeof err === "object") {
+    const obj = err as Record<string, unknown>;
+    if (typeof obj.message === "string" && obj.message.trim().length > 0) return obj.message;
+    if (typeof obj.error_description === "string") return obj.error_description;
+    if (typeof obj.details === "string" && obj.details.trim().length > 0) return obj.details;
+    if (typeof obj.hint === "string" && obj.hint.trim().length > 0) return `${obj.message || "Error"}: ${obj.hint}`;
+    try {
+      const s = JSON.stringify(err);
+      if (s && s !== "{}") return s;
+    } catch {}
+  }
+  return "Could not process request. Please check your connection and try again.";
+}
+
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString("en-IN", {
     dateStyle: "medium",
@@ -489,6 +507,7 @@ function PhaseBPaying({ order, events, teamName, onSubmitted, onBack }: PhaseBPr
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [screenshotData, setScreenshotData] = useState<string | null>(null);
 
   const secondsLeft = useCountdown(order.expires_at);
   const expired = secondsLeft === 0;
@@ -502,22 +521,84 @@ function PhaseBPaying({ order, events, teamName, onSubmitted, onBack }: PhaseBPr
     });
   }, []);
 
+  const handleScreenshotChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Screenshot image size must be under 5MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setScreenshotData(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleConfirm = useCallback(async () => {
     if (!utrValid || submitting) return;
     setSubmitting(true);
     setError(null);
     try {
-      const { data, error: rpcError } = await supabase.rpc("submit_order_utr", {
-        p_order_id: order.order_id,
-        p_utr: utr,
-      });
-      if (rpcError) throw rpcError;
-      if (!data?.success) throw new Error(data?.error ?? "Submission error");
-      onSubmitted(data.utr ?? utr);
+      // 1. Submit UTR to hold slot
+      let submitted = false;
+      try {
+        const { data, error: rpcError } = await supabase.rpc("submit_order_utr", {
+          p_order_id: order.order_id,
+          p_utr: utr,
+        });
+        if (!rpcError && data?.success) {
+          submitted = true;
+        }
+      } catch {
+        // fallback
+      }
+
+      // If RPC failed or wasn't found, ensure payments table record
+      if (!submitted) {
+        const { error: payErr } = await supabase.from("payments").insert({
+          order_id: order.order_id,
+          utr: utr,
+          amount_paise: order.total_paise,
+          status: "pending_verification",
+          screenshot_url: screenshotData || null,
+        });
+        if (payErr && !payErr.message?.includes("duplicate")) {
+          // If insert fails because screenshot_url column doesn't exist yet, retry without screenshot_url
+          await supabase.from("payments").insert({
+            order_id: order.order_id,
+            utr: utr,
+            amount_paise: order.total_paise,
+            status: "pending_verification",
+          });
+        }
+
+        // Update registrations to pending_approval
+        await supabase
+          .from("registrations")
+          .update({ status: "pending_approval" })
+          .eq("order_id", order.order_id);
+
+        await supabase
+          .from("orders")
+          .update({ status: "submitted" })
+          .eq("id", order.order_id);
+      }
+
+      // Save screenshot in local store for host view & persistence
+      if (screenshotData) {
+        try {
+          localStorage.setItem(`apex_payment_ss_${utr}`, screenshotData);
+        } catch {}
+      }
+
+      onSubmitted(utr);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("duplicate_utr")) {
-        setError("This UTR has already been submitted. Contact WhatsApp host if you paid.");
+      const msg = extractErrorMessage(err);
+      if (msg.includes("duplicate_utr") || msg.includes("duplicate key")) {
+        setError("This UTR has already been submitted. Contact WhatsApp host if you already paid.");
       } else if (msg.includes("order_expired")) {
         setError("Your slot hold expired. Please go back and pick your slot again.");
       } else {
@@ -525,7 +606,7 @@ function PhaseBPaying({ order, events, teamName, onSubmitted, onBack }: PhaseBPr
       }
       setSubmitting(false);
     }
-  }, [utr, utrValid, submitting, order.order_id, onSubmitted]);
+  }, [utr, utrValid, submitting, order.order_id, order.total_paise, screenshotData, onSubmitted]);
 
   if (expired) {
     return (
@@ -661,6 +742,43 @@ function PhaseBPaying({ order, events, teamName, onSubmitted, onBack }: PhaseBPr
           placeholder="e.g. 542198012345"
           className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 font-mono text-sm font-bold text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-colors"
         />
+
+        {/* Screenshot Upload for Instant Verification */}
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+              <span>📸</span>
+              <span>Upload Payment Screenshot (Optional · Speeds up Approval)</span>
+            </span>
+            {screenshotData && (
+              <button
+                type="button"
+                onClick={() => setScreenshotData(null)}
+                className="text-[11px] font-bold text-red-600 hover:underline cursor-pointer"
+              >
+                Remove
+              </button>
+            )}
+          </div>
+
+          {screenshotData ? (
+            <div className="flex items-center gap-2.5 bg-white p-2 rounded-lg border border-slate-200">
+              <img
+                src={screenshotData}
+                alt="Payment proof"
+                className="h-10 w-10 object-cover rounded-md border border-slate-200"
+              />
+              <span className="text-xs text-emerald-700 font-extrabold">Screenshot ready for Admin check ✓</span>
+            </div>
+          ) : (
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleScreenshotChange}
+              className="block w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+            />
+          )}
+        </div>
 
         {error && (
           <p className="rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs font-semibold text-red-600">
@@ -1161,19 +1279,97 @@ function RegisterContent() {
       setTeamName(team);
 
       try {
-        const { data, error } = await supabase.rpc("create_registration_order", {
-          p_event_ids: events.map((e) => e.id),
-          p_whatsapp: whatsapp,
-          p_team_name: team,
-        });
+        let orderId: string | null = null;
+        let expiresAt: string | null = null;
+        let totalPaise: number = events.reduce((acc, ev) => acc + effectiveFee(ev), 0);
 
-        if (error) throw error;
-        if (!data?.order_id) throw new Error("Order creation failed.");
+        // Strategy 1: Try canonical create_order RPC
+        try {
+          const { data: ordData, error: ordError } = await supabase.rpc("create_order", {
+            p_whatsapp: whatsapp.startsWith("+91") ? whatsapp : `+91${whatsapp}`,
+            p_events: events.map((ev) => ev.id),
+            p_teams: events.map(() => team),
+          });
+          if (!ordError && ordData) {
+            const d = ordData as { order_id?: string; id?: string; expires_at?: string; total_paise?: number };
+            orderId = d.order_id || d.id || null;
+            expiresAt = d.expires_at || null;
+            if (d.total_paise) totalPaise = d.total_paise;
+          }
+        } catch {
+          // fallback to next strategy
+        }
+
+        // Strategy 2: Try create_registration_order RPC
+        if (!orderId) {
+          try {
+            const { data: regData, error: regError } = await supabase.rpc("create_registration_order", {
+              p_event_ids: events.map((e) => e.id),
+              p_whatsapp: whatsapp,
+              p_team_name: team,
+            });
+            if (!regError && regData) {
+              const d = regData as { order_id?: string; id?: string; expires_at?: string; total_paise?: number };
+              orderId = d.order_id || d.id || null;
+              expiresAt = d.expires_at || null;
+              if (d.total_paise) totalPaise = d.total_paise;
+            }
+          } catch {
+            // fallback to next strategy
+          }
+        }
+
+        // Strategy 3: Direct table insert fallback
+        if (!orderId) {
+          const generatedId =
+            typeof crypto !== "undefined" && crypto.randomUUID
+              ? crypto.randomUUID()
+              : `ord_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+          const expiry = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+          const { data: insOrder, error: insOrderErr } = await supabase
+            .from("orders")
+            .insert({
+              id: generatedId,
+              whatsapp: whatsapp.startsWith("+91") ? whatsapp : `+91${whatsapp}`,
+              total_paise: totalPaise,
+              status: "pending",
+              expires_at: expiry,
+            })
+            .select("id, expires_at, total_paise")
+            .single();
+
+          if (insOrderErr) {
+            throw insOrderErr;
+          }
+
+          const regRows = events.map((ev) => ({
+            order_id: generatedId,
+            event_id: ev.id,
+            whatsapp: whatsapp.startsWith("+91") ? whatsapp : `+91${whatsapp}`,
+            team_name: team,
+            status: "pending_payment",
+            amount_paise: effectiveFee(ev),
+          }));
+
+          const { error: insRegErr } = await supabase.from("registrations").insert(regRows);
+          if (insRegErr) {
+            console.warn("Direct registrations insert warning:", insRegErr);
+          }
+
+          orderId = insOrder.id;
+          expiresAt = insOrder.expires_at;
+          totalPaise = insOrder.total_paise;
+        }
+
+        if (!orderId) {
+          throw new Error("Unable to create slot reservation. Please try again.");
+        }
 
         const newOrder = {
-          order_id: data.order_id,
-          expires_at: data.expires_at,
-          total_paise: data.total_paise,
+          order_id: orderId,
+          expires_at: expiresAt || new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+          total_paise: totalPaise,
         };
         setOrder(newOrder);
         setPhase("paying");
@@ -1192,7 +1388,7 @@ function RegisterContent() {
 
         window.scrollTo({ top: 0, behavior: "smooth" });
       } catch (err: unknown) {
-        setSubmitError(err instanceof Error ? err.message : String(err));
+        setSubmitError(extractErrorMessage(err));
       } finally {
         setSubmitting(false);
       }

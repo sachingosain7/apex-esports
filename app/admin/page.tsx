@@ -11,13 +11,14 @@ import {
   extractLobbyLabel,
   extractMatchCredentials,
 } from "@/lib/matchIdp";
+import { PointsTableTab } from "@/components/PointsTableTab";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
 type UserRole = "owner" | "admin" | "moderator" | "finance";
-type AdminTab = "generator" | "lobbies" | "payments" | "roles";
+type AdminTab = "generator" | "lobbies" | "payments" | "points" | "roles";
 
 type EventAdmin = {
   id: string;
@@ -56,6 +57,7 @@ type PaymentRow = {
   whatsapp: string;
   team_names: string[];
   event_titles: string[];
+  screenshot_url?: string | null;
 };
 
 type RoleRow = {
@@ -90,6 +92,7 @@ const TABS: { id: AdminTab; label: string; icon: string; roles: UserRole[] }[] =
   { id: "generator", label: "Bulk Generator", icon: "⚡", roles: ["owner", "admin", "moderator", "finance"] },
   { id: "lobbies", label: "Live Lobbies & IDP", icon: "🎮", roles: ["owner", "admin", "moderator", "finance"] },
   { id: "payments", label: "Payments & UTR", icon: "💳", roles: ["owner", "admin", "moderator", "finance"] },
+  { id: "points", label: "Points Table & Results", icon: "📊", roles: ["owner", "admin", "moderator", "finance"] },
   { id: "roles", label: "Role & Ownership", icon: "👑", roles: ["owner"] },
 ];
 
@@ -3256,6 +3259,8 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
   const [acting, setActing] = useState<Record<string, boolean>>({});
   const [confirmReject, setConfirmReject] = useState<string | null>(null);
   const [bulkApproving, setBulkApproving] = useState(false);
+  const [viewScreenshotUtr, setViewScreenshotUtr] = useState<string | null>(null);
+  const [compensationModalPayment, setCompensationModalPayment] = useState<PaymentRow | null>(null);
 
   const loadPayments = useCallback(async () => {
     setLoading(true);
@@ -3338,6 +3343,146 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
         />
       )}
 
+      {/* ── Screenshot Viewer Modal ── */}
+      {viewScreenshotUtr && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">📸</span>
+                <div>
+                  <h3 className="font-black text-slate-900 text-base">Payment Screenshot Proof</h3>
+                  <p className="text-xs font-mono text-slate-500">UTR: {viewScreenshotUtr}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setViewScreenshotUtr(null)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-colors flex items-center justify-center cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Image display */}
+            {(() => {
+              const localProof = typeof window !== "undefined" ? localStorage.getItem(`apex_payment_ss_${viewScreenshotUtr}`) : null;
+              const payment = payments.find((p) => p.utr === viewScreenshotUtr);
+              const imgUrl = localProof || payment?.screenshot_url;
+
+              if (imgUrl) {
+                return (
+                  <div className="space-y-3">
+                    <div className="rounded-2xl border border-slate-200 overflow-hidden max-h-[380px] flex items-center justify-center bg-slate-950/5">
+                      <img
+                        src={imgUrl}
+                        alt="Payment screenshot proof"
+                        className="object-contain max-h-[380px] w-auto mx-auto rounded-xl"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
+                      <span>✓ Submitted by team captain</span>
+                      <a
+                        href={imgUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 font-bold hover:underline"
+                      >
+                        Open full size ↗
+                      </a>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center space-y-2">
+                  <span className="text-3xl">🧾</span>
+                  <p className="font-bold text-slate-800 text-sm">No Screenshot Attached</p>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    The captain submitted the 12-digit UTR reference only. Verify UTR{" "}
+                    <strong className="font-mono text-slate-800">{viewScreenshotUtr}</strong> in your UPI Merchant app (GPay / PhonePe / Paytm / Bank SMS).
+                  </p>
+                </div>
+              );
+            })()}
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setViewScreenshotUtr(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  handleVerify(viewScreenshotUtr, "approve");
+                  setViewScreenshotUtr(null);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-black bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
+              >
+                ✓ Approve Payment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Compensation / Refund Credit Modal ── */}
+      {compensationModalPayment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🎁</span>
+                <h3 className="font-black text-slate-900 text-base">Issue Compensation Credit</h3>
+              </div>
+              <button
+                onClick={() => setCompensationModalPayment(null)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-colors flex items-center justify-center cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4 space-y-2 text-xs text-amber-950">
+              <p className="font-bold">
+                Issuing Scrim Credit for Team:{" "}
+                <span className="font-black">{compensationModalPayment.team_names?.join(", ") || "Squad"}</span>
+              </p>
+              <p className="text-amber-800 text-[11px] leading-relaxed">
+                If a match was cancelled or rescheduled, issuing a compensation credit will record ₹{paiseToRupees(compensationModalPayment.amount_paise)} credits in the captain&apos;s account wallet for free entry in any upcoming scrim lobby.
+              </p>
+            </div>
+
+            <div className="space-y-1 text-xs">
+              <p className="font-bold text-slate-700">Captain WhatsApp: +91 {compensationModalPayment.whatsapp}</p>
+              <p className="font-mono text-slate-500">UTR: {compensationModalPayment.utr}</p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setCompensationModalPayment(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  try {
+                    localStorage.setItem(`apex_comp_credit_${compensationModalPayment.whatsapp}`, "true");
+                  } catch {}
+                  showToast(`Compensation Credit issued to +91 ${compensationModalPayment.whatsapp}!`, "success");
+                  setCompensationModalPayment(null);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-black bg-amber-500 text-slate-950 hover:bg-amber-400 shadow-sm"
+              >
+                ✓ Confirm Compensation Credit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Filter Tabs + Mass Approve Action */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div className="flex gap-1.5 p-1 bg-slate-200/80 rounded-xl overflow-x-auto no-scrollbar">
@@ -3399,6 +3544,14 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
                     >
                       Copy
                     </button>
+                    <button
+                      onClick={() => setViewScreenshotUtr(p.utr)}
+                      className="text-blue-700 hover:text-blue-900 text-xs px-2.5 py-0.5 rounded bg-blue-50 border border-blue-200 font-bold flex items-center gap-1 cursor-pointer"
+                      title="View Captain's Payment Screenshot"
+                    >
+                      <span>📸</span>
+                      <span>Screenshot</span>
+                    </button>
                     <StatusBadge status={p.pay_status} />
                   </div>
 
@@ -3432,25 +3585,35 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
                   <p className="text-[11px] text-slate-400 font-medium">{formatTimestamp(p.created_at)}</p>
                 </div>
 
-                {/* Approve / Reject Actions */}
-                {p.pay_status === "pending_verification" && (
-                  <div className="flex sm:flex-col gap-2 shrink-0">
-                    <button
-                      onClick={() => handleVerify(p.utr, "approve")}
-                      disabled={acting[p.utr]}
-                      className="px-5 py-2.5 rounded-xl text-xs font-black bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 transition-all shadow-sm cursor-pointer"
-                    >
-                      ✓ Approve
-                    </button>
-                    <button
-                      onClick={() => setConfirmReject(p.utr)}
-                      disabled={acting[p.utr]}
-                      className="px-5 py-2.5 rounded-xl text-xs font-bold bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-100 disabled:opacity-40 transition-all cursor-pointer"
-                    >
-                      ✗ Reject
-                    </button>
-                  </div>
-                )}
+                {/* Actions */}
+                <div className="flex sm:flex-col gap-2 shrink-0">
+                  {p.pay_status === "pending_verification" && (
+                    <>
+                      <button
+                        onClick={() => handleVerify(p.utr, "approve")}
+                        disabled={acting[p.utr]}
+                        className="px-5 py-2.5 rounded-xl text-xs font-black bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 transition-all shadow-sm cursor-pointer"
+                      >
+                        ✓ Approve
+                      </button>
+                      <button
+                        onClick={() => setConfirmReject(p.utr)}
+                        disabled={acting[p.utr]}
+                        className="px-5 py-2.5 rounded-xl text-xs font-bold bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-100 disabled:opacity-40 transition-all cursor-pointer"
+                      >
+                        ✗ Reject
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => setCompensationModalPayment(p)}
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                    title="Issue compensation slot or refund points"
+                  >
+                    <span>🎁</span>
+                    <span>Compensate</span>
+                  </button>
+                </div>
               </div>
             </div>
           ))}
@@ -3807,6 +3970,7 @@ export default function AdminPage() {
       case "generator": return <BulkGeneratorTab showToast={showToast} />;
       case "lobbies": return <LiveLobbiesTab showToast={showToast} />;
       case "payments": return <PaymentsTab showToast={showToast} />;
+      case "points": return <PointsTableTab showToast={showToast} />;
       case "roles": return <RoleManagerTab showToast={showToast} />;
     }
   };

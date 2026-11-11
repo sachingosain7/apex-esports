@@ -298,3 +298,154 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION admin_verify_payment(text, text) TO authenticated;
+
+-- ============================================================================
+-- 9. POINTS TABLE & MATCH RESULTS
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS points_tables (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id uuid REFERENCES events(id) ON DELETE CASCADE,
+  match_number int NOT NULL DEFAULT 1,
+  data jsonb NOT NULL DEFAULT '[]'::jsonb,
+  is_published boolean NOT NULL DEFAULT true,
+  updated_at timestamptz DEFAULT now(),
+  UNIQUE(event_id, match_number)
+);
+
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS screenshot_url text;
+
+CREATE OR REPLACE FUNCTION admin_save_points_table(
+  p_event_id uuid,
+  p_match_number int,
+  p_data jsonb,
+  p_is_published boolean DEFAULT true
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NOT has_role(ARRAY['owner', 'admin', 'moderator', 'finance']::admin_role_t[]) THEN
+    RAISE EXCEPTION 'unauthorized';
+  END IF;
+
+  INSERT INTO points_tables (event_id, match_number, data, is_published, updated_at)
+  VALUES (p_event_id, p_match_number, p_data, p_is_published, now())
+  ON CONFLICT (event_id, match_number)
+  DO UPDATE SET
+    data = EXCLUDED.data,
+    is_published = EXCLUDED.is_published,
+    updated_at = now();
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION admin_save_points_table(uuid, int, jsonb, boolean) TO authenticated;
+
+-- ============================================================================
+-- 10. GET PUBLIC POINTS TABLE
+-- ============================================================================
+CREATE OR REPLACE FUNCTION get_points_table(p_event_id uuid)
+RETURNS TABLE (
+  match_number int,
+  data jsonb,
+  is_published boolean,
+  updated_at timestamptz
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT match_number, data, is_published, updated_at
+  FROM points_tables
+  WHERE event_id = p_event_id AND is_published = true
+  ORDER BY match_number ASC;
+$$;
+
+GRANT EXECUTE ON FUNCTION get_points_table(uuid) TO authenticated, anon;
+
+-- ============================================================================
+-- 11. CANONICAL create_registration_order & create_order
+-- ============================================================================
+CREATE OR REPLACE FUNCTION create_registration_order(
+  p_event_ids uuid[],
+  p_whatsapp text,
+  p_team_name text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_order_id uuid := gen_random_uuid();
+  v_expires_at timestamptz := now() + interval '10 minutes';
+  v_total_paise int := 0;
+  v_event events%ROWTYPE;
+  v_eid uuid;
+  v_fee int;
+BEGIN
+  -- Compute total fee
+  FOREACH v_eid IN ARRAY p_event_ids LOOP
+    SELECT * INTO v_event FROM events WHERE id = v_eid;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'event_not_found: %', v_eid;
+    END IF;
+
+    IF v_event.early_bird_fee_paise IS NOT NULL AND v_event.filled_slots < v_event.early_bird_slots THEN
+      v_fee := v_event.early_bird_fee_paise;
+    ELSE
+      v_fee := v_event.entry_fee_paise;
+    END IF;
+    v_total_paise := v_total_paise + v_fee;
+  END LOOP;
+
+  -- Insert order
+  INSERT INTO orders (id, whatsapp, total_paise, status, expires_at)
+  VALUES (v_order_id, p_whatsapp, v_total_paise, 'pending', v_expires_at);
+
+  -- Insert registrations
+  FOREACH v_eid IN ARRAY p_event_ids LOOP
+    SELECT * INTO v_event FROM events WHERE id = v_eid;
+    IF v_event.early_bird_fee_paise IS NOT NULL AND v_event.filled_slots < v_event.early_bird_slots THEN
+      v_fee := v_event.early_bird_fee_paise;
+    ELSE
+      v_fee := v_event.entry_fee_paise;
+    END IF;
+
+    INSERT INTO registrations (order_id, event_id, whatsapp, team_name, status, amount_paise)
+    VALUES (v_order_id, v_eid, p_whatsapp, p_team_name, 'pending_payment', v_fee);
+  END LOOP;
+
+  RETURN jsonb_build_object(
+    'order_id', v_order_id,
+    'expires_at', v_expires_at,
+    'total_paise', v_total_paise
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION create_registration_order(uuid[], text, text) TO authenticated, anon;
+
+-- Wrapper for legacy create_order
+CREATE OR REPLACE FUNCTION create_order(
+  p_whatsapp text,
+  p_events uuid[],
+  p_teams text[]
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN create_registration_order(
+    p_events,
+    p_whatsapp,
+    CASE WHEN array_length(p_teams, 1) > 0 THEN p_teams[1] ELSE 'Unknown Squad' END
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION create_order(text, uuid[], text[]) TO authenticated, anon;
+

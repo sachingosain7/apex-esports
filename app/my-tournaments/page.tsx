@@ -25,6 +25,7 @@ type Registration = {
   status: string;
   amount_paise: number;
   registered_at: string;
+  whatsapp?: string | null;
 };
 
 type SearchMode = "utr" | "whatsapp";
@@ -105,6 +106,8 @@ function RegistrationCard({ reg }: { reg: Registration }) {
         startTimes={reg.start_times}
         slotNumber={reg.slot_number}
         isConfirmed={isConfirmed}
+        teamName={reg.team_name}
+        whatsapp={reg.whatsapp}
       />
     </div>
   );

@@ -247,6 +247,8 @@ function RegistrationCard({
         idpTimes={reg.event_idp_times}
         startTimes={reg.event_start_times}
         isConfirmed={isConfirmed}
+        teamName={reg.team_name}
+        whatsapp={reg.whatsapp}
       />
 
       <p className="text-[11px] text-slate-400 mt-auto">
@@ -448,6 +450,25 @@ export default function ProfilePage() {
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
             Manage your registered squads, 3-match custom rooms, and official lobby groups.
           </p>
+        </div>
+
+        {/* ── Wallet & Compensation Points Card ── */}
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🎁</span>
+              <h2 className="text-sm font-black text-amber-950 uppercase tracking-wider">
+                Wallet &amp; Compensation Points
+              </h2>
+            </div>
+            <p className="text-xs text-amber-800">
+              Points issued for rescheduled matches or host cancellations are saved here and valid across all scrims.
+            </p>
+          </div>
+          <div className="bg-white border border-amber-300 rounded-xl px-4 py-2 shrink-0 shadow-xs">
+            <span className="text-[10px] font-extrabold uppercase text-slate-400 block">Active Balance</span>
+            <span className="text-base font-black text-amber-600 font-mono">₹0 Compensation</span>
+          </div>
         </div>
 
         {err && (

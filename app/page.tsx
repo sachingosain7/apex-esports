@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { ORG_NAME, SUPPORT_WHATSAPP } from "@/lib/config";
 import { extractLobbyLabel } from "@/lib/matchIdp";
+import { PublicPointsTableModal } from "@/components/PublicPointsTableModal";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -753,6 +754,7 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [prizeModalEvent, setPrizeModalEvent] = useState<EventRow | null>(null);
   const [utrModalOpen, setUtrModalOpen] = useState(false);
+  const [pointsModalOpen, setPointsModalOpen] = useState(false);
   const [clientNow, setClientNow] = useState<number>(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const checkoutRef = useRef<HTMLDivElement>(null);
@@ -1317,7 +1319,7 @@ export default function Home() {
           {/* Section: Open Tournaments / Scrims */}
           {/* ────────────────────────────────────────────────────────────────── */}
           <section id="tournaments" className="scroll-mt-24 space-y-4 min-w-0 w-full">
-            <div className="flex items-center justify-between gap-3 min-w-0 w-full">
+            <div className="flex items-center justify-between gap-3 min-w-0 w-full flex-wrap">
               <div className="min-w-0 flex-1">
                 <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight truncate">
                   Open tournaments
@@ -1326,11 +1328,21 @@ export default function Home() {
                   3 Matches per lobby · Room ID &amp; Password released 15m before match
                 </p>
               </div>
-              {events && scrims.length > 0 && (
-                <span className="rounded-full bg-blue-100 text-blue-800 px-2.5 sm:px-3 py-0.5 text-xs font-black shrink-0 whitespace-nowrap">
-                  {scrims.length} open
-                </span>
-              )}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setPointsModalOpen(true)}
+                  className="rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1.5 text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>📊</span>
+                  <span>Points Table &amp; Results</span>
+                </button>
+                {events && scrims.length > 0 && (
+                  <span className="rounded-full bg-blue-100 text-blue-800 px-2.5 sm:px-3 py-0.5 text-xs font-black shrink-0 whitespace-nowrap">
+                    {scrims.length} open
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 w-full min-w-0 max-w-full">
@@ -1605,6 +1617,11 @@ export default function Home() {
       {/* UTR Room Finder Modal */}
       {utrModalOpen && (
         <UtrLookupModal onClose={() => setUtrModalOpen(false)} />
+      )}
+
+      {/* Points Table & Results Modal */}
+      {pointsModalOpen && (
+        <PublicPointsTableModal onClose={() => setPointsModalOpen(false)} />
       )}
     </div>
   );
