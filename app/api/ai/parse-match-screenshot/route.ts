@@ -81,18 +81,30 @@ Return ONLY a valid JSON array of objects with no markdown code fences, matching
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+    };
+    if (apiKey.startsWith("AQ.")) {
+      headers["Authorization"] = `Bearer ${apiKey}`;
+    }
+
     const geminiRes = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(geminiPayload),
     });
 
     if (!geminiRes.ok) {
       const errText = await geminiRes.text();
+      let hint = "";
+      if (geminiRes.status === 401 || errText.includes("API_KEY_SERVICE_BLOCKED") || errText.includes("UNAUTHENTICATED")) {
+        hint = " Tip: If using Google AI Studio, click 'Create API key in new project' to get a direct AIzaSy... key with Generative Language API enabled.";
+      }
       return NextResponse.json(
         {
           success: false,
-          message: `Gemini API Error (${geminiRes.status}): ${errText.slice(0, 200)}`,
+          message: `Gemini API Error (${geminiRes.status}): ${errText.slice(0, 150)}.${hint}`,
         },
         { status: 200 }
       );
