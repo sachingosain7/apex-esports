@@ -10,7 +10,7 @@ import Link from "next/link";
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-type RegStatus = "pending_payment" | "confirmed" | "cancelled";
+type RegStatus = "pending_payment" | "pending_verification" | "confirmed" | "cancelled";
 
 type MyRegistration = {
   id: string;
@@ -62,6 +62,10 @@ const STATUS_CONFIG: Record<
   confirmed: {
     label: "CONFIRMED",
     cls: "text-emerald-800 bg-emerald-100 border-emerald-300",
+  },
+  pending_verification: {
+    label: "PENDING APPROVAL",
+    cls: "text-amber-800 bg-amber-100 border-amber-300",
   },
   pending_payment: {
     label: "PENDING PAYMENT",
@@ -197,6 +201,19 @@ function RegistrationCard({
         </div>
       )}
 
+      {/* ── Pending verification notice ── */}
+      {reg.status === "pending_verification" && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          <span className="text-base -mt-0.5">⏳</span>
+          <div>
+            <p className="font-bold">Payment verification pending</p>
+            <p className="text-amber-800 mt-0.5">
+              Your 12-digit UTR is awaiting approval from the Admin or Owner. Room credentials and the official WhatsApp group link will unlock automatically once approved.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ── UTR ── */}
       {reg.utr && (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5">
@@ -291,25 +308,35 @@ export default function ProfilePage() {
       .filter(Boolean);
 
     let utrMap: Record<string, string> = {};
+    let payStatusMap: Record<string, string> = {};
     if (orderIds.length > 0) {
       const { data: payData } = await supabase
         .from("payments")
-        .select("order_id, utr")
+        .select("order_id, utr, status")
         .in("order_id", orderIds);
       (payData ?? []).forEach((p) => {
         utrMap[p.order_id] = p.utr;
+        payStatusMap[p.order_id] = p.status;
       });
     }
 
     const flat: MyRegistration[] = (regData ?? []).map((r) => {
       const ev = (r as unknown as { events: Record<string, unknown> }).events ?? {};
       const ord = (r as unknown as { orders: Record<string, unknown> }).orders ?? {};
+      const payStatus = payStatusMap[r.order_id];
+      let effectiveStatus = r.status as RegStatus;
+      if (payStatus === "pending_verification") {
+        effectiveStatus = "pending_verification";
+      } else if (payStatus === "rejected") {
+        effectiveStatus = "cancelled";
+      }
+
       return {
         id: r.id,
         team_name: r.team_name,
         whatsapp: r.whatsapp,
         amount_paise: r.amount_paise,
-        status: r.status as RegStatus,
+        status: effectiveStatus,
         created_at: r.created_at,
         event_id: r.event_id,
         order_id: r.order_id,

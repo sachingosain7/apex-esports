@@ -260,9 +260,26 @@ export default function MyTournamentsPage() {
               Home
             </Link>
             {userEmail ? (
-              <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white truncate max-w-[150px]">
-                {userEmail}
-              </span>
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/profile"
+                  className="rounded-full border border-white/20 bg-white/10 hover:bg-white/20 px-3 py-1 text-xs text-white truncate max-w-[130px] sm:max-w-[180px] transition-colors"
+                  title="View your profile"
+                >
+                  {userEmail}
+                </Link>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await supabase.auth.signOut();
+                    window.location.reload();
+                  }}
+                  className="text-xs text-slate-300 hover:text-white transition-colors cursor-pointer"
+                  title="Sign out"
+                >
+                  Sign Out
+                </button>
+              </div>
             ) : (
               <Link
                 href="/login"

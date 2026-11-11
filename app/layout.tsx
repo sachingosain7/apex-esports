@@ -27,6 +27,11 @@ export const metadata: Metadata = {
   authors: [{ name: ORG_NAME }],
   creator: ORG_NAME,
   manifest: "/manifest.json",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
