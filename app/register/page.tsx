@@ -12,6 +12,7 @@ import QRCode from "react-qr-code";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { extractLobbyLabel } from "@/lib/matchIdp";
 
 // ─────────────────────────────────────────────
 // Types
@@ -27,6 +28,7 @@ type EvSummary = {
   max_slots: number;
   filled_slots: number;
   status: string;
+  whatsapp_group_link?: string | null;
   is_published?: boolean;
 };
 
@@ -777,16 +779,23 @@ function PhaseBPaying({ order, events, teamName, onSuccess, onBack }: PhaseBProp
 // Phase C — Success
 // ─────────────────────────────────────────────
 
-function PhaseCSuccess({ utr }: { utr: string }) {
+function PhaseCSuccess({
+  utr,
+  events,
+  teamName,
+}: {
+  utr: string;
+  events: EvSummary[];
+  teamName: string;
+}) {
   return (
-    <div className="flex flex-col items-center gap-6 py-6 text-center">
+    <div className="flex flex-col items-center gap-5 py-4 text-center">
       {/* Emerald check */}
-      <div className="relative flex h-20 w-20 items-center justify-center">
+      <div className="relative flex h-16 w-16 items-center justify-center">
         <div className="absolute inset-0 rounded-full bg-emerald-500/10" />
-        <div className="absolute inset-2 rounded-full bg-emerald-500/10" />
-        <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/20 ring-2 ring-emerald-500/50">
+        <div className="relative flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/20 ring-2 ring-emerald-500/50">
           <svg
-            className="h-7 w-7 text-emerald-400"
+            className="h-6 w-6 text-emerald-400"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -801,47 +810,134 @@ function PhaseCSuccess({ utr }: { utr: string }) {
         </div>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold text-white">Payment Received! 🎉</h1>
-        <p className="text-sm text-white/50 leading-relaxed">
-          Your slot is confirmed. Our team will verify your UTR and send room
-          details to your WhatsApp.
+      <div className="flex flex-col gap-1">
+        <h1 className="text-xl sm:text-2xl font-black text-white">Payment Received! 🎉</h1>
+        <p className="text-xs sm:text-sm text-emerald-400 font-semibold">
+          Slot Reserved for Team: <span className="text-white underline">{teamName}</span>
         </p>
       </div>
 
       {/* UTR display */}
-      <div className="w-full rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3">
-        <p className="text-xs text-white/40">Reference Number</p>
-        <p className="mt-1 font-mono text-lg font-bold text-emerald-400">
+      <div className="w-full rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-2.5 flex items-center justify-between">
+        <span className="text-xs text-white/40">UTR Reference</span>
+        <span className="font-mono text-sm sm:text-base font-bold text-emerald-300">
           {utr}
+        </span>
+      </div>
+
+      {/* ── CRITICAL IDP & WHATSAPP GROUP NOTICE ── */}
+      <div className="w-full text-left rounded-2xl border border-emerald-500/40 bg-gradient-to-b from-emerald-500/10 via-emerald-500/5 to-transparent p-4 sm:p-5 space-y-3 shadow-xl">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">📍</span>
+          <div>
+            <h2 className="text-xs sm:text-sm font-black text-white uppercase tracking-wider">
+              Where will your Room ID &amp; Password be given?
+            </h2>
+            <p className="text-[11px] text-emerald-300/80">Follow these 2 simple steps to get your IDP:</p>
+          </div>
+        </div>
+
+        {/* Step 1: Join Lobby WhatsApp Group */}
+        <div className="rounded-xl bg-black/50 border border-white/[0.08] p-3.5 space-y-2">
+          <div className="flex items-start gap-2">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-black text-black">
+              1
+            </span>
+            <div className="space-y-1">
+              <p className="text-xs font-bold text-white">
+                Join your Lobby&apos;s Official WhatsApp Group:
+              </p>
+              <p className="text-[11px] text-white/50 leading-relaxed">
+                Each lobby has its own individual group where the Host releases the Room ID &amp; Password before every match.
+              </p>
+            </div>
+          </div>
+
+          {/* Lobby buttons */}
+          <div className="flex flex-col gap-2 pt-1">
+            {events.map((ev) => {
+              const label = extractLobbyLabel(ev.title);
+              return ev.whatsapp_group_link ? (
+                <a
+                  key={ev.id}
+                  href={ev.whatsapp_group_link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between gap-2 rounded-xl bg-[#25D366] hover:bg-[#20bd5a] text-black font-extrabold text-xs sm:text-sm py-2.5 px-3.5 transition-all shadow-md shadow-emerald-950/40"
+                >
+                  <span className="flex items-center gap-2 truncate">
+                    <span>📲</span>
+                    <span className="truncate">Join Official {label} WhatsApp Group</span>
+                  </span>
+                  <span className="text-[10px] bg-black/20 px-2 py-0.5 rounded text-black font-mono shrink-0">
+                    {label} Group ↗
+                  </span>
+                </a>
+              ) : (
+                <div
+                  key={ev.id}
+                  className="rounded-lg bg-white/[0.04] border border-white/[0.06] p-2.5 text-[11px] text-white/40 flex items-center justify-between"
+                >
+                  <span>{label}: Group link will be shared by host</span>
+                  <span className="text-[10px] text-amber-400 font-bold">Coming Soon</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Step 2: 3 Matches · 3 Separate IDPs */}
+        <div className="rounded-xl bg-black/50 border border-white/[0.08] p-3.5 space-y-1.5">
+          <div className="flex items-start gap-2">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-black text-black">
+              2
+            </span>
+            <div className="space-y-1">
+              <p className="text-xs font-bold text-white">
+                3 Matches = 3 Separate Custom Room IDPs:
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 pt-1 text-[11px] font-mono text-white/70">
+                <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-2">
+                  <p className="font-bold text-emerald-400">🎮 Match 1</p>
+                  <p className="text-[10px] text-white/40">IDP given 15m before</p>
+                </div>
+                <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-2">
+                  <p className="font-bold text-emerald-400">🎮 Match 2</p>
+                  <p className="text-[10px] text-white/40">IDP given 15m before</p>
+                </div>
+                <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-2">
+                  <p className="font-bold text-emerald-400">🎮 Match 3</p>
+                  <p className="text-[10px] text-white/40">IDP given 15m before</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* View Live IDP on Portal */}
+        <p className="text-[11px] text-white/50 text-center pt-1">
+          You can also check Room ID &amp; Password live on this website anytime:
         </p>
       </div>
 
       {/* CTA Buttons */}
-      <div className="flex w-full flex-col gap-3">
+      <div className="flex w-full flex-col gap-2.5">
         <Link
           href="/my-tournaments"
-          className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500 py-3.5 text-sm font-bold text-white transition-colors duration-200 hover:bg-emerald-400"
+          className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500 py-3.5 text-sm font-extrabold text-black transition-colors duration-200 hover:bg-emerald-400 shadow-lg shadow-emerald-950/40"
         >
-          View My Tournaments →
+          <span>🔑</span>
+          <span>View 3-Match IDP Live on Website →</span>
         </Link>
         <a
           href={`https://wa.me/${SUPPORT_WHATSAPP}?text=${encodeURIComponent(
-            `Hi! I just registered on ${ORG_NAME}. My UTR is ${utr}. Please confirm my slot.`
+            `Hi! I just registered for ${events.map((e) => e.title).join(", ")}. Team: ${teamName}, UTR: ${utr}. Please confirm my slot and IDP.`
           )}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 py-3.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-white/10"
+          className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 py-3 text-xs sm:text-sm font-semibold text-white transition-colors duration-200 hover:bg-white/10"
         >
-          <svg
-            className="h-4 w-4 text-emerald-400"
-            fill="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
-            <path d="M12 0C5.373 0 0 5.373 0 12c0 2.136.561 4.14 1.535 5.874L.057 23.885a.5.5 0 00.611.611l6.012-1.479A11.945 11.945 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 01-5.019-1.378l-.36-.214-3.729.917.933-3.618-.235-.372A9.818 9.818 0 012.182 12C2.182 6.569 6.569 2.182 12 2.182c5.431 0 9.818 4.387 9.818 9.818 0 5.431-4.387 9.818-9.818 9.818z" />
-          </svg>
-          Need help? Chat on WhatsApp
+          💬 WhatsApp Host Support
         </a>
       </div>
     </div>
@@ -902,7 +998,7 @@ function RegisterPageInner() {
     supabase
       .from("events")
       .select(
-        "id, title, starts_at, entry_fee_paise, early_bird_fee_paise, early_bird_slots, max_slots, filled_slots, status, is_published"
+        "id, title, starts_at, entry_fee_paise, early_bird_fee_paise, early_bird_slots, max_slots, filled_slots, status, is_published, whatsapp_group_link"
       )
       .in("id", eventIds)
       .then(({ data, error }) => {
@@ -1058,7 +1154,13 @@ function RegisterPageInner() {
             />
           )}
 
-          {phase === "confirmed" && <PhaseCSuccess utr={confirmedUtr} />}
+          {phase === "confirmed" && (
+            <PhaseCSuccess
+              utr={confirmedUtr}
+              events={events}
+              teamName={teamName}
+            />
+          )}
         </div>
 
         {/* Footer */}

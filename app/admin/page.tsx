@@ -4,6 +4,13 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { ORG_NAME, SUPPORT_WHATSAPP } from "@/lib/config";
+import {
+  parse3MatchIDP,
+  serializeMatchRoomIds,
+  serializeMatchPasswords,
+  extractLobbyLabel,
+  extractMatchCredentials,
+} from "@/lib/matchIdp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -264,28 +271,42 @@ function BroadcastModal({
   showToast: (m: string, t: "success" | "error") => void;
 }) {
   const [template, setTemplate] = useState<"idp" | "registration">("idp");
-  const roomId = event.room_id || "NOT SET";
-  const roomPass = event.room_password || "NOT SET";
+  const lobbyTag = extractLobbyLabel(event.title);
   const start = formatTimestamp(event.starts_at);
   const mapsStr = event.maps?.join(", ") || "Erangel";
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const regUrl = `${origin}/register?event=${event.id}`;
 
-  const idpMessage = `🔥 *${ORG_NAME.toUpperCase()} — ROOM CREDENTIALS* 🔥
+  const matches = parse3MatchIDP({
+    roomId: event.room_id,
+    roomPassword: event.room_password,
+    maps: event.maps,
+    idpTimes: event.idp_times,
+    startTimes: event.start_times,
+  });
+
+  const matchCredentialsText = matches
+    .map(
+      (m) =>
+        `🎯 *MATCH ${m.matchNumber} — ${m.map}*\n` +
+        `🆔 *ROOM ID:* \`${m.roomId || "Releasing 15m before"}\`\n` +
+        `🔑 *PASSWORD:* \`${m.password || "Releasing 15m before"}\`` +
+        (m.startTime ? `\n⏰ *Start:* ${m.startTime}` : "")
+    )
+    .join("\n\n");
+
+  const idpMessage = `🔥 *${ORG_NAME.toUpperCase()} — 3-MATCH IDP & CREDENTIALS* 🔥
 ━━━━━━━━━━━━━━━━━━━━
 🎮 *Lobby:* ${event.title} (${event.mode || "Squad"})
-⏰ *Match Time:* ${start} IST
+${event.whatsapp_group_link ? `📲 *Official ${lobbyTag} WhatsApp Group:* ${event.whatsapp_group_link}\n` : ""}⏰ *Event Time:* ${start} IST
 📍 *Maps:* ${mapsStr}
-${event.idp_times ? `⏱️ *IDP Schedule:* ${event.idp_times}` : ""}
-${event.start_times ? `🚀 *Start Schedule:* ${event.start_times}` : ""}
 ━━━━━━━━━━━━━━━━━━━━
-🆔 *ROOM ID:* \`${roomId}\`
-🔑 *PASSWORD:* \`${roomPass}\`
+${matchCredentialsText}
 ━━━━━━━━━━━━━━━━━━━━
 ⚠️ *CRITICAL INSTRUCTIONS:*
-1. Join strictly in your allotted slot number.
+1. Join strictly in your allotted team slot number.
 2. Mobile devices ONLY (No emulators or iPads allowed).
-3. Match starts sharp at schedule time. Good luck & play fair!`;
+3. Matches start sharp at schedule time. Good luck!`;
 
   const regMessage = `🔥 *${ORG_NAME.toUpperCase()} — REGISTRATION OPEN* 🔥
 ━━━━━━━━━━━━━━━━━━━━
@@ -2016,6 +2037,277 @@ type EventDraft = {
   isEditingDetails?: boolean;
 };
 
+function LobbyIdpEditor({
+  event,
+  draft,
+  onUpdateDraft,
+}: {
+  event: EventAdmin;
+  draft: EventDraft;
+  onUpdateDraft: (field: keyof EventDraft, value: string) => void;
+}) {
+  const [isRawMode, setIsRawMode] = useState(false);
+  const lobbyTag = extractLobbyLabel(event.title);
+
+  // Extract parsed m1, m2, m3 from draft.room_id and draft.room_password
+  const roomIds = extractMatchCredentials(draft.room_id);
+  const rawPass = draft.room_password || "";
+  const passwords = extractMatchCredentials(rawPass);
+
+  const isSingleGlobalPass =
+    Boolean(rawPass) &&
+    !rawPass.includes("\n") &&
+    !rawPass.includes(",") &&
+    !rawPass.toLowerCase().includes("m1") &&
+    !rawPass.toLowerCase().includes("m2");
+
+  const effectiveM1Pass = passwords.m1 || (isSingleGlobalPass ? rawPass : "");
+  const effectiveM2Pass = passwords.m2 || (isSingleGlobalPass ? rawPass : "");
+  const effectiveM3Pass = passwords.m3 || (isSingleGlobalPass ? rawPass : "");
+
+  const maps =
+    event.maps && event.maps.length > 0
+      ? event.maps
+      : ["Erangel", "Miramar", "Erangel"];
+
+  const handleMatchChange = (
+    matchNum: 1 | 2 | 3,
+    type: "roomId" | "password",
+    newVal: string
+  ) => {
+    if (type === "roomId") {
+      const updated = {
+        m1: matchNum === 1 ? newVal : roomIds.m1,
+        m2: matchNum === 2 ? newVal : roomIds.m2,
+        m3: matchNum === 3 ? newVal : roomIds.m3,
+      };
+      const serialized = serializeMatchRoomIds(updated.m1, updated.m2, updated.m3) || "";
+      onUpdateDraft("room_id", serialized);
+    } else {
+      const updated = {
+        m1: matchNum === 1 ? newVal : effectiveM1Pass,
+        m2: matchNum === 2 ? newVal : effectiveM2Pass,
+        m3: matchNum === 3 ? newVal : effectiveM3Pass,
+      };
+      const serialized = serializeMatchPasswords(updated.m1, updated.m2, updated.m3) || "";
+      onUpdateDraft("room_password", serialized);
+    }
+  };
+
+  const applyPassToAll = () => {
+    const pass = effectiveM1Pass.trim() || rawPass.trim();
+    if (!pass) return;
+    const serialized = serializeMatchPasswords(pass, pass, pass) || pass;
+    onUpdateDraft("room_password", serialized);
+  };
+
+  return (
+    <div className="space-y-3.5 p-3.5 sm:p-4 bg-black/40 border border-emerald-500/25 rounded-xl">
+      {/* 1. Individual Lobby WhatsApp Group Section */}
+      <div className="rounded-lg bg-[#0E1118]/80 border border-white/[0.06] p-3 space-y-1.5">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <label className="text-[11px] text-emerald-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
+            <span className="px-2 py-0.5 rounded bg-emerald-500 text-black font-black text-[10px]">
+              {lobbyTag}
+            </span>
+            <span>Official WhatsApp Group Invite Link</span>
+          </label>
+          {draft.whatsapp_group_link && (
+            <a
+              href={draft.whatsapp_group_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[11px] text-[#25D366] hover:underline flex items-center gap-1 font-semibold"
+            >
+              <span>Open {lobbyTag} Group</span>
+              <span>↗</span>
+            </a>
+          )}
+        </div>
+        <input
+          value={draft.whatsapp_group_link}
+          onChange={(e) => onUpdateDraft("whatsapp_group_link", e.target.value)}
+          placeholder={`https://chat.whatsapp.com/... (Dedicated group link for ${lobbyTag} players)`}
+          className="w-full bg-black/60 border border-white/[0.1] rounded-lg px-3 py-2 text-xs text-white/90 placeholder-white/20 focus:outline-none focus:border-emerald-500 transition-colors"
+        />
+        <p className="text-[10px] text-white/40 leading-relaxed">
+          🎯 Players registering for <strong>{lobbyTag}</strong> will receive this link directly on checkout and can join to receive IDP drops.
+        </p>
+      </div>
+
+      {/* 2. 3-Match IDP Manager (1 for Each Match) */}
+      <div className="space-y-2.5">
+        <div className="flex items-center justify-between gap-2 flex-wrap border-t border-white/[0.06] pt-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-black text-white uppercase tracking-wider">
+              🎮 3 Matches · 3 Separate Room IDPs
+            </span>
+            <span className="text-[10px] text-emerald-400/90 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full font-mono">
+              1 IDP per Match
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {!isRawMode && (
+              <button
+                type="button"
+                onClick={applyPassToAll}
+                className="text-[10px] font-bold text-emerald-300 hover:text-emerald-200 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 px-2.5 py-1 rounded-md transition-colors"
+                title="Apply Match 1 Password to Match 2 and Match 3"
+              >
+                ⚡ Apply M1 Pass to All 3
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsRawMode(!isRawMode)}
+              className="text-[10px] text-white/50 hover:text-white underline transition-colors"
+            >
+              {isRawMode ? "3-Match Cards View" : "Raw Text Mode"}
+            </button>
+          </div>
+        </div>
+
+        {!isRawMode ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {/* Match 1 */}
+            <div className="rounded-xl bg-[#0E1118] border border-white/[0.08] p-3 space-y-2">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-xs font-black text-white flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                  <span>Match 1</span>
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-white/70 font-semibold">
+                  {maps[0] || "Erangel"}
+                </span>
+              </div>
+              <div>
+                <label className="block text-[9px] text-emerald-400/80 font-mono uppercase tracking-wider mb-1 font-bold">
+                  M1 Room ID
+                </label>
+                <input
+                  value={roomIds.m1}
+                  onChange={(e) => handleMatchChange(1, "roomId", e.target.value)}
+                  placeholder="e.g. 5421980"
+                  className="w-full bg-black/60 border border-white/[0.1] rounded-lg px-2.5 py-1.5 text-xs text-emerald-300 font-mono tracking-wider focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-[9px] text-emerald-400/80 font-mono uppercase tracking-wider mb-1 font-bold">
+                  M1 Password
+                </label>
+                <input
+                  value={effectiveM1Pass}
+                  onChange={(e) => handleMatchChange(1, "password", e.target.value)}
+                  placeholder="e.g. apex77"
+                  className="w-full bg-black/60 border border-white/[0.1] rounded-lg px-2.5 py-1.5 text-xs text-emerald-300 font-mono tracking-wider focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            {/* Match 2 */}
+            <div className="rounded-xl bg-[#0E1118] border border-white/[0.08] p-3 space-y-2">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-xs font-black text-white flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                  <span>Match 2</span>
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-white/70 font-semibold">
+                  {maps[1] || "Miramar"}
+                </span>
+              </div>
+              <div>
+                <label className="block text-[9px] text-emerald-400/80 font-mono uppercase tracking-wider mb-1 font-bold">
+                  M2 Room ID
+                </label>
+                <input
+                  value={roomIds.m2}
+                  onChange={(e) => handleMatchChange(2, "roomId", e.target.value)}
+                  placeholder="e.g. 5421981"
+                  className="w-full bg-black/60 border border-white/[0.1] rounded-lg px-2.5 py-1.5 text-xs text-emerald-300 font-mono tracking-wider focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-[9px] text-emerald-400/80 font-mono uppercase tracking-wider mb-1 font-bold">
+                  M2 Password
+                </label>
+                <input
+                  value={effectiveM2Pass}
+                  onChange={(e) => handleMatchChange(2, "password", e.target.value)}
+                  placeholder="e.g. apex77"
+                  className="w-full bg-black/60 border border-white/[0.1] rounded-lg px-2.5 py-1.5 text-xs text-emerald-300 font-mono tracking-wider focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            {/* Match 3 */}
+            <div className="rounded-xl bg-[#0E1118] border border-white/[0.08] p-3 space-y-2">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-xs font-black text-white flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                  <span>Match 3</span>
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-white/70 font-semibold">
+                  {maps[2] || "Erangel"}
+                </span>
+              </div>
+              <div>
+                <label className="block text-[9px] text-emerald-400/80 font-mono uppercase tracking-wider mb-1 font-bold">
+                  M3 Room ID
+                </label>
+                <input
+                  value={roomIds.m3}
+                  onChange={(e) => handleMatchChange(3, "roomId", e.target.value)}
+                  placeholder="e.g. 5421982"
+                  className="w-full bg-black/60 border border-white/[0.1] rounded-lg px-2.5 py-1.5 text-xs text-emerald-300 font-mono tracking-wider focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-[9px] text-emerald-400/80 font-mono uppercase tracking-wider mb-1 font-bold">
+                  M3 Password
+                </label>
+                <input
+                  value={effectiveM3Pass}
+                  onChange={(e) => handleMatchChange(3, "password", e.target.value)}
+                  placeholder="e.g. apex77"
+                  className="w-full bg-black/60 border border-white/[0.1] rounded-lg px-2.5 py-1.5 text-xs text-emerald-300 font-mono tracking-wider focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[10px] text-emerald-400/80 mb-1 uppercase font-bold tracking-widest">
+                Raw Room IDs (Text / M1: ..., M2: ...)
+              </label>
+              <textarea
+                rows={3}
+                value={draft.room_id}
+                onChange={(e) => onUpdateDraft("room_id", e.target.value)}
+                placeholder={"M1: 5421980\nM2: 5421981\nM3: 5421982"}
+                className="w-full bg-[#0E1118] border border-white/[0.1] rounded-lg px-3 py-2 text-xs text-emerald-300 font-mono tracking-wider focus:outline-none focus:border-emerald-500 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-emerald-400/80 mb-1 uppercase font-bold tracking-widest">
+                Raw Passwords (Text / M1: ..., M2: ...)
+              </label>
+              <textarea
+                rows={3}
+                value={draft.room_password}
+                onChange={(e) => onUpdateDraft("room_password", e.target.value)}
+                placeholder={"M1: apex77\nM2: apex77\nM3: apex77"}
+                className="w-full bg-[#0E1118] border border-white/[0.1] rounded-lg px-3 py-2 text-xs text-emerald-300 font-mono tracking-wider focus:outline-none focus:border-emerald-500 transition-colors"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "error") => void }) {
   const [events, setEvents] = useState<EventAdmin[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2783,42 +3075,12 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
                   </div>
                 </div>
 
-                {/* IDP & Credentials Row (High Priority) */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 bg-black/40 border border-emerald-500/20 rounded-xl">
-                  <div>
-                    <label className="block text-[10px] text-emerald-400/80 mb-1 uppercase font-bold tracking-widest">
-                      Room ID
-                    </label>
-                    <input
-                      value={draft.room_id}
-                      onChange={(e) => updateDraft(event.id, "room_id", e.target.value)}
-                      placeholder="e.g. 5421980"
-                      className="w-full bg-[#0E1118] border border-white/[0.1] rounded-lg px-3 py-2 text-sm text-emerald-300 font-mono tracking-wider focus:outline-none focus:border-emerald-500 transition-colors"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-emerald-400/80 mb-1 uppercase font-bold tracking-widest">
-                      Password
-                    </label>
-                    <input
-                      value={draft.room_password}
-                      onChange={(e) => updateDraft(event.id, "room_password", e.target.value)}
-                      placeholder="e.g. apex77"
-                      className="w-full bg-[#0E1118] border border-white/[0.1] rounded-lg px-3 py-2 text-sm text-emerald-300 font-mono tracking-wider focus:outline-none focus:border-emerald-500 transition-colors"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-emerald-400/80 mb-1 uppercase font-bold tracking-widest">
-                      WhatsApp Group Link
-                    </label>
-                    <input
-                      value={draft.whatsapp_group_link}
-                      onChange={(e) => updateDraft(event.id, "whatsapp_group_link", e.target.value)}
-                      placeholder="https://chat.whatsapp.com/..."
-                      className="w-full bg-[#0E1118] border border-white/[0.1] rounded-lg px-3 py-2 text-xs text-white/80 focus:outline-none focus:border-emerald-500 transition-colors"
-                    />
-                  </div>
-                </div>
+                {/* 3-Match IDP & Lobby WhatsApp Group Manager (High Priority) */}
+                <LobbyIdpEditor
+                  event={event}
+                  draft={draft}
+                  onUpdateDraft={(field, val) => updateDraft(event.id, field, val)}
+                />
 
                 {/* Schedules & Limits */}
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">

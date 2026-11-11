@@ -161,18 +161,23 @@ function Skeleton() {
 function IDPBox({
   idpTimes,
   startTimes,
+  title,
 }: {
   idpTimes: string | null;
   startTimes: string | null;
+  title?: string;
 }) {
-  if (!idpTimes && !startTimes) return null;
+  const lobbyTag = title?.match(/\b(L[1-9][0-9]?)\b/i)?.[1]?.toUpperCase() || "Lobby";
   return (
     <div className="rounded-xl border border-white/[0.08] bg-[#080B11] p-3 space-y-2 text-xs font-mono">
       <div className="flex items-center justify-between border-b border-white/[0.05] pb-1.5 mb-1">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-white/40">MATCH SCHEDULE</span>
-        <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1 font-sans">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1 font-sans">
+          <span>⚡</span>
+          <span>3 Matches · 3 Room IDPs</span>
+        </span>
+        <span className="text-[10px] text-white/50 font-semibold flex items-center gap-1 font-sans">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 glow-pulse" />
-          Live Timings
+          {lobbyTag} Group
         </span>
       </div>
       {idpTimes && (
@@ -191,9 +196,11 @@ function IDPBox({
           <span className="text-white/80 font-medium truncate">{startTimes}</span>
         </div>
       )}
-      <div className="pt-1 flex items-center gap-1.5 text-[10px] text-emerald-400/90 font-sans">
-        <span>✓</span>
-        <span>IDP group link provided. Register to get instant room access.</span>
+      <div className="pt-1 flex items-start gap-1.5 text-[10px] text-emerald-400/90 font-sans leading-relaxed">
+        <span className="text-emerald-400 font-bold">📲</span>
+        <span>
+          Host provides dedicated <strong>{lobbyTag} WhatsApp Group</strong> link &amp; drops IDP 15m before each match.
+        </span>
       </div>
     </div>
   );
@@ -518,7 +525,7 @@ function EventCard({
       )}
 
       {/* ── IDP & Start Time box ── */}
-      <IDPBox idpTimes={e.idp_times} startTimes={e.start_times} />
+      <IDPBox idpTimes={e.idp_times} startTimes={e.start_times} title={e.title} />
 
       {/* ── Prize / fee with Clickable Prize Pool ── */}
       <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
