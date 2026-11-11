@@ -16,7 +16,7 @@ import {
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-type UserRole = "owner" | "moderator" | "finance";
+type UserRole = "owner" | "admin" | "moderator" | "finance";
 type AdminTab = "generator" | "lobbies" | "payments" | "roles";
 
 type EventAdmin = {
@@ -87,10 +87,10 @@ const INTERVAL_OPTIONS = [
 ];
 
 const TABS: { id: AdminTab; label: string; icon: string; roles: UserRole[] }[] = [
-  { id: "generator", label: "Bulk Generator", icon: "⚡", roles: ["owner", "moderator"] },
-  { id: "lobbies", label: "Live Lobbies & IDP", icon: "🎮", roles: ["owner", "moderator"] },
-  { id: "payments", label: "Payments & UTR", icon: "💳", roles: ["owner", "moderator", "finance"] },
-  { id: "roles", label: "Role Manager", icon: "🛡", roles: ["owner"] },
+  { id: "generator", label: "Bulk Generator", icon: "⚡", roles: ["owner", "admin", "moderator", "finance"] },
+  { id: "lobbies", label: "Live Lobbies & IDP", icon: "🎮", roles: ["owner", "admin", "moderator", "finance"] },
+  { id: "payments", label: "Payments & UTR", icon: "💳", roles: ["owner", "admin", "moderator", "finance"] },
+  { id: "roles", label: "Role & Ownership", icon: "👑", roles: ["owner"] },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -194,9 +194,10 @@ function StatusBadge({ status }: { status: string }) {
     pending_verification: { label: "Pending", color: "amber" },
     approved: { label: "Approved", color: "emerald" },
     rejected: { label: "Rejected", color: "red" },
-    moderator: { label: "Moderator", color: "purple" },
-    owner: { label: "Owner", color: "amber" },
-    finance: { label: "Finance", color: "purple" },
+    admin: { label: "⚡ Admin", color: "purple" },
+    moderator: { label: "⚡ Admin", color: "purple" },
+    owner: { label: "👑 Owner", color: "amber" },
+    finance: { label: "⚡ Admin", color: "purple" },
   };
   const cfg = map[status] ?? { label: status, color: "gray" as const };
   return <Badge text={cfg.label} color={cfg.color} />;
@@ -3466,9 +3467,11 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
 function RoleManagerTab({ showToast }: { showToast: (m: string, t: "success" | "error") => void }) {
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [grantEmail, setGrantEmail] = useState("");
-  const [grantRole, setGrantRole] = useState<"moderator" | "finance">("moderator");
-  const [granting, setGranting] = useState(false);
+  const [adminEmail, setAdminEmail] = useState("");
+  const [promoting, setPromoting] = useState(false);
+  const [transferEmail, setTransferEmail] = useState("");
+  const [transferring, setTransferring] = useState(false);
+  const [confirmTransfer, setConfirmTransfer] = useState(false);
   const [confirmRevoke, setConfirmRevoke] = useState<RoleRow | null>(null);
 
   const loadRoles = useCallback(async () => {
@@ -3502,24 +3505,55 @@ function RoleManagerTab({ showToast }: { showToast: (m: string, t: "success" | "
 
   useEffect(() => { loadRoles(); }, [loadRoles]);
 
-  const handleGrant = async (e: React.FormEvent) => {
+  const handlePromoteAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!grantEmail.trim()) return;
-    setGranting(true);
+    const email = adminEmail.trim().toLowerCase();
+    if (!email) return;
+    setPromoting(true);
     try {
-      const { error } = await supabase.rpc("admin_manage_role", {
-        p_email: grantEmail.trim().toLowerCase(),
-        p_role: grantRole,
+      let { error } = await supabase.rpc("admin_manage_role", {
+        p_email: email,
+        p_role: "admin",
         p_action: "grant",
       });
+      if (error && (error.message.includes("invalid_role") || error.message.includes("enum"))) {
+        // Fallback to moderator which grants full admin powers
+        const fallback = await supabase.rpc("admin_manage_role", {
+          p_email: email,
+          p_role: "moderator",
+          p_action: "grant",
+        });
+        error = fallback.error;
+      }
       if (error) throw error;
-      showToast(`Granted ${grantRole} role to ${grantEmail}`, "success");
-      setGrantEmail("");
+      showToast(`Promoted ${email} to Admin! Full dashboard access granted.`, "success");
+      setAdminEmail("");
       await loadRoles();
     } catch (err: unknown) {
-      showToast((err as Error).message || "Failed to grant role", "error");
+      showToast((err as Error).message || "Failed to promote to Admin", "error");
     } finally {
-      setGranting(false);
+      setPromoting(false);
+    }
+  };
+
+  const handleTransferOwnership = async () => {
+    const email = transferEmail.trim().toLowerCase();
+    if (!email) return;
+    setTransferring(true);
+    try {
+      const { error } = await supabase.rpc("admin_transfer_ownership", {
+        p_new_owner_email: email,
+      });
+      if (error) throw error;
+      showToast(`Platform ownership successfully transferred to ${email}!`, "success");
+      setConfirmTransfer(false);
+      setTransferEmail("");
+      await loadRoles();
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (err: unknown) {
+      showToast((err as Error).message || "Failed to transfer platform ownership", "error");
+    } finally {
+      setTransferring(false);
     }
   };
 
@@ -3531,11 +3565,11 @@ function RoleManagerTab({ showToast }: { showToast: (m: string, t: "success" | "
         p_action: "revoke",
       });
       if (error) throw error;
-      showToast(`Revoked ${r.role} from ${r.email}`, "success");
+      showToast(`Revoked Admin privileges from ${r.email}`, "success");
       setConfirmRevoke(null);
       await loadRoles();
     } catch (err: unknown) {
-      showToast((err as Error).message || "Failed to revoke role", "error");
+      showToast((err as Error).message || "Failed to revoke admin", "error");
     }
   };
 
@@ -3543,74 +3577,123 @@ function RoleManagerTab({ showToast }: { showToast: (m: string, t: "success" | "
     <div className="space-y-6 max-w-2xl">
       {confirmRevoke && (
         <ConfirmDialog
-          message={`Revoke ${confirmRevoke.role} role from ${confirmRevoke.email}?`}
+          message={`Revoke Admin privileges from ${confirmRevoke.email}? They will no longer have access to the Admin Dashboard.`}
           onConfirm={() => handleRevoke(confirmRevoke)}
           onCancel={() => setConfirmRevoke(null)}
         />
       )}
 
-      {/* Grant role form */}
-      <div className="bg-white border border-slate-200/90 rounded-2xl p-6 space-y-4 shadow-sm text-slate-900">
-        <h3 className="font-black text-slate-900 text-base">Grant Team Member Access</h3>
-        <p className="text-xs text-slate-500">
-          Assign moderator or finance permissions to another team member using their signup email.
-        </p>
+      {confirmTransfer && (
+        <ConfirmDialog
+          message={`Are you sure you want to transfer PLATFORM OWNERSHIP to ${transferEmail}? You will step down to an Admin and this user will become the sole Platform Owner.`}
+          onConfirm={handleTransferOwnership}
+          onCancel={() => setConfirmTransfer(false)}
+        />
+      )}
 
-        <form onSubmit={handleGrant} className="flex flex-col sm:flex-row gap-3">
+      {/* Section 1: Transfer Platform Ownership */}
+      <div className="bg-white border-2 border-amber-300/80 rounded-2xl p-6 space-y-4 shadow-sm text-slate-900">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">👑</span>
+          <div>
+            <h3 className="font-black text-slate-900 text-base">Transfer Platform Ownership</h3>
+            <p className="text-xs text-slate-500">
+              Transfer primary ownership of Apex Esports to another account. You will become an Admin.
+            </p>
+          </div>
+        </div>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (transferEmail.trim()) setConfirmTransfer(true);
+          }}
+          className="flex flex-col sm:flex-row gap-3"
+        >
           <input
             type="email"
             required
-            value={grantEmail}
-            onChange={(e) => setGrantEmail(e.target.value)}
-            placeholder="member@gmail.com"
+            value={transferEmail}
+            onChange={(e) => setTransferEmail(e.target.value)}
+            placeholder="newowner@gmail.com"
             className="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-600 transition-colors shadow-xs"
           />
-          <select
-            value={grantRole}
-            onChange={(e) => setGrantRole(e.target.value as "moderator" | "finance")}
-            className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:bg-white focus:border-blue-600 font-bold"
-          >
-            <option value="moderator">Moderator</option>
-            <option value="finance">Finance</option>
-          </select>
           <button
             type="submit"
-            disabled={granting}
-            className="px-6 py-2.5 rounded-xl text-xs font-black bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 disabled:opacity-40 transition-all shrink-0 shadow-md shadow-amber-500/20 cursor-pointer"
+            disabled={transferring || !transferEmail.trim()}
+            className="px-6 py-2.5 rounded-xl text-xs font-black bg-amber-500 hover:bg-amber-600 text-slate-950 disabled:opacity-40 transition-all shrink-0 shadow-md shadow-amber-500/20 cursor-pointer"
           >
-            {granting ? "Granting…" : "Grant Role →"}
+            {transferring ? "Transferring…" : "Transfer Ownership 👑"}
           </button>
         </form>
       </div>
 
-      {/* Existing roles */}
+      {/* Section 2: Promote Admin */}
       <div className="bg-white border border-slate-200/90 rounded-2xl p-6 space-y-4 shadow-sm text-slate-900">
-        <h3 className="font-black text-slate-900 text-base">Active Admin Roles</h3>
+        <div className="flex items-center gap-2">
+          <span className="text-xl">⚡</span>
+          <div>
+            <h3 className="font-black text-slate-900 text-base">Promote Team Member to Admin</h3>
+            <p className="text-xs text-slate-500">
+              Admins get full control over scrims, tournaments, 3-match IDPs, and payment verification.
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handlePromoteAdmin} className="flex flex-col sm:flex-row gap-3">
+          <input
+            type="email"
+            required
+            value={adminEmail}
+            onChange={(e) => setAdminEmail(e.target.value)}
+            placeholder="admin@gmail.com"
+            className="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-600 transition-colors shadow-xs"
+          />
+          <button
+            type="submit"
+            disabled={promoting || !adminEmail.trim()}
+            className="px-6 py-2.5 rounded-xl text-xs font-black bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 disabled:opacity-40 transition-all shrink-0 shadow-md shadow-amber-500/20 cursor-pointer"
+          >
+            {promoting ? "Promoting…" : "Promote to Admin ⚡"}
+          </button>
+        </form>
+      </div>
+
+      {/* Section 3: Active Platform Roles */}
+      <div className="bg-white border border-slate-200/90 rounded-2xl p-6 space-y-4 shadow-sm text-slate-900">
+        <h3 className="font-black text-slate-900 text-base">Platform Roles &amp; Team</h3>
         {loading ? (
           <Spinner />
         ) : roles.length === 0 ? (
-          <p className="text-xs text-slate-400 py-6 text-center font-semibold">No secondary roles granted yet.</p>
+          <p className="text-xs text-slate-400 py-6 text-center font-semibold">No roles found.</p>
         ) : (
           <div className="divide-y divide-slate-100">
-            {roles.map((r, i) => (
-              <div key={i} className="flex items-center justify-between py-3">
-                <div>
-                  <p className="text-sm font-black text-slate-900">{r.email}</p>
-                  <p className="text-xs text-slate-400 font-medium">{formatTimestamp(r.granted_at)}</p>
+            {roles.map((r, i) => {
+              const isOwner = r.role === "owner";
+              return (
+                <div key={i} className="flex items-center justify-between py-3.5">
+                  <div className="min-w-0 pr-3">
+                    <p className="text-sm font-black text-slate-900 truncate">{r.email}</p>
+                    <p className="text-xs text-slate-400 font-medium">
+                      {isOwner
+                        ? "Sole Platform Owner · Superuser"
+                        : "Full Admin · Scrims, Tournaments & Payments"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <StatusBadge status={r.role} />
+                    {!isOwner && (
+                      <button
+                        onClick={() => setConfirmRevoke(r)}
+                        className="text-xs text-rose-600 hover:text-rose-800 font-bold cursor-pointer"
+                      >
+                        Revoke
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <StatusBadge status={r.role} />
-                  {r.role !== "owner" && (
-                    <button
-                      onClick={() => setConfirmRevoke(r)}
-                      className="text-xs text-rose-600 hover:text-rose-800 font-bold cursor-pointer"
-                    >
-                      Revoke
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -3662,10 +3745,8 @@ export default function AdminPage() {
       setUserRoles(roles);
       setAuthLoading(false);
 
-      if (roles.includes("owner") || roles.includes("moderator")) {
+      if (roles.includes("owner") || roles.includes("admin") || roles.includes("moderator") || roles.includes("finance")) {
         setActiveTab("generator");
-      } else if (roles.includes("finance")) {
-        setActiveTab("payments");
       }
 
       // Fetch quick metrics
@@ -3802,14 +3883,21 @@ export default function AdminPage() {
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Admin Account</p>
             <p className="text-xs font-bold text-white truncate" title={userEmail || ""}>{userEmail}</p>
             <div className="flex flex-wrap gap-1 pt-1">
-              {userRoles.map((r) => (
-                <span
-                  key={r}
-                  className="px-2 py-0.5 rounded text-[9px] font-extrabold uppercase bg-amber-400/20 text-amber-300 border border-amber-400/30"
-                >
-                  {r}
-                </span>
-              ))}
+              {userRoles.map((r) => {
+                const isOwner = r === "owner";
+                return (
+                  <span
+                    key={r}
+                    className={`px-2 py-0.5 rounded text-[9px] font-extrabold uppercase ${
+                      isOwner
+                        ? "bg-amber-400/20 text-amber-300 border border-amber-400/40"
+                        : "bg-purple-400/20 text-purple-300 border border-purple-400/40"
+                    }`}
+                  >
+                    {isOwner ? "👑 Platform Owner" : "⚡ Admin"}
+                  </span>
+                );
+              })}
             </div>
           </div>
 

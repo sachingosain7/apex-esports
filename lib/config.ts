@@ -10,10 +10,10 @@ export const ORG_NAME = "Apex Esports";
 export const ORG_TAGLINE = "Daily scrims, tournaments & leagues with real cash prizes";
 
 /** UPI Virtual Payment Address — shown on QR and copy button */
-export const UPI_ID = "sachingosain@fm";
+export const UPI_ID = "7678539690@yespop";
 
-/** Payee name that appears in UPI apps */
-export const UPI_PAYEE_NAME = "Sachin Gosain";
+/** Payee name that appears in UPI apps (matches organization, no personal name) */
+export const UPI_PAYEE_NAME = "Apex Esports";
 
 /**
  * WhatsApp support number (with country code, no spaces or dashes).

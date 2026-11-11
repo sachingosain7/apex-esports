@@ -166,7 +166,24 @@ export default function MyTournamentsPage() {
         return;
       }
 
-      const rows = (data as Registration[]) ?? [];
+      let rows = (data as Registration[]) ?? [];
+      
+      // Strict Payment Verification Gate: Check payments table status
+      if (utr && rows.length > 0) {
+        try {
+          const { data: pay } = await supabase
+            .from("payments")
+            .select("status")
+            .eq("utr", utr)
+            .maybeSingle();
+          if (pay && pay.status !== "approved") {
+            rows = rows.map((r) => ({ ...r, status: "pending_verification" }));
+          }
+        } catch {
+          // ignore lookup error
+        }
+      }
+
       rows.sort(
         (a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()
       );

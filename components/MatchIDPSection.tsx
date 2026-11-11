@@ -67,22 +67,29 @@ export function MatchIDPSection({
         </div>
 
         {/* Individual Lobby WhatsApp Group Button */}
-        {whatsappGroupLink ? (
-          <a
-            href={whatsappGroupLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 rounded-xl bg-[#25D366] hover:bg-[#20bd5a] text-black font-extrabold text-xs sm:text-sm py-2.5 px-4 transition-all shadow-md mt-1"
-          >
-            <svg className="w-4 h-4 shrink-0 fill-black" viewBox="0 0 24 24">
-              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
-            </svg>
-            <span>👉 Join Official {lobbyLabel} WhatsApp Group</span>
-          </a>
+        {isConfirmed ? (
+          whatsappGroupLink ? (
+            <a
+              href={whatsappGroupLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 rounded-xl bg-[#25D366] hover:bg-[#20bd5a] text-black font-extrabold text-xs sm:text-sm py-2.5 px-4 transition-all shadow-md mt-1 cursor-pointer"
+            >
+              <svg className="w-4 h-4 shrink-0 fill-black" viewBox="0 0 24 24">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
+              </svg>
+              <span>👉 Join Official {lobbyLabel} WhatsApp Group</span>
+            </a>
+          ) : (
+            <div className="rounded-lg bg-white border border-emerald-200 px-3 py-2 text-xs text-slate-500 flex items-center gap-2">
+              <span>ℹ️</span>
+              <span>Host will assign the {lobbyLabel} WhatsApp Group link shortly before match.</span>
+            </div>
+          )
         ) : (
-          <div className="rounded-lg bg-white border border-emerald-200 px-3 py-2 text-xs text-slate-500 flex items-center gap-2">
-            <span>ℹ️</span>
-            <span>Host will assign the {lobbyLabel} WhatsApp Group link shortly before match.</span>
+          <div className="rounded-xl bg-amber-50 border border-amber-300 p-3 text-xs text-amber-900 flex items-center gap-2 font-bold">
+            <span>🔒</span>
+            <span>{lobbyLabel} WhatsApp Group link is locked until your payment is verified by Admin/Owner.</span>
           </div>
         )}
 
@@ -90,7 +97,15 @@ export function MatchIDPSection({
         <div className="pt-1 flex items-start gap-1.5 text-xs text-emerald-900 leading-relaxed">
           <span className="font-black text-emerald-800">📍 Where IDP is given:</span>
           <span>
-            Host shares Room ID &amp; Password in your <strong>{lobbyLabel} WhatsApp Group</strong> and updates each match live below <strong>15 minutes before every match</strong>!
+            {isConfirmed ? (
+              <>
+                Host shares Room ID &amp; Password in your <strong>{lobbyLabel} WhatsApp Group</strong> and updates each match live below <strong>15 minutes before every match</strong>!
+              </>
+            ) : (
+              <>
+                Credentials and group link will unlock on this screen once payment is verified by the Admin or Owner.
+              </>
+            )}
           </span>
         </div>
       </div>
@@ -101,7 +116,11 @@ export function MatchIDPSection({
           <span>Match Schedule &amp; Custom Room IDPs</span>
           <span className="text-emerald-700 font-extrabold normal-case flex items-center gap-1">
             <span className="w-2 h-2 rounded-full bg-emerald-600 glow-pulse" />
-            {hasAnyRoomReady ? "IDP Released" : "Awaiting Host Release"}
+            {!isConfirmed
+              ? "Awaiting Payment Approval"
+              : hasAnyRoomReady
+              ? "IDP Released"
+              : "Awaiting Host Release"}
           </span>
         </div>
 
@@ -136,17 +155,28 @@ export function MatchIDPSection({
 
                 <span
                   className={`rounded-full px-2.5 py-0.5 text-[10px] font-black tracking-wider border ${
-                    matchReady
+                    !isConfirmed
+                      ? "bg-amber-100 text-amber-800 border-amber-300"
+                      : matchReady
                       ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                      : "bg-amber-100 text-amber-800 border-amber-300"
+                      : "bg-slate-100 text-slate-600 border-slate-300"
                   }`}
                 >
-                  {matchReady ? "🟢 ROOM READY" : "⏳ 15M BEFORE MATCH"}
+                  {!isConfirmed
+                    ? "🔒 LOCKED"
+                    : matchReady
+                    ? "🟢 ROOM READY"
+                    : "⏳ 15M BEFORE MATCH"}
                 </span>
               </div>
 
               {/* Match Credentials when released */}
-              {matchReady ? (
+              {!isConfirmed ? (
+                <div className="rounded-lg bg-amber-50/80 border border-amber-200 px-3 py-2 text-xs text-amber-800 flex items-center gap-2 font-medium">
+                  <span>🔒</span>
+                  <span>Room ID &amp; Password locked until UTR approval by Admin/Owner.</span>
+                </div>
+              ) : matchReady ? (
                 <div className="space-y-2">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {/* Room ID */}

@@ -8,7 +8,6 @@ import {
   SUPPORT_WHATSAPP,
   SLOT_HOLD_SECONDS,
 } from "@/lib/config";
-import QRCode from "react-qr-code";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -38,7 +37,7 @@ type OrderResult = {
   total_paise: number;
 };
 
-type Phase = "details" | "paying" | "confirmed";
+type Phase = "details" | "paying" | "pending_verification" | "confirmed";
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -87,14 +86,21 @@ function buildUpiUri(total_paise: number): string {
 }
 
 // ─────────────────────────────────────────────
-// Step Indicator (Styled like Savage Reference)
+// Step Indicator
 // ─────────────────────────────────────────────
 
 function StepIndicator({ phase }: { phase: Phase }) {
-  const step = phase === "details" ? 1 : phase === "paying" ? 2 : 3;
+  let step = 1;
+  if (phase === "paying") step = 2;
+  else if (phase === "pending_verification") step = 2;
+  else if (phase === "confirmed") step = 3;
+
   const steps = [
     { num: 1, label: "Your team" },
-    { num: 2, label: "Pay entry" },
+    {
+      num: 2,
+      label: phase === "pending_verification" ? "Verifying UTR" : "Pay entry",
+    },
     { num: 3, label: "Get room details" },
   ];
 
@@ -102,7 +108,7 @@ function StepIndicator({ phase }: { phase: Phase }) {
     <div className="flex items-center justify-center gap-1.5 sm:gap-3 mb-6 flex-wrap">
       {steps.map((s, i) => {
         const active = s.num === step;
-        const done = s.num < step;
+        const done = s.num < step || (s.num === 2 && phase === "confirmed");
 
         return (
           <div key={s.num} className="flex items-center gap-1.5 sm:gap-2">
@@ -117,7 +123,11 @@ function StepIndicator({ phase }: { phase: Phase }) {
             >
               <span
                 className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black ${
-                  active ? "bg-slate-950 text-white" : done ? "bg-emerald-600 text-white" : "bg-slate-300 text-slate-600"
+                  active
+                    ? "bg-slate-950 text-white"
+                    : done
+                    ? "bg-emerald-600 text-white"
+                    : "bg-slate-300 text-slate-600"
                 }`}
               >
                 {done ? "✓" : s.num}
@@ -135,7 +145,7 @@ function StepIndicator({ phase }: { phase: Phase }) {
 }
 
 // ─────────────────────────────────────────────
-// Phase A — Details (Matching Reference Screenshot 6 & 7)
+// Phase A — Details (With Auto-Save in LocalStorage)
 // ─────────────────────────────────────────────
 
 interface PhaseAProps {
@@ -149,6 +159,9 @@ interface PhaseAProps {
   isLoggedIn: boolean;
   currentUrl: string;
 }
+
+const LOCAL_STORAGE_TEAM_KEY = "apex_saved_team_name";
+const LOCAL_STORAGE_WA_KEY = "apex_saved_whatsapp";
 
 function PhaseADetails({
   events,
@@ -164,11 +177,51 @@ function PhaseADetails({
   const [whatsapp, setWhatsapp] = useState("");
   const [teamName, setTeamName] = useState("");
   const [touched, setTouched] = useState({ whatsapp: false, teamName: false });
-  const [clientNow, setClientNow] = useState(0);
+  const [hasAutoLoaded, setHasAutoLoaded] = useState(false);
+  const [showAutoSavedBadge, setShowAutoSavedBadge] = useState(false);
 
+  // Auto-load saved team details on mount
   useEffect(() => {
-    setClientNow(Date.now());
+    try {
+      const savedTeam = localStorage.getItem(LOCAL_STORAGE_TEAM_KEY);
+      const savedWa = localStorage.getItem(LOCAL_STORAGE_WA_KEY);
+      if (savedTeam) setTeamName(savedTeam);
+      if (savedWa) setWhatsapp(savedWa);
+      if (savedTeam || savedWa) {
+        setHasAutoLoaded(true);
+      }
+    } catch {
+      // LocalStorage unavailable
+    }
   }, []);
+
+  const handleTeamNameChange = (val: string) => {
+    setTeamName(val);
+    setShowAutoSavedBadge(true);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_TEAM_KEY, val);
+    } catch {}
+  };
+
+  const handleWhatsappChange = (val: string) => {
+    const digits = val.replace(/\D/g, "").slice(0, 10);
+    setWhatsapp(digits);
+    setShowAutoSavedBadge(true);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_WA_KEY, digits);
+    } catch {}
+  };
+
+  const handleClearSaved = () => {
+    setTeamName("");
+    setWhatsapp("");
+    setHasAutoLoaded(false);
+    setShowAutoSavedBadge(false);
+    try {
+      localStorage.removeItem(LOCAL_STORAGE_TEAM_KEY);
+      localStorage.removeItem(LOCAL_STORAGE_WA_KEY);
+    } catch {}
+  };
 
   const whatsappValid = /^[6-9][0-9]{9}$/.test(whatsapp);
   const teamNameValid = teamName.trim().length >= 2 && teamName.trim().length <= 40;
@@ -217,6 +270,23 @@ function PhaseADetails({
 
   return (
     <div className="space-y-6">
+      {/* Auto-save notification pill */}
+      {(hasAutoLoaded || showAutoSavedBadge) && (
+        <div className="flex items-center justify-between rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2 text-xs text-emerald-800 font-semibold shadow-xs">
+          <span className="flex items-center gap-1.5">
+            <span>💾</span>
+            <span>Progress auto-saved — no need to re-type on reload</span>
+          </span>
+          <button
+            type="button"
+            onClick={handleClearSaved}
+            className="text-[11px] font-bold text-slate-500 hover:text-rose-600 underline cursor-pointer"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -237,14 +307,12 @@ function PhaseADetails({
 
           {/* Team Name Input */}
           <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700">
-              Team name
-            </label>
+            <label className="text-xs font-bold text-slate-700">Team name</label>
             <input
               type="text"
               required
               value={teamName}
-              onChange={(e) => setTeamName(e.target.value)}
+              onChange={(e) => handleTeamNameChange(e.target.value)}
               onBlur={() => setTouched((t) => ({ ...t, teamName: true }))}
               placeholder="e.g. Jojo esports"
               maxLength={40}
@@ -261,11 +329,9 @@ function PhaseADetails({
             )}
           </div>
 
-          {/* WhatsApp Number Input with +91 box */}
+          {/* WhatsApp Number Input */}
           <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700">
-              WhatsApp number
-            </label>
+            <label className="text-xs font-bold text-slate-700">WhatsApp number</label>
             <div className="flex items-center">
               <span className="flex h-[42px] items-center rounded-l-xl border border-r-0 border-slate-300 bg-slate-100 px-3.5 text-sm font-bold text-slate-600">
                 +91
@@ -274,9 +340,7 @@ function PhaseADetails({
                 type="tel"
                 required
                 value={whatsapp}
-                onChange={(e) =>
-                  setWhatsapp(e.target.value.replace(/\D/g, "").slice(0, 10))
-                }
+                onChange={(e) => handleWhatsappChange(e.target.value)}
                 onBlur={() => setTouched((t) => ({ ...t, whatsapp: true }))}
                 placeholder="7565432121"
                 inputMode="numeric"
@@ -294,7 +358,7 @@ function PhaseADetails({
               </p>
             )}
             <p className="text-[11px] text-slate-500">
-              We send your 3-match room details and WhatsApp group link to this number.
+              Your 3-Match IDP &amp; WhatsApp group link are sent here after admin verification.
             </p>
           </div>
         </div>
@@ -408,18 +472,18 @@ function formatCountdown(secs: number): string {
 }
 
 // ─────────────────────────────────────────────
-// Phase B — Scan & Pay (Matching Reference Screenshot 8 & 9)
+// Phase B — Scan & Pay (ONLY QR, NO PERSONAL NAMES)
 // ─────────────────────────────────────────────
 
 interface PhaseBProps {
   order: OrderResult;
   events: EvSummary[];
   teamName: string;
-  onSuccess: (utr: string) => void;
+  onSubmitted: (utr: string) => void;
   onBack: () => void;
 }
 
-function PhaseBPaying({ order, events, teamName, onSuccess, onBack }: PhaseBProps) {
+function PhaseBPaying({ order, events, teamName, onSubmitted, onBack }: PhaseBProps) {
   const [utr, setUtr] = useState("");
   const [utrTouched, setUtrTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -448,8 +512,8 @@ function PhaseBPaying({ order, events, teamName, onSuccess, onBack }: PhaseBProp
         p_utr: utr,
       });
       if (rpcError) throw rpcError;
-      if (!data?.success) throw new Error(data?.error ?? "Verification error");
-      onSuccess(data.utr ?? utr);
+      if (!data?.success) throw new Error(data?.error ?? "Submission error");
+      onSubmitted(data.utr ?? utr);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("duplicate_utr")) {
@@ -457,11 +521,11 @@ function PhaseBPaying({ order, events, teamName, onSuccess, onBack }: PhaseBProp
       } else if (msg.includes("order_expired")) {
         setError("Your slot hold expired. Please go back and pick your slot again.");
       } else {
-        setError(msg || "Could not verify payment reference.");
+        setError(msg || "Could not submit payment reference.");
       }
       setSubmitting(false);
     }
-  }, [utr, utrValid, submitting, order.order_id, onSuccess]);
+  }, [utr, utrValid, submitting, order.order_id, onSubmitted]);
 
   if (expired) {
     return (
@@ -483,38 +547,32 @@ function PhaseBPaying({ order, events, teamName, onSuccess, onBack }: PhaseBProp
 
   return (
     <div className="space-y-6">
-      {/* Real-time sync notice */}
-      <div className="rounded-xl bg-blue-50 border border-blue-200 p-3 text-xs text-blue-900 font-semibold flex items-center gap-2">
-        <span className="w-2 h-2 rounded-full bg-blue-600 glow-pulse" />
-        <span>Waiting for your payment... this page updates automatically.</span>
-      </div>
-
       {/* 3 Step Instructions */}
       <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-2 text-xs text-slate-700">
         <div className="flex items-center gap-2">
           <span className="w-5 h-5 rounded-full bg-blue-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
             1
           </span>
-          <span>Scan with any UPI app (GPay, PhonePe, Paytm, BHIM)</span>
+          <span>Scan the QR code below with any UPI app (GPay, PhonePe, Paytm, BHIM).</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="w-5 h-5 rounded-full bg-blue-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
             2
           </span>
-          <span>Pay exactly {formatINR(order.total_paise)} within 5 minutes. Do not pay twice.</span>
+          <span>Pay exactly {formatINR(order.total_paise)} before the countdown expires.</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="w-5 h-5 rounded-full bg-blue-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
             3
           </span>
-          <span>Enter 12-digit UTR below to get your Room ID &amp; Password.</span>
+          <span>Paste the 12-digit UTR below for Admin verification.</span>
         </div>
       </div>
 
       {/* Registrations summary */}
       <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-2">
         <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">
-          Your registrations
+          Your reservation
         </p>
         {events.map((ev, i) => (
           <div key={ev.id} className="flex items-center justify-between text-xs">
@@ -527,12 +585,14 @@ function PhaseBPaying({ order, events, teamName, onSuccess, onBack }: PhaseBProp
                 <p className="text-slate-500 text-[11px]">{ev.title}</p>
               </div>
             </div>
-            <span className="font-black font-mono text-slate-900">{formatINR(effectiveFee(ev))}</span>
+            <span className="font-black font-mono text-slate-900">
+              {formatINR(effectiveFee(ev))}
+            </span>
           </div>
         ))}
       </div>
 
-      {/* Scan & Pay Card (Matching Screenshot 9) */}
+      {/* Payment QR Code Card (ONLY CLEAN QR, NO PERSONAL DETAILS) */}
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-md flex flex-col items-center gap-4 text-center">
         <div>
           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -542,17 +602,16 @@ function PhaseBPaying({ order, events, teamName, onSuccess, onBack }: PhaseBProp
             {formatINR(order.total_paise)}
           </p>
           <p className="text-xs text-slate-500 mt-1">
-            Paying to <strong>{ORG_NAME}</strong> · QR valid for 5 minutes
+            Official UPI Payment QR · Valid for 5 minutes
           </p>
         </div>
 
-        {/* QR Code Container */}
-        <div className="rounded-2xl bg-white p-4 border-2 border-slate-900/10 shadow-inner relative">
-          <QRCode
-            value={upiUri}
-            size={190}
-            bgColor="#FFFFFF"
-            fgColor="#0F172A"
+        {/* Square Clean QR Matrix */}
+        <div className="rounded-2xl bg-white p-3 border-2 border-slate-900/10 shadow-inner inline-flex items-center justify-center">
+          <img
+            src="/payment-qr.png"
+            alt="Apex Esports Payment QR Code"
+            className="w-52 h-52 sm:w-60 sm:h-60 object-contain rounded-xl"
           />
         </div>
 
@@ -568,7 +627,7 @@ function PhaseBPaying({ order, events, teamName, onSuccess, onBack }: PhaseBProp
           <button
             type="button"
             onClick={handleCopy}
-            className="rounded-lg bg-white border border-slate-200 px-2.5 py-1 text-xs font-bold text-slate-800 hover:bg-slate-50 shadow-xs shrink-0"
+            className="rounded-lg bg-white border border-slate-200 px-2.5 py-1 text-xs font-bold text-slate-800 hover:bg-slate-50 shadow-xs shrink-0 cursor-pointer"
           >
             {copied ? "Copied ✓" : "Copy UPI"}
           </button>
@@ -588,7 +647,7 @@ function PhaseBPaying({ order, events, teamName, onSuccess, onBack }: PhaseBProp
         <div>
           <h3 className="text-sm font-black text-slate-900">Enter Payment Reference (UTR)</h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            After paying in your UPI app, copy the 12-digit UTR and paste it here:
+            After completing the UPI payment, copy the 12-digit UTR from your app and paste it below:
           </p>
         </div>
 
@@ -617,10 +676,10 @@ function PhaseBPaying({ order, events, teamName, onSuccess, onBack }: PhaseBProp
           {submitting ? (
             <>
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-950 border-t-transparent" />
-              <span>Verifying UTR Reference…</span>
+              <span>Submitting UTR…</span>
             </>
           ) : (
-            "Verify UTR & Get 3-Match IDP →"
+            "Submit 12-Digit UTR for Verification →"
           )}
         </button>
       </div>
@@ -629,7 +688,227 @@ function PhaseBPaying({ order, events, teamName, onSuccess, onBack }: PhaseBProp
 }
 
 // ─────────────────────────────────────────────
-// Phase C — Success (3-Match IDP & Lobby WhatsApp Group)
+// Phase Pending Verification (Strict Gate Before IDP & Group Link)
+// ─────────────────────────────────────────────
+
+interface PhasePendingProps {
+  utr: string;
+  orderId: string;
+  events: EvSummary[];
+  teamName: string;
+  onApproved: () => void;
+}
+
+function PhasePendingVerification({
+  utr,
+  orderId,
+  events,
+  teamName,
+  onApproved,
+}: PhasePendingProps) {
+  const [isChecking, setIsChecking] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("Awaiting verification by Admin or Owner…");
+  const [isRejected, setIsRejected] = useState(false);
+
+  const checkStatus = useCallback(async () => {
+    setIsChecking(true);
+    try {
+      // 1. Try public RPC check_payment_status
+      const { data: rpcData } = await supabase.rpc("check_payment_status", {
+        p_utr: utr,
+      });
+
+      if (rpcData && rpcData.found) {
+        if (rpcData.status === "approved") {
+          onApproved();
+          return;
+        }
+        if (rpcData.status === "rejected") {
+          setIsRejected(true);
+          setStatusMessage("Payment rejected by host. Please contact support.");
+          return;
+        }
+      }
+
+      // 2. Direct fallback on payments table
+      const { data: pay } = await supabase
+        .from("payments")
+        .select("status")
+        .eq("utr", utr)
+        .maybeSingle();
+
+      if (pay) {
+        if (pay.status === "approved") {
+          onApproved();
+          return;
+        }
+        if (pay.status === "rejected") {
+          setIsRejected(true);
+          setStatusMessage("Payment rejected by host. Please contact support.");
+          return;
+        }
+      }
+
+      // 3. Fallback on registrations table
+      const { data: regs } = await supabase
+        .from("registrations")
+        .select("status")
+        .eq("order_id", orderId);
+
+      if (regs && regs.length > 0 && regs.every((r) => r.status === "confirmed")) {
+        onApproved();
+        return;
+      }
+
+      setStatusMessage("Awaiting verification by Admin or Owner…");
+    } catch {
+      // ignore network hiccup during polling
+    } finally {
+      setIsChecking(false);
+    }
+  }, [utr, orderId, onApproved]);
+
+  // Set up auto-poll every 3.5s + Supabase Realtime channel
+  useEffect(() => {
+    checkStatus();
+    const interval = setInterval(checkStatus, 3500);
+
+    // Realtime postgres listener on payments row
+    const channel = supabase
+      .channel(`payment-status-${utr}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "payments",
+          filter: `utr=eq.${utr}`,
+        },
+        (payload: { new?: { status?: string } }) => {
+          if (payload.new?.status === "approved") {
+            onApproved();
+          } else if (payload.new?.status === "rejected") {
+            setIsRejected(true);
+            setStatusMessage("Payment rejected by host.");
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
+  }, [checkStatus, utr, onApproved]);
+
+  return (
+    <div className="space-y-6 text-center">
+      {/* Pending Animated Status Card */}
+      <div className="flex flex-col items-center gap-3">
+        <div className="relative">
+          <div className="w-16 h-16 rounded-3xl bg-amber-100 text-amber-700 flex items-center justify-center text-3xl font-black shadow-md">
+            ⏳
+          </div>
+          <span className="absolute -top-1 -right-1 flex h-4 w-4">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-4 w-4 bg-amber-500" />
+          </span>
+        </div>
+
+        <h2 className="text-2xl font-black text-slate-900">UTR Submitted for Verification</h2>
+        <p className="text-xs sm:text-sm text-slate-600 max-w-md">
+          Your payment reference has been recorded for Team:{" "}
+          <strong className="text-slate-900">{teamName}</strong>.
+        </p>
+
+        <div className="inline-flex items-center gap-2 rounded-full bg-amber-50 border border-amber-300 px-3.5 py-1 text-xs font-mono font-bold text-amber-900">
+          <span>UTR: {utr}</span>
+          <span className="text-amber-500">·</span>
+          <span>{isRejected ? "REJECTED" : "PENDING APPROVAL"}</span>
+        </div>
+      </div>
+
+      {/* Strict Security Gate Box */}
+      <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-5 text-left space-y-3.5 shadow-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">🔒</span>
+          <div>
+            <h3 className="text-sm font-black text-amber-950 uppercase tracking-wider">
+              Room Details &amp; WhatsApp Group Locked
+            </h3>
+            <p className="text-xs text-amber-800">
+              Only approved payments receive official match credentials.
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-xl bg-white border border-amber-200 p-4 space-y-2 text-xs text-slate-700">
+          <p className="font-semibold leading-relaxed">
+            Both the <strong>Platform Owner</strong> and <strong>Admins</strong> have been notified
+            of your submission. Once they review your transaction:
+          </p>
+          <ul className="list-disc pl-5 space-y-1 text-slate-600 font-medium">
+            <li>This screen will automatically update to <strong>Verified</strong>.</li>
+            <li>Your Official Lobby WhatsApp Group Link will be unlocked.</li>
+            <li>Your 3-Match Room ID &amp; Password schedule will be revealed.</li>
+          </ul>
+        </div>
+      </div>
+
+      {/* Real-time sync & manual refresh button */}
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-left">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="w-2.5 h-2.5 rounded-full bg-blue-600 glow-pulse shrink-0" />
+          <p className="text-xs font-bold text-slate-700 truncate">{statusMessage}</p>
+        </div>
+
+        <button
+          type="button"
+          onClick={checkStatus}
+          disabled={isChecking}
+          className="rounded-xl bg-white border border-slate-300 hover:bg-slate-100 px-4 py-2 text-xs font-black text-slate-900 transition-colors shadow-xs flex items-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-50"
+        >
+          {isChecking ? (
+            <>
+              <span className="h-3 w-3 animate-spin rounded-full border-2 border-slate-900 border-t-transparent" />
+              <span>Checking…</span>
+            </>
+          ) : (
+            <>
+              <span>🔄</span>
+              <span>Check Status Now</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Host WhatsApp support button for fast approvals */}
+      <div className="space-y-2 pt-2">
+        <a
+          href={`https://wa.me/91${SUPPORT_WHATSAPP}?text=Hi+Host,+I+submitted+my+UTR:+${utr}+for+Team:+${encodeURIComponent(
+            teamName
+          )}.+Please+approve+my+payment.`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs sm:text-sm transition-colors shadow-md"
+        >
+          <span>💬</span>
+          <span>Need Instant Approval? WhatsApp Host (+91 {SUPPORT_WHATSAPP})</span>
+        </a>
+
+        <Link
+          href="/"
+          className="inline-block text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors pt-2"
+        >
+          ← Return to Home (Your UTR is safe &amp; pending)
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Phase C — Success (Unlocked After Admin / Owner Approval)
 // ─────────────────────────────────────────────
 
 interface PhaseCProps {
@@ -646,9 +925,9 @@ function PhaseCSuccess({ utr, events, teamName }: PhaseCProps) {
         <div className="w-16 h-16 rounded-3xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-3xl font-black shadow-md">
           ✓
         </div>
-        <h2 className="text-2xl font-black text-slate-900">Payment Verified &amp; Slot Locked!</h2>
+        <h2 className="text-2xl font-black text-slate-900">Payment Approved &amp; Slot Locked!</h2>
         <p className="text-xs sm:text-sm text-slate-600">
-          Slot reserved for Team: <strong className="text-slate-900">{teamName}</strong>
+          Verified by Admin for Team: <strong className="text-slate-900">{teamName}</strong>
         </p>
         <span className="rounded-full bg-slate-100 border border-slate-200 px-3 py-1 font-mono text-xs font-bold text-slate-600">
           UTR: {utr}
@@ -731,7 +1010,7 @@ function PhaseCSuccess({ utr, events, teamName }: PhaseCProps) {
       {/* Action links */}
       <div className="space-y-2.5">
         <Link
-          href="/my-tournaments"
+          href={`/my-tournaments?utr=${utr}`}
           className="flex items-center justify-center gap-2 rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] py-3.5 text-sm font-black text-slate-950 transition-colors shadow-md"
         >
           <span>🔑</span>
@@ -765,7 +1044,7 @@ function RegisterContent() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [order, setOrder] = useState<OrderResult | null>(null);
   const [teamName, setTeamName] = useState("");
-  const [confirmedUtr, setConfirmedUtr] = useState("");
+  const [submittedUtr, setSubmittedUtr] = useState("");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUrl, setCurrentUrl] = useState("/register");
 
@@ -853,8 +1132,13 @@ function RegisterContent() {
     [events, submitting]
   );
 
-  const handlePaymentSuccess = useCallback((utr: string) => {
-    setConfirmedUtr(utr);
+  const handleUtrSubmitted = useCallback((utr: string) => {
+    setSubmittedUtr(utr);
+    setPhase("pending_verification");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
+  const handlePaymentApproved = useCallback(() => {
     setPhase("confirmed");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
@@ -910,14 +1194,24 @@ function RegisterContent() {
                 order={order}
                 events={events}
                 teamName={teamName}
-                onSuccess={handlePaymentSuccess}
+                onSubmitted={handleUtrSubmitted}
                 onBack={handleBack}
+              />
+            )}
+
+            {phase === "pending_verification" && order && (
+              <PhasePendingVerification
+                utr={submittedUtr}
+                orderId={order.order_id}
+                events={events}
+                teamName={teamName}
+                onApproved={handlePaymentApproved}
               />
             )}
 
             {phase === "confirmed" && (
               <PhaseCSuccess
-                utr={confirmedUtr}
+                utr={submittedUtr}
                 events={events}
                 teamName={teamName}
               />
