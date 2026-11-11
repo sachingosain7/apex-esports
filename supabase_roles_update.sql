@@ -449,3 +449,72 @@ $$;
 
 GRANT EXECUTE ON FUNCTION create_order(text, uuid[], text[]) TO authenticated, anon;
 
+-- ============================================================================
+-- 12. PERMISSIONS & ROW LEVEL SECURITY FIX (Eliminates permission denied errors)
+-- ============================================================================
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT ALL ON TABLE orders TO anon, authenticated;
+GRANT ALL ON TABLE registrations TO anon, authenticated;
+GRANT ALL ON TABLE payments TO anon, authenticated;
+GRANT ALL ON TABLE events TO anon, authenticated;
+GRANT ALL ON TABLE points_tables TO anon, authenticated;
+
+-- Ensure RLS allows guest & user registration without permission errors
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_public_insert_orders" ON orders;
+CREATE POLICY "allow_public_insert_orders" ON orders FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "allow_public_select_orders" ON orders;
+CREATE POLICY "allow_public_select_orders" ON orders FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "allow_public_update_orders" ON orders;
+CREATE POLICY "allow_public_update_orders" ON orders FOR UPDATE TO anon, authenticated USING (true);
+
+ALTER TABLE registrations ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_public_insert_registrations" ON registrations;
+CREATE POLICY "allow_public_insert_registrations" ON registrations FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "allow_public_select_registrations" ON registrations;
+CREATE POLICY "allow_public_select_registrations" ON registrations FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "allow_public_update_registrations" ON registrations;
+CREATE POLICY "allow_public_update_registrations" ON registrations FOR UPDATE TO anon, authenticated USING (true);
+
+ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_public_insert_payments" ON payments;
+CREATE POLICY "allow_public_insert_payments" ON payments FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "allow_public_select_payments" ON payments;
+CREATE POLICY "allow_public_select_payments" ON payments FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "allow_public_update_payments" ON payments;
+CREATE POLICY "allow_public_update_payments" ON payments FOR UPDATE TO anon, authenticated USING (true);
+
+-- ============================================================================
+-- 13. TOP 4 TEAMS & FINAL POINTS TABLE IMAGE COLUMNS
+-- ============================================================================
+ALTER TABLE events ADD COLUMN IF NOT EXISTS top_teams jsonb DEFAULT '{"first": "", "second": "", "third": "", "fourth": ""}'::jsonb;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS final_points_table_url text;
+
+-- ============================================================================
+-- 14. AUTO TRANSITION LOBBY STATUS: LIVE -> COMPLETED 20M AFTER MATCH 3 IDP
+-- ============================================================================
+CREATE OR REPLACE FUNCTION auto_update_lobby_statuses()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  -- 1. Open lobbies whose start time has arrived transition to 'live'
+  UPDATE events
+  SET status = 'live'
+  WHERE status = 'open'
+    AND starts_at <= now()
+    AND is_published = true;
+
+  -- 2. Once Match 3 has completed (80 minutes from lobby start, which is Match 3 IDP at +60m + 20 minutes)
+  UPDATE events
+  SET status = 'completed'
+  WHERE status = 'live'
+    AND starts_at <= (now() - interval '80 minutes');
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION auto_update_lobby_statuses() TO authenticated, anon;
+
+

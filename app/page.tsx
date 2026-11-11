@@ -28,6 +28,13 @@ type EventRow = {
   is_published?: boolean;
   status: string;
   whatsapp_group_link?: string | null;
+  top_teams?: {
+    first?: string;
+    second?: string;
+    third?: string;
+    fourth?: string;
+  } | null;
+  final_points_table_url?: string | null;
   prize_distribution?: {
     first?: number;
     second?: number;
@@ -65,18 +72,53 @@ const when = (iso: string) =>
     timeZone: "Asia/Kolkata",
   });
 
+function parseMatch3IdpTime(startsAt?: string, idpTimes?: string | null): number | null {
+  if (!startsAt || !idpTimes) return null;
+  const parts = idpTimes.split("|").map((s) => s.trim());
+  if (parts.length >= 3) {
+    const m3Str = parts[2];
+    const match = m3Str.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+    if (match) {
+      let hours = parseInt(match[1], 10);
+      const minutes = parseInt(match[2], 10);
+      const meridiem = match[3]?.toUpperCase();
+      if (meridiem === "PM" && hours < 12) hours += 12;
+      if (meridiem === "AM" && hours === 12) hours = 0;
+
+      const d = new Date(startsAt);
+      d.setHours(hours, minutes, 0, 0);
+      return d.getTime();
+    }
+  }
+  return null;
+}
+
 function slotState(
   maxSlots: number,
   realFilled: number,
   startsAt?: string,
   status?: string,
-  clientNow?: number
+  clientNow?: number,
+  idpTimes?: string | null
 ) {
-  const isStarted = startsAt && clientNow ? new Date(startsAt).getTime() <= clientNow : false;
-  const isLive = status === "live" || isStarted;
-
   if (status === "completed") return { label: "COMPLETED", color: "#64748B", bg: "#F1F5F9", left: 0, closed: true };
   if (status === "cancelled") return { label: "CANCELLED", color: "#DC2626", bg: "#FEE2E2", left: 0, closed: true };
+
+  const startTimeMs = startsAt ? new Date(startsAt).getTime() : 0;
+  const isStarted = startTimeMs > 0 && clientNow ? startTimeMs <= clientNow : false;
+
+  // Rule: Match 3 IDP is released ~60m after lobby start (or exact Match 3 IDP time).
+  // Exactly 20 minutes after Match 3 IDP, the lobby automatically closes & status changes from "LIVE NOW" to "COMPLETED"!
+  const m3IdpTimeMs = parseMatch3IdpTime(startsAt, idpTimes);
+  const isConcluded =
+    (m3IdpTimeMs && clientNow ? clientNow >= m3IdpTimeMs + (20 * 60 * 1000) : false) ||
+    (startTimeMs > 0 && clientNow ? clientNow >= startTimeMs + (80 * 60 * 1000) : false);
+
+  if (isConcluded) {
+    return { label: "COMPLETED", color: "#64748B", bg: "#F1F5F9", left: 0, closed: true };
+  }
+
+  const isLive = status === "live" || isStarted;
   if (isLive) return { label: "🔴 LIVE NOW", color: "#DC2626", bg: "#FEE2E2", left: 0, closed: true };
 
   const left = maxSlots - realFilled;
@@ -461,6 +503,7 @@ function EventCard({
   selected,
   onToggle,
   onViewPrize,
+  onViewPointsImage,
   regs,
   clientNow,
 }: {
@@ -468,6 +511,7 @@ function EventCard({
   selected: boolean;
   onToggle: () => void;
   onViewPrize: (e: EventRow) => void;
+  onViewPointsImage?: (url: string) => void;
   regs: PublicReg[];
   clientNow: number;
 }) {
@@ -476,7 +520,7 @@ function EventCard({
   const pendingCount = eventRegs.filter((r) => r.status === "pending_payment").length;
   const realFilled = confirmedCount + pendingCount;
   const slotsLeft = Math.max(0, e.max_slots - realFilled);
-  const s = slotState(e.max_slots, realFilled, e.starts_at, e.status, clientNow);
+  const s = slotState(e.max_slots, realFilled, e.starts_at, e.status, clientNow, e.idp_times);
   const pct = Math.min(100, Math.round((realFilled / e.max_slots) * 100));
 
   const earlyBirdRemaining =
@@ -629,6 +673,62 @@ function EventCard({
       {/* ── Registered Teams Collapsible ── */}
       <TeamRoster eventId={e.id} regs={regs} />
 
+      {/* ── Official Top 4 Winners & Points Table (When Concluded) ── */}
+      {(Boolean(e.top_teams?.first) || Boolean(e.final_points_table_url)) && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50/80 p-3 space-y-2 text-slate-900">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black uppercase tracking-wider text-amber-950 flex items-center gap-1">
+              <span>👑</span>
+              <span>Official Top 4 Winners</span>
+            </span>
+            <span className="text-[9px] bg-amber-200 text-amber-900 font-extrabold px-1.5 py-0.2 rounded-full">
+              Results Out
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-1.5 text-xs">
+            {e.top_teams?.first && (
+              <div className="bg-white rounded-lg border border-amber-200 px-2 py-1 flex items-center gap-1.5 truncate">
+                <span className="font-bold text-amber-600">🥇</span>
+                <span className="font-bold text-slate-900 truncate">{e.top_teams.first}</span>
+              </div>
+            )}
+            {e.top_teams?.second && (
+              <div className="bg-white rounded-lg border border-slate-200 px-2 py-1 flex items-center gap-1.5 truncate">
+                <span className="font-bold text-slate-500">🥈</span>
+                <span className="font-bold text-slate-800 truncate">{e.top_teams.second}</span>
+              </div>
+            )}
+            {e.top_teams?.third && (
+              <div className="bg-white rounded-lg border border-slate-200 px-2 py-1 flex items-center gap-1.5 truncate">
+                <span className="font-bold text-amber-700">🥉</span>
+                <span className="font-bold text-slate-800 truncate">{e.top_teams.third}</span>
+              </div>
+            )}
+            {e.top_teams?.fourth && (
+              <div className="bg-white rounded-lg border border-slate-200 px-2 py-1 flex items-center gap-1.5 truncate">
+                <span className="font-bold text-slate-400">4th</span>
+                <span className="font-bold text-slate-800 truncate">{e.top_teams.fourth}</span>
+              </div>
+            )}
+          </div>
+
+          {e.final_points_table_url && onViewPointsImage && (
+            <button
+              type="button"
+              onClick={(ev) => {
+                ev.stopPropagation();
+                onViewPointsImage(e.final_points_table_url!);
+              }}
+              className="w-full py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+            >
+              <span>📊</span>
+              <span>View Official Points Table</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ── Action Button (Radiant Gold Select / Dark Navy Selected) ── */}
       {s.closed ? (
         <span className="mt-auto rounded-xl bg-slate-100 border border-slate-200 px-4 py-3 min-h-[44px] flex items-center justify-center text-center text-xs font-bold uppercase tracking-wider text-slate-400 cursor-not-allowed">
@@ -755,6 +855,7 @@ export default function Home() {
   const [prizeModalEvent, setPrizeModalEvent] = useState<EventRow | null>(null);
   const [utrModalOpen, setUtrModalOpen] = useState(false);
   const [pointsModalOpen, setPointsModalOpen] = useState(false);
+  const [pointsImageModal, setPointsImageModal] = useState<string | null>(null);
   const [clientNow, setClientNow] = useState<number>(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const checkoutRef = useRef<HTMLDivElement>(null);
@@ -1355,6 +1456,7 @@ export default function Home() {
                       selected={sel.includes(e.id)}
                       onToggle={() => toggle(e.id)}
                       onViewPrize={setPrizeModalEvent}
+                      onViewPointsImage={setPointsImageModal}
                       regs={regs}
                       clientNow={clientNow}
                     />
@@ -1400,6 +1502,7 @@ export default function Home() {
                       selected={sel.includes(e.id)}
                       onToggle={() => toggle(e.id)}
                       onViewPrize={setPrizeModalEvent}
+                      onViewPointsImage={setPointsImageModal}
                       regs={regs}
                       clientNow={clientNow}
                     />
@@ -1622,6 +1725,39 @@ export default function Home() {
       {/* Points Table & Results Modal */}
       {pointsModalOpen && (
         <PublicPointsTableModal onClose={() => setPointsModalOpen(false)} />
+      )}
+
+      {/* High-Res Final Points Table Screenshot Lightbox */}
+      {pointsImageModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-3 sm:p-5 animate-in fade-in"
+          onClick={() => setPointsImageModal(null)}
+        >
+          <div
+            className="bg-white rounded-3xl p-4 sm:p-6 max-w-3xl w-full max-h-[90vh] overflow-y-auto space-y-4 shadow-2xl"
+            onClick={(ev) => ev.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">📊</span>
+                <h3 className="font-black text-slate-900 text-base sm:text-lg">Official Match Results &amp; Points Table</h3>
+              </div>
+              <button
+                onClick={() => setPointsImageModal(null)}
+                className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:text-slate-900 font-bold flex items-center justify-center cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="rounded-2xl border border-slate-200 overflow-hidden bg-slate-950/5 p-1 flex items-center justify-center">
+              <img
+                src={pointsImageModal}
+                alt="Official Final Points Table"
+                className="w-full h-auto rounded-xl object-contain max-h-[75vh]"
+              />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

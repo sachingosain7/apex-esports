@@ -2319,7 +2319,13 @@ function LobbyIdpEditor({
   );
 }
 
-function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "error") => void }) {
+function LiveLobbiesTab({
+  showToast,
+  onOpenPointsTab,
+}: {
+  showToast: (m: string, t: "success" | "error") => void;
+  onOpenPointsTab?: () => void;
+}) {
   const [events, setEvents] = useState<EventAdmin[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
@@ -2898,6 +2904,17 @@ function LiveLobbiesTab({ showToast }: { showToast: (m: string, t: "success" | "
                     >
                       <span>📢</span> Broadcast
                     </button>
+
+                    {/* Top 4 & Final Points Table shortcut */}
+                    {onOpenPointsTab && (
+                      <button
+                        onClick={onOpenPointsTab}
+                        className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-50 border border-amber-300 text-amber-950 hover:bg-amber-100 transition-colors flex items-center gap-1.5 cursor-pointer"
+                        title="Set Top 4 Teams and Points Table Image"
+                      >
+                        <span>👑</span> Top 4 &amp; Points
+                      </button>
+                    )}
 
                     {/* 1-Click Duplicate */}
                     <button
@@ -3968,7 +3985,7 @@ export default function AdminPage() {
   const renderTab = () => {
     switch (activeTab) {
       case "generator": return <BulkGeneratorTab showToast={showToast} />;
-      case "lobbies": return <LiveLobbiesTab showToast={showToast} />;
+      case "lobbies": return <LiveLobbiesTab showToast={showToast} onOpenPointsTab={() => setActiveTab("points")} />;
       case "payments": return <PaymentsTab showToast={showToast} />;
       case "points": return <PointsTableTab showToast={showToast} />;
       case "roles": return <RoleManagerTab showToast={showToast} />;

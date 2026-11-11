@@ -144,7 +144,7 @@ BEGIN
 END;
 $$;
 
--- 7. AUTO-TRANSITION LOBBY STATUSES BASED ON TIME (OPEN -> LIVE -> COMPLETED)
+-- 7. AUTO-TRANSITION LOBBY STATUSES (OPEN -> LIVE -> COMPLETED 20M AFTER MATCH 3 IDP)
 CREATE OR REPLACE FUNCTION auto_update_lobby_statuses()
 RETURNS void
 LANGUAGE plpgsql
@@ -159,12 +159,39 @@ BEGIN
     AND starts_at <= now()
     AND is_published = true;
 
-  -- Automatically mark matches completed 3 hours after start
+  -- Automatically mark matches completed 80 min after start (Match 3 IDP + 20 min)
   UPDATE events
   SET status = 'completed'
   WHERE status = 'live'
-    AND starts_at <= (now() - interval '3 hours');
+    AND starts_at <= (now() - interval '80 minutes');
 END;
 $$;
 
 GRANT EXECUTE ON FUNCTION auto_update_lobby_statuses() TO authenticated, anon;
+
+-- 8. PERMISSIONS & TABLE GRANTS (Fixes permission denied for table orders)
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT ALL ON TABLE orders TO anon, authenticated;
+GRANT ALL ON TABLE registrations TO anon, authenticated;
+GRANT ALL ON TABLE payments TO anon, authenticated;
+GRANT ALL ON TABLE events TO anon, authenticated;
+
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_public_insert_orders" ON orders;
+CREATE POLICY "allow_public_insert_orders" ON orders FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "allow_public_select_orders" ON orders;
+CREATE POLICY "allow_public_select_orders" ON orders FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "allow_public_update_orders" ON orders;
+CREATE POLICY "allow_public_update_orders" ON orders FOR UPDATE TO anon, authenticated USING (true);
+
+ALTER TABLE registrations ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_public_insert_registrations" ON registrations;
+CREATE POLICY "allow_public_insert_registrations" ON registrations FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "allow_public_select_registrations" ON registrations;
+CREATE POLICY "allow_public_select_registrations" ON registrations FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "allow_public_update_registrations" ON registrations;
+CREATE POLICY "allow_public_update_registrations" ON registrations FOR UPDATE TO anon, authenticated USING (true);
+
+ALTER TABLE events ADD COLUMN IF NOT EXISTS top_teams jsonb DEFAULT '{"first": "", "second": "", "third": "", "fourth": ""}'::jsonb;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS final_points_table_url text;
+

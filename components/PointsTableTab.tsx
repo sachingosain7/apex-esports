@@ -67,6 +67,15 @@ export function PointsTableTab({ showToast }: PointsTableTabProps) {
   const [saving, setSaving] = useState(false);
   const [copiedLeaderboard, setCopiedLeaderboard] = useState(false);
 
+  // Top 4 Teams & Final Points Table Image state
+  const [topTeams, setTopTeams] = useState({
+    first: "",
+    second: "",
+    third: "",
+    fourth: "",
+  });
+  const [pointsTableImage, setPointsTableImage] = useState<string | null>(null);
+
   // Load available lobbies
   useEffect(() => {
     (async () => {
@@ -144,6 +153,38 @@ export function PointsTableTab({ showToast }: PointsTableTabProps) {
           m2 = defaultTeams.map((name, i) => ({ teamName: name, rank: i + 1, kills: 0 }));
           m3 = defaultTeams.map((name, i) => ({ teamName: name, rank: i + 1, kills: 0 }));
         }
+
+        // 4. Load Top 4 Teams and points table image
+        try {
+          const { data: evData } = await supabase
+            .from("events")
+            .select("top_teams, final_points_table_url")
+            .eq("id", selectedEventId)
+            .single();
+
+          if (evData) {
+            if (evData.top_teams) {
+              setTopTeams({
+                first: evData.top_teams.first || "",
+                second: evData.top_teams.second || "",
+                third: evData.top_teams.third || "",
+                fourth: evData.top_teams.fourth || "",
+              });
+            }
+            if (evData.final_points_table_url) {
+              setPointsTableImage(evData.final_points_table_url);
+            }
+          }
+        } catch {}
+
+        try {
+          const cachedTop = localStorage.getItem(`apex_top_teams_${selectedEventId}`);
+          if (cachedTop) {
+            const parsed = JSON.parse(cachedTop);
+            if (parsed.topTeams) setTopTeams(parsed.topTeams);
+            if (parsed.image) setPointsTableImage(parsed.image);
+          }
+        } catch {}
 
         setMatch1Scores(m1);
         setMatch2Scores(m2);
@@ -285,12 +326,68 @@ export function PointsTableTab({ showToast }: PointsTableTabProps) {
         );
       } catch {}
 
-      showToast("Points Table saved & published live to public site!", "success");
+      // 5. Update Event with Top 4 Winners & Final Points Table Image & mark completed
+      try {
+        await supabase
+          .from("events")
+          .update({
+            top_teams: topTeams,
+            final_points_table_url: pointsTableImage,
+            status: "completed",
+          })
+          .eq("id", selectedEventId);
+      } catch {
+        // Fallback: direct update
+      }
+
+      try {
+        localStorage.setItem(
+          `apex_top_teams_${selectedEventId}`,
+          JSON.stringify({
+            topTeams,
+            image: pointsTableImage,
+            updatedAt: new Date().toISOString(),
+          })
+        );
+      } catch {}
+
+      showToast("Points Table & Top 4 Winners published live!", "success");
     } catch (err: unknown) {
       showToast((err as Error).message || "Failed to save points table", "error");
     } finally {
       setSaving(false);
     }
+  };
+
+  const handlePointsImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      showToast("Image size must be under 8MB", "error");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setPointsTableImage(reader.result);
+        showToast("Points table image loaded! Click Save to publish.", "success");
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAutoFillTop4 = () => {
+    if (overallStandings.length === 0) {
+      showToast("Enter match scores first to auto-fill top 4.", "error");
+      return;
+    }
+    setTopTeams({
+      first: overallStandings[0]?.teamName || "",
+      second: overallStandings[1]?.teamName || "",
+      third: overallStandings[2]?.teamName || "",
+      fourth: overallStandings[3]?.teamName || "",
+    });
+    showToast("Top 4 squads auto-filled from current overall standings!", "success");
   };
 
   const handleCopyWhatsAppLeaderboard = () => {
@@ -391,6 +488,133 @@ export function PointsTableTab({ showToast }: PointsTableTabProps) {
               </option>
             ))}
           </select>
+        </div>
+      </div>
+
+      {/* ── Official Top 4 Winners & Points Table Image Upload Card ── */}
+      <div className="rounded-2xl border border-amber-300 bg-amber-50/60 p-5 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-amber-200/80 pb-3">
+          <div>
+            <h3 className="text-sm sm:text-base font-black text-amber-950 flex items-center gap-2">
+              <span>👑</span>
+              <span>Top 4 Teams &amp; Final Points Table Image</span>
+            </h3>
+            <p className="text-xs text-amber-800">
+              Input the winning teams and upload your official score sheet image to display live on the website.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleAutoFillTop4}
+            className="px-3 py-1.5 rounded-xl text-xs font-black bg-amber-200 hover:bg-amber-300 text-amber-950 border border-amber-400 transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+            title="Auto-fill top 4 teams based on calculated overall match points"
+          >
+            <span>⚡</span>
+            <span>Auto-Fill from Standings</span>
+          </button>
+        </div>
+
+        {/* 4 Team Inputs */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* 1st Place */}
+          <div className="rounded-xl bg-white border-2 border-amber-400 p-3 space-y-1.5 shadow-xs">
+            <label className="text-[10px] font-black uppercase tracking-wider text-amber-800 flex items-center gap-1">
+              <span>🥇</span>
+              <span>1st Place (Champion)</span>
+            </label>
+            <input
+              type="text"
+              value={topTeams.first}
+              onChange={(e) => setTopTeams({ ...topTeams, first: e.target.value })}
+              placeholder="e.g. Team Soul"
+              className="w-full rounded-lg border border-amber-300 bg-amber-50/30 px-2.5 py-1.5 text-xs font-bold text-slate-900 outline-none focus:border-amber-500 focus:bg-white"
+            />
+          </div>
+
+          {/* 2nd Place */}
+          <div className="rounded-xl bg-white border border-slate-300 p-3 space-y-1.5 shadow-xs">
+            <label className="text-[10px] font-black uppercase tracking-wider text-slate-600 flex items-center gap-1">
+              <span>🥈</span>
+              <span>2nd Place (Runner Up)</span>
+            </label>
+            <input
+              type="text"
+              value={topTeams.second}
+              onChange={(e) => setTopTeams({ ...topTeams, second: e.target.value })}
+              placeholder="e.g. GodLike"
+              className="w-full rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-xs font-bold text-slate-900 outline-none focus:border-blue-600 focus:bg-white"
+            />
+          </div>
+
+          {/* 3rd Place */}
+          <div className="rounded-xl bg-white border border-slate-300 p-3 space-y-1.5 shadow-xs">
+            <label className="text-[10px] font-black uppercase tracking-wider text-amber-900 flex items-center gap-1">
+              <span>🥉</span>
+              <span>3rd Place</span>
+            </label>
+            <input
+              type="text"
+              value={topTeams.third}
+              onChange={(e) => setTopTeams({ ...topTeams, third: e.target.value })}
+              placeholder="e.g. Global Esports"
+              className="w-full rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-xs font-bold text-slate-900 outline-none focus:border-blue-600 focus:bg-white"
+            />
+          </div>
+
+          {/* 4th Place */}
+          <div className="rounded-xl bg-white border border-slate-300 p-3 space-y-1.5 shadow-xs">
+            <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1">
+              <span>🎖️</span>
+              <span>4th Place</span>
+            </label>
+            <input
+              type="text"
+              value={topTeams.fourth}
+              onChange={(e) => setTopTeams({ ...topTeams, fourth: e.target.value })}
+              placeholder="e.g. Carnival Gaming"
+              className="w-full rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-xs font-bold text-slate-900 outline-none focus:border-blue-600 focus:bg-white"
+            />
+          </div>
+        </div>
+
+        {/* Upload Score Sheet Image */}
+        <div className="rounded-xl border border-dashed border-amber-300 bg-white p-3.5 space-y-2">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5 cursor-pointer">
+              <span>📸</span>
+              <span>Upload Official Points Table Screenshot / Image</span>
+            </label>
+            {pointsTableImage && (
+              <button
+                type="button"
+                onClick={() => setPointsTableImage(null)}
+                className="text-[11px] font-bold text-red-600 hover:underline cursor-pointer"
+              >
+                Remove Image
+              </button>
+            )}
+          </div>
+
+          {pointsTableImage ? (
+            <div className="flex items-center gap-3 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+              <img
+                src={pointsTableImage}
+                alt="Points Table preview"
+                className="h-16 w-auto object-contain rounded-md border border-slate-300 shadow-2xs"
+              />
+              <div>
+                <p className="text-xs font-extrabold text-emerald-800">✓ Points Table Image Attached</p>
+                <p className="text-[10px] text-slate-500">Will be viewable by players with 1 click on the homepage.</p>
+              </div>
+            </div>
+          ) : (
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handlePointsImageUpload}
+              className="block w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-amber-100 file:text-amber-900 hover:file:bg-amber-200 cursor-pointer"
+            />
+          )}
         </div>
       </div>
 
