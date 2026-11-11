@@ -144,21 +144,21 @@ const MAP_BADGES: Record<string, string> = {
 
 function SkeletonCard() {
   return (
-    <div className="flex flex-col gap-4 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
-      <div className="flex justify-between gap-3">
-        <div className="flex flex-col gap-2 flex-1">
+    <div className="flex flex-col gap-4 rounded-2xl border border-slate-200/80 bg-white p-3.5 sm:p-5 shadow-sm w-full min-w-0 max-w-full overflow-hidden">
+      <div className="flex justify-between gap-3 min-w-0 w-full">
+        <div className="flex flex-col gap-2 flex-1 min-w-0">
           <div className="h-3.5 w-24 rounded skeleton" />
           <div className="h-5 w-3/4 rounded skeleton" />
           <div className="h-3.5 w-1/3 rounded skeleton" />
         </div>
         <div className="h-6 w-20 rounded-full skeleton shrink-0" />
       </div>
-      <div className="h-14 rounded-xl skeleton" />
-      <div className="grid grid-cols-2 gap-3">
+      <div className="h-14 rounded-xl skeleton w-full" />
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 w-full min-w-0">
         <div className="h-16 rounded-xl skeleton" />
         <div className="h-16 rounded-xl skeleton" />
       </div>
-      <div className="h-11 rounded-xl skeleton" />
+      <div className="h-11 rounded-xl skeleton w-full" />
     </div>
   );
 }
@@ -180,45 +180,45 @@ function MatchScheduleBox({
   const starts = startTimes?.trim() || "Starting per schedule";
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 space-y-2">
-      <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
-        <span className="uppercase tracking-wider flex items-center gap-1.5">
+    <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-2.5 sm:p-3 space-y-2 min-w-0 w-full overflow-hidden">
+      <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-bold text-slate-700 gap-1.5 min-w-0">
+        <span className="uppercase tracking-wider flex items-center gap-1.5 min-w-0 truncate">
           <span>🎯</span>
-          <span>Match Schedule (3 Matches)</span>
+          <span className="truncate">Match Schedule (3 Matches)</span>
         </span>
-        <span className="text-[10px] text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded font-mono">
+        <span className="text-[9px] sm:text-[10px] text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded font-mono shrink-0 whitespace-nowrap">
           3 IDPs
         </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-1.5 font-mono text-[11px]">
+      <div className="grid grid-cols-1 gap-1.5 font-mono text-[10px] sm:text-[11px] min-w-0">
         {/* IDP Times */}
-        <div className="flex items-center gap-2">
-          <span className="shrink-0 rounded bg-blue-100 text-blue-800 px-1.5 py-0.5 text-[10px] font-bold tracking-wider">
+        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 w-full">
+          <span className="shrink-0 rounded bg-blue-100 text-blue-800 px-1.5 py-0.5 text-[9px] sm:text-[10px] font-bold tracking-wider whitespace-nowrap">
             IDP
           </span>
-          <span className="text-slate-700 truncate font-semibold" title={idp}>
+          <span className="text-slate-700 truncate font-semibold min-w-0 tracking-tight" title={idp}>
             {idp}
           </span>
         </div>
 
         {/* Start Times */}
-        <div className="flex items-center gap-2">
-          <span className="shrink-0 rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 text-[10px] font-bold tracking-wider">
+        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 w-full">
+          <span className="shrink-0 rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 text-[9px] sm:text-[10px] font-bold tracking-wider whitespace-nowrap">
             START
           </span>
-          <span className="text-slate-700 truncate font-semibold" title={starts}>
+          <span className="text-slate-700 truncate font-semibold min-w-0 tracking-tight" title={starts}>
             {starts}
           </span>
         </div>
       </div>
 
       {/* Lobby WhatsApp Group Notice */}
-      <div className="flex items-center gap-1.5 text-[11px] text-emerald-800 bg-emerald-50/90 border border-emerald-200 rounded-lg px-2.5 py-1.5">
+      <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] text-emerald-800 bg-emerald-50/90 border border-emerald-200 rounded-lg px-2 sm:px-2.5 py-1.5 min-w-0 w-full">
         <svg className="w-3.5 h-3.5 fill-[#25D366] shrink-0" viewBox="0 0 24 24">
           <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
         </svg>
-        <span className="truncate">
+        <span className="truncate min-w-0">
           IDP group link provided for <strong>{lobbyTag}</strong>. Register to get access.
         </span>
       </div>
@@ -492,22 +492,22 @@ function EventCard({
 
   return (
     <div
-      className={`flex flex-col gap-3.5 rounded-2xl border bg-white p-4 sm:p-5 transition-all duration-200 ${
+      className={`flex flex-col gap-3 sm:gap-3.5 rounded-2xl border bg-white p-3.5 sm:p-5 transition-all duration-200 w-full min-w-0 max-w-full overflow-hidden ${
         selected
           ? "border-amber-400 ring-2 ring-amber-400/30 shadow-xl"
           : "border-slate-200/90 hover:border-slate-300 hover:shadow-lg shadow-sm"
       }`}
     >
       {/* ── Top Badge Row ── */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 flex-wrap">
+      <div className="flex items-center justify-between gap-1.5 min-w-0 w-full">
+        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
           <span
-            className={`rounded-md border px-2 py-0.5 text-[10px] font-black tracking-wider uppercase ${kindBadge.cls}`}
+            className={`rounded-md border px-2 py-0.5 text-[10px] font-black tracking-wider uppercase shrink-0 ${kindBadge.cls}`}
           >
             {kindBadge.label}
           </span>
           {e.mode && (
-            <span className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700 uppercase">
+            <span className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700 uppercase shrink-0">
               {e.mode}
             </span>
           )}
@@ -515,7 +515,7 @@ function EventCard({
 
         {/* Status Pill (Live Now / Open / Filling Fast / Sold out) */}
         <span
-          className="rounded-full px-2.5 py-0.5 text-[10px] font-black tracking-wider border shrink-0"
+          className="rounded-full px-2 sm:px-2.5 py-0.5 text-[9px] sm:text-[10px] font-black tracking-wider border shrink-0 whitespace-nowrap"
           style={{
             color: s.color,
             background: s.bg,
@@ -527,22 +527,22 @@ function EventCard({
       </div>
 
       {/* ── Title & Timing ── */}
-      <div>
-        <h3 className="text-base sm:text-lg font-black text-slate-900 leading-snug">
+      <div className="min-w-0">
+        <h3 className="text-base sm:text-lg font-black text-slate-900 leading-snug truncate" title={e.title}>
           {e.title}
         </h3>
-        <p className="text-xs text-slate-500 font-medium mt-0.5">
+        <p className="text-xs text-slate-500 font-medium mt-0.5 truncate">
           {when(e.starts_at)} IST
         </p>
       </div>
 
       {/* ── Map Badges ── */}
       {e.maps.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1.5 min-w-0">
           {e.maps.map((m) => (
             <span
               key={m}
-              className={`rounded-md border px-2 py-0.5 text-[10px] font-bold ${
+              className={`rounded-md border px-2 py-0.5 text-[10px] font-bold shrink-0 ${
                 MAP_BADGES[m] || "bg-slate-100 text-slate-700 border-slate-200"
               }`}
             >
@@ -560,7 +560,7 @@ function EventCard({
       />
 
       {/* ── High Contrast Prize Pool & Entry Fee ── */}
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid grid-cols-2 gap-2 sm:gap-2.5 min-w-0 w-full">
         {/* Prize Pool */}
         <button
           type="button"
@@ -568,31 +568,31 @@ function EventCard({
             ev.stopPropagation();
             onViewPrize(e);
           }}
-          className="rounded-xl bg-blue-50/80 border border-blue-200/90 p-3 text-left hover:bg-blue-100/70 transition-colors group cursor-pointer"
+          className="rounded-xl bg-blue-50/80 border border-blue-200/90 p-2.5 sm:p-3 text-left hover:bg-blue-100/70 transition-colors group cursor-pointer min-w-0 overflow-hidden"
           title="Click to view Top 4 Prize Distribution"
         >
-          <div className="flex items-center justify-between text-[10px] font-extrabold text-blue-700 uppercase tracking-wider mb-0.5">
-            <span>🏆 PRIZE POOL</span>
-            <span className="text-[9px] underline text-blue-600 font-bold group-hover:text-blue-800">
+          <div className="flex items-center justify-between text-[9px] sm:text-[10px] font-extrabold text-blue-700 uppercase tracking-wider mb-0.5 gap-1 min-w-0">
+            <span className="truncate">🏆 PRIZE POOL</span>
+            <span className="text-[9px] underline text-blue-600 font-bold group-hover:text-blue-800 shrink-0">
               Top 4 ↗
             </span>
           </div>
-          <p className="text-xl sm:text-2xl font-black text-blue-700 font-mono tracking-tight">
+          <p className="text-lg sm:text-2xl font-black text-blue-700 font-mono tracking-tight truncate">
             {rupees(e.prize_pool_paise)}
           </p>
         </button>
 
         {/* Entry Fee */}
-        <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 flex flex-col justify-between">
-          <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
+        <div className="rounded-xl bg-slate-50 border border-slate-200 p-2.5 sm:p-3 flex flex-col justify-between min-w-0 overflow-hidden">
+          <span className="text-[9px] sm:text-[10px] font-extrabold text-slate-500 uppercase tracking-wider truncate">
             ENTRY FEE
           </span>
-          <div className="flex items-baseline gap-1.5">
-            <p className="text-xl sm:text-2xl font-black text-slate-900 font-mono">
+          <div className="flex items-baseline gap-1.5 min-w-0">
+            <p className="text-lg sm:text-2xl font-black text-slate-900 font-mono truncate">
               {effectiveFee === 0 ? "Free" : rupees(effectiveFee)}
             </p>
             {showEarlyBird && e.entry_fee_paise > 0 && (
-              <p className="text-xs text-slate-400 line-through">
+              <p className="text-xs text-slate-400 line-through shrink-0">
                 {rupees(e.entry_fee_paise)}
               </p>
             )}
@@ -601,18 +601,18 @@ function EventCard({
       </div>
 
       {/* ── Slot Progress Bar ── */}
-      <div>
-        <div className="flex items-center justify-between mb-1.5 text-xs">
-          <span className="text-slate-600 font-bold">
+      <div className="min-w-0 w-full">
+        <div className="flex items-center justify-between mb-1.5 text-xs gap-2 min-w-0">
+          <span className="text-slate-600 font-bold text-[11px] sm:text-xs truncate min-w-0">
             <span className="text-slate-900 font-black">{realFilled}</span> of{" "}
             {e.max_slots} slots filled
           </span>
           {slotsLeft > 0 ? (
-            <span className="font-extrabold text-xs" style={{ color: s.color }}>
+            <span className="font-extrabold text-[11px] sm:text-xs shrink-0 whitespace-nowrap" style={{ color: s.color }}>
               {slotsLeft} left
             </span>
           ) : (
-            <span className="text-slate-400 font-bold text-xs uppercase">
+            <span className="text-slate-400 font-bold text-[11px] sm:text-xs uppercase shrink-0 whitespace-nowrap">
               Sold out
             </span>
           )}
@@ -642,7 +642,7 @@ function EventCard({
       ) : (
         <button
           onClick={onToggle}
-          className={`mt-auto rounded-xl px-4 py-3 min-h-[44px] flex items-center justify-center text-sm font-black transition-all duration-150 ${
+          className={`mt-auto rounded-xl px-4 py-3 min-h-[44px] flex items-center justify-center text-sm font-black transition-all duration-150 cursor-pointer ${
             selected
               ? "bg-[#0F172A] text-white hover:bg-slate-800 shadow-md"
               : "bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 shadow-md shadow-amber-500/20"
@@ -1193,7 +1193,7 @@ export default function Home() {
       {/* 3. Hero Section (Deep Navy with High-Energy Esports Headline) */}
       {/* ────────────────────────────────────────────────────────────────────── */}
       <section className="bg-[#0A1128] text-white pt-8 pb-12 sm:pt-16 sm:pb-20 relative overflow-hidden hero-grid">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 relative z-10">
+        <div className="max-w-6xl mx-auto px-3 sm:px-6 relative z-10">
           <div className="max-w-3xl">
             {/* Live Squads locked pill */}
             <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-400/10 px-3.5 py-1 text-xs sm:text-sm font-bold text-[#FFB800] mb-4">
@@ -1248,8 +1248,8 @@ export default function Home() {
       {/* ────────────────────────────────────────────────────────────────────── */}
       {/* 4. Main Content Area (Crisp Light Canvas `#F4F6FB` - Exactly like Reference) */}
       {/* ────────────────────────────────────────────────────────────────────── */}
-      <main className="bg-[#F4F6FB] flex-1 py-8 sm:py-12 pb-36 sm:pb-28 border-t border-slate-200 w-full max-w-full overflow-x-hidden">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 space-y-8">
+      <main className="bg-[#F4F6FB] flex-1 py-6 sm:py-12 pb-36 sm:pb-28 border-t border-slate-200 w-full max-w-full overflow-x-hidden">
+        <div className="max-w-6xl mx-auto px-3 sm:px-6 space-y-6 sm:space-y-8 w-full min-w-0">
           {/* Error Banner */}
           {err && (
             <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
@@ -1258,9 +1258,9 @@ export default function Home() {
           )}
 
           {/* ── Filter Tabs & Search Bar ── */}
-          <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between w-full min-w-0">
             {/* Filter Pills */}
-            <div className="flex gap-2 p-1 rounded-2xl bg-slate-200/80 overflow-x-auto no-scrollbar">
+            <div className="flex gap-2 p-1 rounded-2xl bg-slate-200/80 overflow-x-auto no-scrollbar min-w-0">
               {FILTERS.map((f) => (
                 <button
                   key={f.key}
@@ -1277,8 +1277,8 @@ export default function Home() {
             </div>
 
             {/* Search Input & Sort */}
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1 sm:w-60">
+            <div className="flex items-center gap-2 min-w-0 w-full sm:w-auto">
+              <div className="relative flex-1 min-w-0 sm:w-60">
                 <svg
                   className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
                   fill="none"
@@ -1297,7 +1297,7 @@ export default function Home() {
                   placeholder="Search lobby, map, time…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 py-2 text-xs sm:text-sm text-slate-900 outline-none focus:border-blue-600 transition-colors shadow-sm"
+                  className="w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 py-2 text-xs sm:text-sm text-slate-900 outline-none focus:border-blue-600 transition-colors shadow-sm min-w-0"
                 />
               </div>
 
@@ -1316,24 +1316,24 @@ export default function Home() {
           {/* ────────────────────────────────────────────────────────────────── */}
           {/* Section: Open Tournaments / Scrims */}
           {/* ────────────────────────────────────────────────────────────────── */}
-          <section id="tournaments" className="scroll-mt-24 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+          <section id="tournaments" className="scroll-mt-24 space-y-4 min-w-0 w-full">
+            <div className="flex items-center justify-between gap-3 min-w-0 w-full">
+              <div className="min-w-0 flex-1">
+                <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight truncate">
                   Open tournaments
                 </h2>
-                <p className="text-xs sm:text-sm text-slate-500 font-medium">
+                <p className="text-xs sm:text-sm text-slate-500 font-medium truncate">
                   3 Matches per lobby · Room ID &amp; Password released 15m before match
                 </p>
               </div>
               {events && scrims.length > 0 && (
-                <span className="rounded-full bg-blue-100 text-blue-800 px-3 py-0.5 text-xs font-black">
+                <span className="rounded-full bg-blue-100 text-blue-800 px-2.5 sm:px-3 py-0.5 text-xs font-black shrink-0 whitespace-nowrap">
                   {scrims.length} open
                 </span>
               )}
             </div>
 
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 w-full min-w-0 max-w-full">
               {!events && !err
                 ? Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)
                 : scrims.map((e) => (
@@ -1361,24 +1361,24 @@ export default function Home() {
           {/* ────────────────────────────────────────────────────────────────── */}
           {/* Section: Open Leagues (from Reference Screenshot 4) */}
           {/* ────────────────────────────────────────────────────────────────── */}
-          <section id="leagues" className="scroll-mt-24 space-y-4 pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+          <section id="leagues" className="scroll-mt-24 space-y-4 pt-6 min-w-0 w-full">
+            <div className="flex items-center justify-between gap-3 min-w-0 w-full">
+              <div className="min-w-0 flex-1">
+                <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight truncate">
                   Open leagues
                 </h2>
-                <p className="text-xs sm:text-sm text-slate-500 font-medium">
+                <p className="text-xs sm:text-sm text-slate-500 font-medium truncate">
                   Multi-day major tournaments with large prize pools &amp; finals streaming
                 </p>
               </div>
               {events && leagues.length > 0 && (
-                <span className="rounded-full bg-amber-100 text-amber-900 px-3 py-0.5 text-xs font-black">
+                <span className="rounded-full bg-amber-100 text-amber-900 px-2.5 sm:px-3 py-0.5 text-xs font-black shrink-0 whitespace-nowrap">
                   {leagues.length} active
                 </span>
               )}
             </div>
 
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 w-full min-w-0 max-w-full">
               {!events && !err
                 ? Array.from({ length: 2 }).map((_, i) => <SkeletonCard key={i} />)
                 : leagues.map((e) => (
