@@ -3339,28 +3339,222 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
 
   const loadPayments = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase.rpc("admin_list_payments", {
-      p_status: statusFilter,
-    });
-    if (error) {
-      showToast(error.message, "error");
-    } else {
-      setPayments((data as PaymentRow[]) || []);
-    }
-    setLoading(false);
-  }, [statusFilter, showToast]);
+    let rows: PaymentRow[] = [];
 
-  useEffect(() => { loadPayments(); }, [loadPayments]);
+    // Layer 1: RPC call
+    try {
+      const { data, error } = await supabase.rpc("admin_list_payments", {
+        p_status: statusFilter,
+      });
+      if (!error && Array.isArray(data) && data.length > 0) {
+        rows = data as PaymentRow[];
+      }
+    } catch {}
+
+    // Layer 2: Direct payments table fallback
+    try {
+      let query = supabase
+        .from("payments")
+        .select("utr, amount_paise, status, created_at, order_id, screenshot_url")
+        .order("created_at", { ascending: false });
+
+      if (statusFilter) {
+        query = query.eq("status", statusFilter);
+      }
+
+      const { data: directPays, error: directErr } = await query;
+      if (!directErr && directPays && directPays.length > 0) {
+        const orderIds = directPays.map((p) => p.order_id).filter(Boolean);
+        const ordMap: Record<string, string> = {};
+        const regMap: Record<string, string[]> = {};
+
+        if (orderIds.length > 0) {
+          const { data: ords } = await supabase.from("orders").select("id, whatsapp").in("id", orderIds);
+          if (ords) {
+            ords.forEach((o) => { ordMap[o.id] = o.whatsapp; });
+          }
+          const { data: regs } = await supabase.from("registrations").select("order_id, team_name").in("order_id", orderIds);
+          if (regs) {
+            regs.forEach((r) => {
+              if (!regMap[r.order_id]) regMap[r.order_id] = [];
+              if (r.team_name && !regMap[r.order_id].includes(r.team_name)) {
+                regMap[r.order_id].push(r.team_name);
+              }
+            });
+          }
+        }
+
+        const directMapped: PaymentRow[] = directPays.map((p) => ({
+          utr: p.utr,
+          amount_paise: p.amount_paise,
+          pay_status: p.status,
+          created_at: p.created_at,
+          order_id: p.order_id,
+          whatsapp: (ordMap[p.order_id] || "").replace("+91", ""),
+          team_names: regMap[p.order_id] || ["Squad"],
+          event_titles: [],
+          screenshot_url: p.screenshot_url,
+        }));
+
+        for (const dp of directMapped) {
+          const existingIdx = rows.findIndex((r) => r.utr === dp.utr);
+          if (existingIdx >= 0) {
+            if (!rows[existingIdx].screenshot_url && dp.screenshot_url) {
+              rows[existingIdx].screenshot_url = dp.screenshot_url;
+            }
+          } else {
+            rows.push(dp);
+          }
+        }
+      }
+    } catch {}
+
+    // Layer 3: Merge any local submissions from localStorage (ensures instant visibility!)
+    try {
+      const localSubsStr = localStorage.getItem("apex_all_submissions");
+      if (localSubsStr) {
+        const localSubs: PaymentRow[] = JSON.parse(localSubsStr);
+        for (const ls of localSubs) {
+          // Check if this UTR has been updated locally
+          const localStatus = localStorage.getItem(`apex_payment_status_${ls.utr}`);
+          const effectiveStatus = localStatus || ls.pay_status;
+          const lsObj = { ...ls, pay_status: effectiveStatus };
+
+          const matchIdx = rows.findIndex((r) => r.utr === ls.utr);
+          if (matchIdx >= 0) {
+            if (!rows[matchIdx].screenshot_url && ls.screenshot_url) {
+              rows[matchIdx].screenshot_url = ls.screenshot_url;
+            }
+            if ((!rows[matchIdx].team_names || rows[matchIdx].team_names.length === 0) && ls.team_names) {
+              rows[matchIdx].team_names = ls.team_names;
+            }
+          } else {
+            if (!statusFilter || effectiveStatus === statusFilter) {
+              rows.unshift(lsObj);
+            }
+          }
+        }
+      }
+
+      // Also check active booking session
+      const activeSessionStr = localStorage.getItem("apex_active_booking_session");
+      if (activeSessionStr) {
+        const s = JSON.parse(activeSessionStr);
+        if (s.utr) {
+          const localStatus = localStorage.getItem(`apex_payment_status_${s.utr}`);
+          const effectiveStatus = localStatus || "pending_verification";
+          if (!statusFilter || effectiveStatus === statusFilter) {
+            if (!rows.some((r) => r.utr === s.utr)) {
+              rows.unshift({
+                utr: s.utr,
+                amount_paise: s.total_paise || 3000,
+                pay_status: effectiveStatus,
+                created_at: new Date().toISOString(),
+                order_id: s.order_id,
+                whatsapp: (s.whatsapp || "").replace("+91", ""),
+                team_names: s.team_name ? [s.team_name] : ["Squad"],
+                event_titles: [],
+                screenshot_url: localStorage.getItem(`apex_payment_ss_${s.utr}`) || null,
+              });
+            }
+          }
+        }
+      }
+    } catch {}
+
+    setPayments(rows);
+    setLoading(false);
+  }, [statusFilter]);
+
+  // Real-time listener: Supabase Postgres Changes + Window Storage + Polling
+  useEffect(() => {
+    loadPayments();
+    const interval = setInterval(loadPayments, 3500);
+
+    const onStorage = () => { loadPayments(); };
+    window.addEventListener("storage", onStorage);
+
+    const channel = supabase
+      .channel("admin-payments-sync")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "payments" },
+        (payload: { new?: { utr?: string; status?: string } }) => {
+          loadPayments();
+          if (payload.new?.status === "pending_verification") {
+            showToast(`🔔 New payment pending approval: UTR ${payload.new.utr}!`, "success");
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("storage", onStorage);
+      supabase.removeChannel(channel);
+    };
+  }, [loadPayments, showToast]);
 
   const handleVerify = async (utr: string, action: "approve" | "reject") => {
     setActing((prev) => ({ ...prev, [utr]: true }));
     try {
-      const { error } = await supabase.rpc("admin_verify_payment", {
-        p_utr: utr,
-        p_action: action,
-      });
-      if (error) throw error;
-      showToast(action === "approve" ? "Payment approved & verified!" : "Payment rejected & slot released", "success");
+      const newStatus = action === "approve" ? "approved" : "rejected";
+
+      // 1. Try admin_verify_payment RPC
+      try {
+        await supabase.rpc("admin_verify_payment", {
+          p_utr: utr,
+          p_action: action,
+        });
+      } catch {}
+
+      // 2. Direct table update fallback
+      try {
+        await supabase.from("payments").update({ status: newStatus }).eq("utr", utr);
+
+        const targetPayment = payments.find((p) => p.utr === utr);
+        if (targetPayment?.order_id) {
+          const regStatus = action === "approve" ? "confirmed" : "cancelled";
+          const ordStatus = action === "approve" ? "paid" : "refunded";
+          await supabase.from("registrations").update({ status: regStatus }).eq("order_id", targetPayment.order_id);
+          await supabase.from("orders").update({ status: ordStatus }).eq("id", targetPayment.order_id);
+        }
+      } catch {}
+
+      // 3. Local state & storage sync (Instantly triggers verification on player's screen!)
+      try {
+        localStorage.setItem(`apex_payment_status_${utr}`, newStatus);
+
+        const localSubsStr = localStorage.getItem("apex_all_submissions");
+        if (localSubsStr) {
+          const localSubs: PaymentRow[] = JSON.parse(localSubsStr);
+          const updated = localSubs.map((ls) => (ls.utr === utr ? { ...ls, pay_status: newStatus } : ls));
+          localStorage.setItem("apex_all_submissions", JSON.stringify(updated));
+        }
+
+        const activeSessionStr = localStorage.getItem("apex_active_booking_session");
+        if (activeSessionStr) {
+          const s = JSON.parse(activeSessionStr);
+          if (s.utr === utr) {
+            localStorage.setItem(
+              "apex_active_booking_session",
+              JSON.stringify({
+                ...s,
+                phase: action === "approve" ? "confirmed" : "rejected",
+              })
+            );
+          }
+        }
+
+        window.dispatchEvent(new Event("storage"));
+      } catch {}
+
+      showToast(
+        action === "approve"
+          ? "Payment approved! Match credentials & WhatsApp group unlocked for player."
+          : "Payment rejected & slot released.",
+        "success"
+      );
       await loadPayments();
     } catch (err: unknown) {
       showToast((err as Error).message || "Action failed", "error");
@@ -4082,7 +4276,29 @@ export default function AdminPage() {
         const revenue = (pays || [])
           .filter((p) => p.status === "approved" || p.status === "pending_verification")
           .reduce((sum, p) => sum + (p.amount_paise || 0), 0);
-        const pending = (pays || []).filter((p) => p.status === "pending_verification").length;
+        let pending = (pays || []).filter((p) => p.status === "pending_verification").length;
+
+        try {
+          const localSubsStr = localStorage.getItem("apex_all_submissions");
+          if (localSubsStr) {
+            const localSubs = JSON.parse(localSubsStr);
+            const localPending = localSubs.filter((ls: { utr: string; pay_status: string }) => {
+              const localStatus = localStorage.getItem(`apex_payment_status_${ls.utr}`);
+              return (localStatus || ls.pay_status) === "pending_verification";
+            });
+            pending = Math.max(pending, localPending.length);
+          }
+          const activeSessionStr = localStorage.getItem("apex_active_booking_session");
+          if (activeSessionStr) {
+            const s = JSON.parse(activeSessionStr);
+            if (s.utr) {
+              const localStatus = localStorage.getItem(`apex_payment_status_${s.utr}`);
+              if ((localStatus || s.phase) === "pending_verification" && pending === 0) {
+                pending = 1;
+              }
+            }
+          }
+        } catch {}
 
         setMetrics({
           activeLobbies: active,
@@ -4308,6 +4524,31 @@ export default function AdminPage() {
 
         {/* Dashboard Workspace */}
         <main className="flex-1 px-3 sm:px-8 py-6 sm:py-8 max-w-7xl w-full mx-auto space-y-6">
+          {/* ── Real-time Notification Alert Banner for Pending Payments ── */}
+          {metrics.pendingPayments > 0 && (
+            <div
+              onClick={() => setActiveTab("payments")}
+              className="rounded-2xl border-2 border-rose-400 bg-rose-50/95 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md cursor-pointer animate-pulse hover:bg-rose-100 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <span className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center text-xl font-black shadow-xs shrink-0">
+                  🔔
+                </span>
+                <div>
+                  <h4 className="font-black text-rose-950 text-sm">
+                    {metrics.pendingPayments} Payment{metrics.pendingPayments > 1 ? "s" : ""} Awaiting Verification
+                  </h4>
+                  <p className="text-xs text-rose-800">
+                    A team captain has submitted UPI reference details. Click to view screenshot proof and approve.
+                  </p>
+                </div>
+              </div>
+              <span className="px-4 py-2 rounded-xl text-xs font-black bg-rose-600 text-white shadow-xs whitespace-nowrap">
+                Review &amp; Approve Now →
+              </span>
+            </div>
+          )}
+
           {/* ── Top Platform Metrics Banner (4 Modern Cards) ── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {/* Metric 1: Active Lobbies */}

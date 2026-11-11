@@ -216,4 +216,74 @@ ALTER TABLE points_tables ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "allow_public_all_points_tables" ON points_tables;
 CREATE POLICY "allow_public_all_points_tables" ON points_tables FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
+-- 9. PAYMENT PIPELINE (Resilient LEFT JOIN, accessible by owner & all admins)
+CREATE OR REPLACE FUNCTION admin_list_payments(p_status text DEFAULT NULL)
+RETURNS TABLE (
+  utr          text,
+  amount_paise int,
+  pay_status   text,
+  created_at   timestamptz,
+  order_id     uuid,
+  whatsapp     text,
+  team_names   text[],
+  event_titles text[],
+  screenshot_url text
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    p.utr,
+    p.amount_paise,
+    p.status::text            AS pay_status,
+    p.created_at,
+    p.order_id,
+    COALESCE(o.whatsapp, '')  AS whatsapp,
+    COALESCE(array_agg(DISTINCT r.team_name) FILTER (WHERE r.team_name IS NOT NULL), ARRAY[]::text[]) AS team_names,
+    COALESCE(array_agg(DISTINCT e.title)     FILTER (WHERE e.title IS NOT NULL),     ARRAY[]::text[]) AS event_titles,
+    p.screenshot_url
+  FROM payments p
+  LEFT JOIN orders        o ON o.id = p.order_id
+  LEFT JOIN registrations r ON r.order_id = p.order_id
+  LEFT JOIN events        e ON e.id = r.event_id
+  WHERE (p_status IS NULL OR p.status::text = p_status)
+  GROUP BY p.utr, p.amount_paise, p.status, p.created_at, p.order_id, o.whatsapp, p.screenshot_url
+  ORDER BY p.created_at DESC;
+$$;
+
+GRANT EXECUTE ON FUNCTION admin_list_payments(text) TO authenticated, anon;
+
+CREATE OR REPLACE FUNCTION admin_verify_payment(p_utr text, p_action text)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_pay payments%ROWTYPE;
+BEGIN
+  SELECT * INTO v_pay FROM payments WHERE utr = p_utr FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'payment_not_found';
+  END IF;
+
+  IF p_action = 'approve' THEN
+    UPDATE payments SET status = 'approved' WHERE utr = p_utr;
+    UPDATE registrations SET status = 'confirmed' WHERE order_id = v_pay.order_id;
+    UPDATE orders SET status = 'paid' WHERE id = v_pay.order_id;
+  ELSIF p_action = 'reject' THEN
+    UPDATE payments SET status = 'rejected' WHERE utr = p_utr;
+    UPDATE registrations SET status = 'cancelled' WHERE order_id = v_pay.order_id;
+    UPDATE orders SET status = 'refunded' WHERE id = v_pay.order_id;
+  ELSE
+    RAISE EXCEPTION 'invalid_action';
+  END IF;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION admin_verify_payment(text, text) TO authenticated, anon;
+
+
 

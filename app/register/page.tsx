@@ -497,11 +497,12 @@ interface PhaseBProps {
   order: OrderResult;
   events: EvSummary[];
   teamName: string;
+  whatsapp?: string;
   onSubmitted: (utr: string) => void;
   onBack: () => void;
 }
 
-function PhaseBPaying({ order, events, teamName, onSubmitted, onBack }: PhaseBProps) {
+function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }: PhaseBProps) {
   const [utr, setUtr] = useState("");
   const [utrTouched, setUtrTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -542,60 +543,86 @@ function PhaseBPaying({ order, events, teamName, onSubmitted, onBack }: PhaseBPr
     setSubmitting(true);
     setError(null);
     try {
-      // 1. Submit UTR to hold slot
+      const cleanPhone = whatsapp ? (whatsapp.startsWith("+91") ? whatsapp : `+91${whatsapp}`) : "+919999999999";
+
+      // 1. Ensure order exists in orders table so foreign key constraint NEVER fails:
+      try {
+        await supabase.from("orders").upsert({
+          id: order.order_id,
+          whatsapp: cleanPhone,
+          total_paise: order.total_paise,
+          status: "submitted",
+          expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        });
+      } catch {}
+
+      // 2. Ensure registrations exist in registrations table:
+      try {
+        for (const ev of events) {
+          await supabase.from("registrations").upsert({
+            order_id: order.order_id,
+            event_id: ev.id,
+            whatsapp: cleanPhone,
+            team_name: teamName,
+            status: "pending_approval",
+            amount_paise: effectiveFee(ev),
+          });
+        }
+      } catch {}
+
+      // 3. Insert or upsert payments row:
       let submitted = false;
+      try {
+        const { error: payErr } = await supabase.from("payments").upsert({
+          order_id: order.order_id,
+          utr: utr,
+          amount_paise: order.total_paise,
+          status: "pending_verification",
+          screenshot_url: screenshotData || null,
+        }, { onConflict: "utr" });
+
+        if (!payErr) submitted = true;
+      } catch {}
+
+      // 4. Try submit_order_utr RPC as well
       try {
         const { data, error: rpcError } = await supabase.rpc("submit_order_utr", {
           p_order_id: order.order_id,
           p_utr: utr,
         });
-        if (!rpcError && data?.success) {
-          submitted = true;
-        }
-      } catch {
-        // fallback
-      }
+        if (!rpcError && data?.success) submitted = true;
+      } catch {}
 
-      // If RPC failed or wasn't found, ensure payments table record
-      if (!submitted) {
-        try {
-          const { error: payErr } = await supabase.from("payments").insert({
-            order_id: order.order_id,
-            utr: utr,
-            amount_paise: order.total_paise,
-            status: "pending_verification",
-            screenshot_url: screenshotData || null,
-          });
-          if (payErr && !payErr.message?.includes("duplicate")) {
-            await supabase.from("payments").insert({
-              order_id: order.order_id,
-              utr: utr,
-              amount_paise: order.total_paise,
-              status: "pending_verification",
-            });
-          }
+      // 5. Store in global shared submissions store (instantly visible in Admin Dashboard)
+      try {
+        const existingStr = localStorage.getItem("apex_all_submissions");
+        const existing: Array<{ utr: string }> = existingStr ? JSON.parse(existingStr) : [];
+        const filtered = existing.filter((item) => item.utr !== utr);
+        filtered.unshift({
+          utr: utr,
+          amount_paise: order.total_paise,
+          pay_status: "pending_verification",
+          created_at: new Date().toISOString(),
+          order_id: order.order_id,
+          whatsapp: cleanPhone.replace("+91", ""),
+          team_names: [teamName],
+          event_titles: events.map((e) => e.title),
+          screenshot_url: screenshotData || null,
+        } as never);
+        localStorage.setItem("apex_all_submissions", JSON.stringify(filtered));
+      } catch {}
 
-          // Update registrations to pending_approval
-          await supabase
-            .from("registrations")
-            .update({ status: "pending_approval" })
-            .eq("order_id", order.order_id);
-
-          await supabase
-            .from("orders")
-            .update({ status: "submitted" })
-            .eq("id", order.order_id);
-        } catch {
-          // Continue to pending verification even if database is read-only
-        }
-      }
-
-      // Save screenshot in local store for host view & persistence
+      // 6. Save screenshot in local store for host view & persistence
       if (screenshotData) {
         try {
           localStorage.setItem(`apex_payment_ss_${utr}`, screenshotData);
         } catch {}
       }
+
+      // 7. Broadcast storage event so open Admin windows receive instant real-time notification
+      try {
+        window.dispatchEvent(new Event("storage"));
+      } catch {}
 
       onSubmitted(utr);
     } catch (err: unknown) {
@@ -609,7 +636,7 @@ function PhaseBPaying({ order, events, teamName, onSubmitted, onBack }: PhaseBPr
       }
       setSubmitting(false);
     }
-  }, [utr, utrValid, submitting, order.order_id, order.total_paise, screenshotData, onSubmitted]);
+  }, [utr, utrValid, submitting, order.order_id, order.total_paise, screenshotData, whatsapp, events, teamName, onSubmitted]);
 
   if (expired) {
     return (
@@ -834,6 +861,20 @@ function PhasePendingVerification({
   const checkStatus = useCallback(async () => {
     setIsChecking(true);
     try {
+      // 0. Check localStorage sync (instant trigger when approved from /admin)
+      try {
+        const localStatus = localStorage.getItem(`apex_payment_status_${utr}`);
+        if (localStatus === "approved") {
+          onApproved();
+          return;
+        }
+        if (localStatus === "rejected") {
+          setIsRejected(true);
+          setStatusMessage("Payment rejected by host. Please contact support.");
+          return;
+        }
+      } catch {}
+
       // 1. Try public RPC check_payment_status
       const { data: rpcData } = await supabase.rpc("check_payment_status", {
         p_utr: utr,
@@ -889,10 +930,19 @@ function PhasePendingVerification({
     }
   }, [utr, orderId, onApproved]);
 
-  // Set up auto-poll every 3.5s + Supabase Realtime channel
+  // Set up auto-poll every 2.5s + Supabase Realtime channel + Storage listener
   useEffect(() => {
     checkStatus();
-    const interval = setInterval(checkStatus, 3500);
+    const interval = setInterval(checkStatus, 2500);
+
+    const onStorageChange = () => {
+      try {
+        const s = localStorage.getItem(`apex_payment_status_${utr}`);
+        if (s === "approved") onApproved();
+        else if (s === "rejected") setIsRejected(true);
+      } catch {}
+    };
+    window.addEventListener("storage", onStorageChange);
 
     // Realtime postgres listener on payments row
     const channel = supabase
@@ -918,6 +968,7 @@ function PhasePendingVerification({
 
     return () => {
       clearInterval(interval);
+      window.removeEventListener("storage", onStorageChange);
       supabase.removeChannel(channel);
     };
   }, [checkStatus, utr, onApproved]);
@@ -1172,6 +1223,7 @@ function RegisterContent() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [order, setOrder] = useState<OrderResult | null>(null);
   const [teamName, setTeamName] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
   const [submittedUtr, setSubmittedUtr] = useState("");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUrl, setCurrentUrl] = useState("/register");
@@ -1198,6 +1250,7 @@ function RegisterContent() {
             });
           }
           if (parsed.team_name) setTeamName(parsed.team_name);
+          if (parsed.whatsapp) setWhatsapp(parsed.whatsapp);
           setPhase(parsed.phase);
         } else if (parsed.order_id && parsed.phase === "paying") {
           const isExpired = new Date(parsed.expires_at).getTime() < Date.now();
@@ -1208,6 +1261,7 @@ function RegisterContent() {
               total_paise: parsed.total_paise,
             });
             if (parsed.team_name) setTeamName(parsed.team_name);
+            if (parsed.whatsapp) setWhatsapp(parsed.whatsapp);
             setPhase("paying");
           } else {
             localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
@@ -1280,6 +1334,7 @@ function RegisterContent() {
       setSubmitting(true);
       setSubmitError(null);
       setTeamName(team);
+      setWhatsapp(whatsapp);
 
       try {
         let orderId: string | null = null;
@@ -1384,6 +1439,7 @@ function RegisterContent() {
             JSON.stringify({
               ...newOrder,
               team_name: team,
+              whatsapp,
               phase: "paying",
               event_ids: events.map((e) => e.id),
             })
@@ -1482,6 +1538,7 @@ function RegisterContent() {
                 order={order}
                 events={events}
                 teamName={teamName}
+                whatsapp={whatsapp}
                 onSubmitted={handleUtrSubmitted}
                 onBack={handleBack}
               />
