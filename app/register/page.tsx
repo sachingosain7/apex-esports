@@ -1018,9 +1018,14 @@ function PhaseCSuccess({ utr, events, teamName }: PhaseCProps) {
         </Link>
         <Link
           href="/"
-          className="flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white py-3 text-xs font-bold text-slate-700 hover:bg-slate-50"
+          onClick={() => {
+            try {
+              localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+            } catch {}
+          }}
+          className="flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
         >
-          ← Return to Home
+          ← Return to Home (Book Another Lobby)
         </Link>
       </div>
     </div>
@@ -1031,9 +1036,11 @@ function PhaseCSuccess({ utr, events, teamName }: PhaseCProps) {
 // Inner Page Component
 // ─────────────────────────────────────────────
 
+const ACTIVE_SESSION_STORAGE_KEY = "apex_active_booking_session";
+
 function RegisterContent() {
   const searchParams = useSearchParams();
-  const eventParam = searchParams.get("e") || searchParams.get("event") || "";
+  const eventParam = searchParams.get("e") || searchParams.get("event") || searchParams.get("resume") || "";
 
   const [phase, setPhase] = useState<Phase>("details");
   const [events, setEvents] = useState<EvSummary[]>([]);
@@ -1054,6 +1061,41 @@ function RegisterContent() {
     }
   }, []);
 
+  // Restore active booking session across browser reloads
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.utr && (parsed.phase === "pending_verification" || parsed.phase === "confirmed")) {
+          setSubmittedUtr(parsed.utr);
+          if (parsed.order_id) {
+            setOrder({
+              order_id: parsed.order_id,
+              expires_at: parsed.expires_at,
+              total_paise: parsed.total_paise,
+            });
+          }
+          if (parsed.team_name) setTeamName(parsed.team_name);
+          setPhase(parsed.phase);
+        } else if (parsed.order_id && parsed.phase === "paying") {
+          const isExpired = new Date(parsed.expires_at).getTime() < Date.now();
+          if (!isExpired) {
+            setOrder({
+              order_id: parsed.order_id,
+              expires_at: parsed.expires_at,
+              total_paise: parsed.total_paise,
+            });
+            if (parsed.team_name) setTeamName(parsed.team_name);
+            setPhase("paying");
+          } else {
+            localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+          }
+        }
+      }
+    } catch {}
+  }, []);
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setIsLoggedIn(Boolean(data.user));
@@ -1065,10 +1107,22 @@ function RegisterContent() {
   }, []);
 
   useEffect(() => {
-    const rawIds = eventParam
+    let rawIds = eventParam
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
+
+    if (rawIds.length === 0) {
+      try {
+        const saved = localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed.event_ids) && parsed.event_ids.length > 0) {
+            rawIds = parsed.event_ids;
+          }
+        }
+      } catch {}
+    }
 
     if (rawIds.length === 0) {
       setLoading(false);
@@ -1116,12 +1170,26 @@ function RegisterContent() {
         if (error) throw error;
         if (!data?.order_id) throw new Error("Order creation failed.");
 
-        setOrder({
+        const newOrder = {
           order_id: data.order_id,
           expires_at: data.expires_at,
           total_paise: data.total_paise,
-        });
+        };
+        setOrder(newOrder);
         setPhase("paying");
+
+        try {
+          localStorage.setItem(
+            ACTIVE_SESSION_STORAGE_KEY,
+            JSON.stringify({
+              ...newOrder,
+              team_name: team,
+              phase: "paying",
+              event_ids: events.map((e) => e.id),
+            })
+          );
+        } catch {}
+
         window.scrollTo({ top: 0, behavior: "smooth" });
       } catch (err: unknown) {
         setSubmitError(err instanceof Error ? err.message : String(err));
@@ -1135,18 +1203,38 @@ function RegisterContent() {
   const handleUtrSubmitted = useCallback((utr: string) => {
     setSubmittedUtr(utr);
     setPhase("pending_verification");
+    try {
+      const saved = localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
+      const parsed = saved ? JSON.parse(saved) : {};
+      localStorage.setItem(
+        ACTIVE_SESSION_STORAGE_KEY,
+        JSON.stringify({ ...parsed, utr, phase: "pending_verification" })
+      );
+    } catch {}
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
   const handlePaymentApproved = useCallback(() => {
     setPhase("confirmed");
+    try {
+      const saved = localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
+      const parsed = saved ? JSON.parse(saved) : {};
+      localStorage.setItem(
+        ACTIVE_SESSION_STORAGE_KEY,
+        JSON.stringify({ ...parsed, phase: "confirmed" })
+      );
+    } catch {}
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
   const handleBack = useCallback(() => {
     setPhase("details");
     setOrder(null);
+    setSubmittedUtr("");
     setSubmitError(null);
+    try {
+      localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+    } catch {}
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
