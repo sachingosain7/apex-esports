@@ -76,8 +76,23 @@ export function PointsTableTab({ showToast }: PointsTableTabProps) {
   });
   const [pointsTableImage, setPointsTableImage] = useState<string | null>(null);
 
-  // Load available lobbies
+  // AI Scoreboard Scanner state (Assistive only - manual override always active)
+  const [aiImageBase64, setAiImageBase64] = useState<string | null>(null);
+  const [aiTargetMatch, setAiTargetMatch] = useState<1 | 2 | 3>(1);
+  const [aiScanning, setAiScanning] = useState(false);
+  const [aiResults, setAiResults] = useState<TeamMatchScore[] | null>(null);
+  const [aiApiKey, setAiApiKey] = useState("");
+  const [showAiKeyInput, setShowAiKeyInput] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiCardOpen, setAiCardOpen] = useState(true);
+
+  // Load available lobbies & saved Gemini key
   useEffect(() => {
+    try {
+      const k = localStorage.getItem("apex_gemini_api_key");
+      if (k) setAiApiKey(k);
+    } catch {}
+
     (async () => {
       setLoadingEvents(true);
       const { data, error } = await supabase
@@ -390,6 +405,137 @@ export function PointsTableTab({ showToast }: PointsTableTabProps) {
     showToast("Top 4 squads auto-filled from current overall standings!", "success");
   };
 
+  // AI Scoreboard Extraction Handlers
+  const handleAiScreenshotUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      showToast("Scoreboard screenshot must be under 8MB", "error");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setAiImageBase64(reader.result);
+        setAiResults(null);
+        setAiError(null);
+        showToast("Match screenshot loaded! Ready to scan.", "success");
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleScanScoreboardWithAi = async () => {
+    if (!aiImageBase64) {
+      showToast("Please upload an in-game match scoreboard screenshot first", "error");
+      return;
+    }
+    setAiScanning(true);
+    setAiError(null);
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (aiApiKey.trim()) {
+        headers["x-gemini-api-key"] = aiApiKey.trim();
+      }
+
+      const res = await fetch("/api/ai/parse-match-screenshot", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          imageBase64: aiImageBase64,
+          matchNumber: aiTargetMatch,
+        }),
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        if (data.requiresApiKey) {
+          setShowAiKeyInput(true);
+          setAiError(data.message);
+          showToast("Gemini API Key required. Enter your free key below.", "error");
+        } else {
+          setAiError(data.message || "Failed to scan scoreboard");
+          showToast(data.message || "AI scanning failed", "error");
+        }
+        return;
+      }
+
+      const extracted: TeamMatchScore[] = data.teams.map((t: { rank: number; teamName: string; kills: number }) => ({
+        rank: Number(t.rank) || 1,
+        teamName: String(t.teamName || "Squad"),
+        kills: Number(t.kills) || 0,
+      }));
+
+      setAiResults(extracted);
+      showToast(`AI extracted ${extracted.length} teams! Review preview below and apply.`, "success");
+    } catch (err: unknown) {
+      const msg = (err as Error).message || "Connection error";
+      setAiError(msg);
+      showToast("Network error while connecting to AI service.", "error");
+    } finally {
+      setAiScanning(false);
+    }
+  };
+
+  const handleDemoAiScan = () => {
+    const demoTeams: TeamMatchScore[] = [
+      { rank: 1, teamName: "Team Soul", kills: 14 },
+      { rank: 2, teamName: "GodLike Esports", kills: 9 },
+      { rank: 3, teamName: "Global Esports", kills: 6 },
+      { rank: 4, teamName: "Carnival Gaming", kills: 5 },
+      { rank: 5, teamName: "Team XSpark", kills: 4 },
+      { rank: 6, teamName: "Orangutan", kills: 3 },
+      { rank: 7, teamName: "Entity Gaming", kills: 3 },
+      { rank: 8, teamName: "Revenant Esports", kills: 2 },
+      { rank: 9, teamName: "Team 8Bit", kills: 2 },
+      { rank: 10, teamName: "Medal Esports", kills: 1 },
+      { rank: 11, teamName: "Blind Esports", kills: 1 },
+      { rank: 12, teamName: "Gujarat Tigers", kills: 0 },
+      { rank: 13, teamName: "Team Forever", kills: 0 },
+      { rank: 14, teamName: "WSB Gaming", kills: 0 },
+      { rank: 15, teamName: "Hydra Official", kills: 0 },
+      { rank: 16, teamName: "Autobotz Esports", kills: 0 },
+    ];
+    setAiResults(demoTeams);
+    showToast("Loaded sample demo extraction! Click 'Apply to Match' to preview manual editor.", "success");
+  };
+
+  const handleApplyAiResults = () => {
+    if (!aiResults || aiResults.length === 0) return;
+    if (aiTargetMatch === 1) {
+      setMatch1Scores(aiResults);
+      setActiveSubTab("match1");
+    } else if (aiTargetMatch === 2) {
+      setMatch2Scores(aiResults);
+      setActiveSubTab("match2");
+    } else {
+      setMatch3Scores(aiResults);
+      setActiveSubTab("match3");
+    }
+    showToast(`Applied ${aiResults.length} teams to Match ${aiTargetMatch}! You can manually edit any cell below.`, "success");
+  };
+
+  const handleApplyAiTop4 = () => {
+    if (!aiResults || aiResults.length === 0) return;
+    setTopTeams({
+      first: aiResults[0]?.teamName || "",
+      second: aiResults[1]?.teamName || "",
+      third: aiResults[2]?.teamName || "",
+      fourth: aiResults[3]?.teamName || "",
+    });
+    showToast("Top 4 squads populated from AI scan!", "success");
+  };
+
+  const handleSaveAiKey = (key: string) => {
+    setAiApiKey(key);
+    try {
+      localStorage.setItem("apex_gemini_api_key", key.trim());
+      showToast("Gemini API Key saved successfully!", "success");
+      setShowAiKeyInput(false);
+      setAiError(null);
+    } catch {}
+  };
+
   const handleCopyWhatsAppLeaderboard = () => {
     const selectedEv = events.find((e) => e.id === selectedEventId);
     const title = selectedEv ? selectedEv.title : "Apex Esports Scrims";
@@ -616,6 +762,258 @@ export function PointsTableTab({ showToast }: PointsTableTabProps) {
             />
           )}
         </div>
+      </div>
+
+      {/* ── 🤖 AI Scoreboard Scanner (Optional Accelerator · 100% Separate & Manual-Overrideable) ── */}
+      <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 sm:p-5 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-indigo-200/80 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-xs">
+              🤖
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm sm:text-base font-black text-indigo-950">
+                  AI Match Scoreboard Scanner
+                </h3>
+                <span className="text-[9px] font-black uppercase tracking-wider bg-indigo-200 text-indigo-900 px-2 py-0.5 rounded-full">
+                  Gemini Vision OCR
+                </span>
+              </div>
+              <p className="text-xs text-indigo-800">
+                Auto-extracts team names, kills &amp; ranks from in-game screenshot into editable tables.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setShowAiKeyInput(!showAiKeyInput)}
+              className="px-2.5 py-1 rounded-lg text-xs font-bold text-indigo-800 bg-indigo-100 hover:bg-indigo-200 transition-colors flex items-center gap-1 cursor-pointer"
+            >
+              <span>⚙️</span>
+              <span>{aiApiKey ? "API Key Configured ✓" : "Set Gemini Key"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setAiCardOpen(!aiCardOpen)}
+              className="text-xs text-indigo-600 hover:text-indigo-900 font-bold px-2 py-1 cursor-pointer"
+            >
+              {aiCardOpen ? "Hide ▲" : "Expand ▼"}
+            </button>
+          </div>
+        </div>
+
+        {aiCardOpen && (
+          <div className="space-y-4">
+            {/* Inline API Key Configurator (If Needed) */}
+            {showAiKeyInput && (
+              <div className="rounded-xl border border-indigo-300 bg-white p-3.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                    <span>🔑</span>
+                    <span>Google Gemini API Key (100% Free)</span>
+                  </label>
+                  <a
+                    href="https://aistudio.google.com/app/apikey"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] font-bold text-blue-600 hover:underline"
+                  >
+                    Get free key from Google AI Studio ↗
+                  </a>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={aiApiKey}
+                    onChange={(e) => setAiApiKey(e.target.value)}
+                    placeholder="AIzaSy..."
+                    className="flex-1 rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-mono text-slate-900 outline-none focus:border-indigo-600 focus:bg-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleSaveAiKey(aiApiKey)}
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-black text-xs hover:bg-indigo-700 cursor-pointer shadow-xs"
+                  >
+                    Save Key
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {aiError && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 flex items-start justify-between gap-2">
+                <span>⚠️ {aiError}</span>
+                <button
+                  type="button"
+                  onClick={() => setAiError(null)}
+                  className="font-bold hover:underline"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {/* Step 1 & 2: Select Match and Upload Screenshot */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Target Match Selector */}
+              <div className="rounded-xl bg-white border border-indigo-200 p-3 space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-600">
+                  Target Match To Populate
+                </label>
+                <div className="flex gap-1.5">
+                  {[1, 2, 3].map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setAiTargetMatch(m as 1 | 2 | 3)}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                        aiTargetMatch === m
+                          ? "bg-indigo-600 text-white shadow-xs"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      }`}
+                    >
+                      Match {m}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  Results will be loaded into Match {aiTargetMatch}&apos;s editable table.
+                </p>
+              </div>
+
+              {/* Upload Scoreboard Screenshot */}
+              <div className="rounded-xl bg-white border border-indigo-200 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-600">
+                    Upload In-Game Results Screenshot
+                  </label>
+                  {aiImageBase64 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAiImageBase64(null);
+                        setAiResults(null);
+                      }}
+                      className="text-[10px] font-bold text-red-600 hover:underline"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAiScreenshotUpload}
+                  className="block w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-indigo-100 file:text-indigo-900 hover:file:bg-indigo-200 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* Action Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleScanScoreboardWithAi}
+                  disabled={aiScanning || !aiImageBase64}
+                  className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 shadow-sm ${
+                    aiScanning || !aiImageBase64
+                      ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                      : "bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
+                  }`}
+                >
+                  {aiScanning ? (
+                    <>
+                      <span className="animate-spin">⏳</span>
+                      <span>Scanning Scoreboard…</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>⚡</span>
+                      <span>Scan Screenshot with AI</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDemoAiScan}
+                  className="px-3 py-2 rounded-xl text-xs font-bold text-indigo-700 bg-white border border-indigo-200 hover:bg-indigo-50 transition-colors cursor-pointer"
+                >
+                  🧪 Try Sample Demo
+                </button>
+              </div>
+
+              <span className="text-[11px] text-indigo-900 font-semibold">
+                🛡️ AI is 100% separate: you can review and manually edit every row below.
+              </span>
+            </div>
+
+            {/* AI Results Preview & Apply Card */}
+            {aiResults && aiResults.length > 0 && (
+              <div className="rounded-xl border-2 border-emerald-400 bg-emerald-50/70 p-4 space-y-3 animate-in fade-in">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-emerald-200 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-emerald-700 font-black text-sm">✓</span>
+                    <span className="text-xs font-black text-emerald-950">
+                      AI Extracted {aiResults.length} Squads for Match {aiTargetMatch}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleApplyAiTop4}
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-black bg-amber-200 text-amber-950 hover:bg-amber-300 border border-amber-400 cursor-pointer"
+                    >
+                      👑 Set Top 4
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleApplyAiResults}
+                      className="px-3 py-1 rounded-lg text-xs font-black bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs cursor-pointer flex items-center gap-1"
+                    >
+                      <span>✓ Apply to Match {aiTargetMatch} Table</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAiResults(null)}
+                      className="text-xs font-bold text-slate-500 hover:text-slate-800"
+                    >
+                      ✕ Discard
+                    </button>
+                  </div>
+                </div>
+
+                {/* Preview Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  {aiResults.slice(0, 8).map((r, i) => (
+                    <div
+                      key={i}
+                      className="bg-white rounded-lg border border-emerald-200 px-2.5 py-1.5 flex items-center justify-between"
+                    >
+                      <span className="font-bold text-slate-800 truncate">
+                        #{r.rank} {r.teamName}
+                      </span>
+                      <span className="font-mono font-bold text-emerald-800 shrink-0 ml-1">
+                        {r.kills}k
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {aiResults.length > 8 && (
+                  <p className="text-[10px] text-emerald-900 font-semibold text-center">
+                    + {aiResults.length - 8} more teams ready to populate into your manual editor
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Sub Tabs: Match 1, Match 2, Match 3, Overall ── */}

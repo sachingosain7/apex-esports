@@ -169,12 +169,28 @@ $$;
 
 GRANT EXECUTE ON FUNCTION auto_update_lobby_statuses() TO authenticated, anon;
 
--- 8. PERMISSIONS & TABLE GRANTS (Fixes permission denied for table orders)
+-- 8. PERMISSIONS & TABLE CREATION (Fixes permission denied for table orders)
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
+
+CREATE TABLE IF NOT EXISTS public.points_tables (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id uuid REFERENCES public.events(id) ON DELETE CASCADE,
+  match_number int NOT NULL DEFAULT 1,
+  data jsonb NOT NULL DEFAULT '[]'::jsonb,
+  is_published boolean NOT NULL DEFAULT true,
+  updated_at timestamptz DEFAULT now(),
+  UNIQUE(event_id, match_number)
+);
+
+ALTER TABLE events ADD COLUMN IF NOT EXISTS top_teams jsonb DEFAULT '{"first": "", "second": "", "third": "", "fourth": ""}'::jsonb;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS final_points_table_url text;
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS screenshot_url text;
+
 GRANT ALL ON TABLE orders TO anon, authenticated;
 GRANT ALL ON TABLE registrations TO anon, authenticated;
 GRANT ALL ON TABLE payments TO anon, authenticated;
 GRANT ALL ON TABLE events TO anon, authenticated;
+GRANT ALL ON TABLE points_tables TO anon, authenticated;
 
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "allow_public_insert_orders" ON orders;
@@ -192,6 +208,12 @@ CREATE POLICY "allow_public_select_registrations" ON registrations FOR SELECT TO
 DROP POLICY IF EXISTS "allow_public_update_registrations" ON registrations;
 CREATE POLICY "allow_public_update_registrations" ON registrations FOR UPDATE TO anon, authenticated USING (true);
 
-ALTER TABLE events ADD COLUMN IF NOT EXISTS top_teams jsonb DEFAULT '{"first": "", "second": "", "third": "", "fourth": ""}'::jsonb;
-ALTER TABLE events ADD COLUMN IF NOT EXISTS final_points_table_url text;
+ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_public_all_payments" ON payments;
+CREATE POLICY "allow_public_all_payments" ON payments FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE points_tables ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_public_all_points_tables" ON points_tables;
+CREATE POLICY "allow_public_all_points_tables" ON points_tables FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
 
