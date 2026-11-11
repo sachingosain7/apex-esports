@@ -9,12 +9,13 @@ function LoginForm() {
   const params = useSearchParams();
   const nextUrl = params.get("next");
 
-  const [authMethod, setAuthMethod] = useState<"otp" | "password">("otp");
+  // Primary method is "password" (Sign in / Sign up), secondary is "otp"
+  const [authMethod, setAuthMethod] = useState<"password" | "otp">("password");
   const [email, setEmail] = useState("");
-  const [otpCode, setOtpCode] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState<"in" | "up">("in");
+  const [otpCode, setOtpCode] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
   const [msg, setMsg] = useState<{ text: string; type: "error" | "info" | "success" }>({
     text: "",
     type: "info",
@@ -23,6 +24,22 @@ function LoginForm() {
   const [googleBusy, setGoogleBusy] = useState(false);
   const [user, setUser] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+
+  // Auto-reset any stuck loading states when user navigates back in browser
+  useEffect(() => {
+    const handleReset = () => {
+      setGoogleBusy(false);
+      setBusy(false);
+    };
+    window.addEventListener("pageshow", handleReset);
+    window.addEventListener("focus", handleReset);
+    document.addEventListener("visibilitychange", handleReset);
+    return () => {
+      window.removeEventListener("pageshow", handleReset);
+      window.removeEventListener("focus", handleReset);
+      document.removeEventListener("visibilitychange", handleReset);
+    };
+  }, []);
 
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data }) => {
@@ -47,7 +64,6 @@ function LoginForm() {
         const userIsAdmin = (roles && roles.length > 0) ?? false;
         setIsAdmin(userIsAdmin);
 
-        // Redirect after successful auth
         let redirect = nextUrl && nextUrl.startsWith("/") && !nextUrl.startsWith("//") ? nextUrl : null;
         if (!redirect && userIsAdmin) {
           redirect = "/admin";
@@ -80,10 +96,16 @@ function LoginForm() {
     window.location.href = redirect || "/";
   };
 
-  // 1-Click Google Sign-In
+  // 1-Click Google Sign-In with auto-unfreeze protection
   const handleGoogleSignIn = async () => {
     setGoogleBusy(true);
     setMsg({ text: "", type: "info" });
+
+    // Safety fallback: if user cancels or stays on page, unfreeze after 5 seconds
+    const timer = setTimeout(() => {
+      setGoogleBusy(false);
+    }, 5000);
+
     try {
       const origin = typeof window !== "undefined" ? window.location.origin : "";
       const redirectUri = `${origin}/login${nextUrl ? `?next=${encodeURIComponent(nextUrl)}` : ""}`;
@@ -93,17 +115,59 @@ function LoginForm() {
           redirectTo: redirectUri,
         },
       });
-      if (error) throw error;
+      if (error) {
+        clearTimeout(timer);
+        setGoogleBusy(false);
+        throw error;
+      }
     } catch (err: unknown) {
+      clearTimeout(timer);
+      setGoogleBusy(false);
       setMsg({
         text: (err as Error).message || "Google sign-in could not be initiated.",
         type: "error",
       });
-      setGoogleBusy(false);
     }
   };
 
-  // Send 6-Digit OTP / Magic Code to Email
+  // Primary: Password Login / Sign-Up
+  const handlePasswordSubmit = async (ev: React.FormEvent) => {
+    ev.preventDefault();
+    setBusy(true);
+    setMsg({ text: "", type: "info" });
+
+    if (mode === "up") {
+      // Sign Up Flow: Creates account & triggers verification email
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password: password.trim(),
+      });
+      setBusy(false);
+      if (error) return setMsg({ text: error.message, type: "error" });
+
+      if (!data.session) {
+        return setMsg({
+          text: `📧 Account created! A confirmation link has been sent to ${email.trim()}. Check your inbox or spam, click the link to activate your account, then sign in.`,
+          type: "success",
+        });
+      }
+    } else {
+      // Sign In Flow
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password: password.trim(),
+      });
+      if (error) {
+        setBusy(false);
+        return setMsg({ text: error.message, type: "error" });
+      }
+    }
+
+    await handleRedirectAfterLogin();
+    setBusy(false);
+  };
+
+  // Secondary: Send 6-Digit OTP Code
   const handleSendOtp = async (ev: React.FormEvent) => {
     ev.preventDefault();
     if (!email.trim()) return;
@@ -136,7 +200,7 @@ function LoginForm() {
     }
   };
 
-  // Verify 6-Digit OTP Code
+  // Secondary: Verify 6-Digit OTP Code
   const handleVerifyOtp = async (ev: React.FormEvent) => {
     ev.preventDefault();
     if (!otpCode.trim()) return;
@@ -165,37 +229,6 @@ function LoginForm() {
     }
   };
 
-  // Password-based Login/Signup (Fallback for admin)
-  const handlePasswordSubmit = async (ev: React.FormEvent) => {
-    ev.preventDefault();
-    setBusy(true);
-    setMsg({ text: "", type: "info" });
-
-    if (mode === "up") {
-      const { data, error } = await supabase.auth.signUp({ email, password });
-      setBusy(false);
-      if (error) return setMsg({ text: error.message, type: "error" });
-      if (!data.session) {
-        return setMsg({
-          text: "Account created! Check your email to confirm, then sign in.",
-          type: "info",
-        });
-      }
-    } else {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (error) {
-        setBusy(false);
-        return setMsg({ text: error.message, type: "error" });
-      }
-    }
-
-    await handleRedirectAfterLogin();
-    setBusy(false);
-  };
-
   async function signOut() {
     await supabase.auth.signOut();
     setUser(null);
@@ -204,7 +237,7 @@ function LoginForm() {
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center bg-[#06070B] px-5 py-12 text-white overflow-hidden">
-      {/* Tactical grid */}
+      {/* Tactical grid background */}
       <div
         className="fixed inset-0 pointer-events-none opacity-100 tactical-grid"
         aria-hidden="true"
@@ -281,14 +314,14 @@ function LoginForm() {
               </div>
             </div>
           ) : (
-            /* Auth Options */
+            /* Authentication form */
             <div className="space-y-4">
-              {/* 1-Click Google Sign-In */}
+              {/* 1. Top Google Button */}
               <button
                 type="button"
                 onClick={handleGoogleSignIn}
                 disabled={googleBusy}
-                className="w-full py-3 px-4 rounded-xl border border-white/[0.12] bg-white/[0.04] hover:bg-white/[0.08] hover:border-white/20 transition-all flex items-center justify-center gap-3 text-sm font-semibold text-white shadow-sm"
+                className="w-full py-3 px-4 rounded-xl border border-white/[0.12] bg-white/[0.04] hover:bg-white/[0.08] hover:border-white/20 transition-all flex items-center justify-center gap-3 text-sm font-semibold text-white shadow-sm disabled:opacity-80"
               >
                 <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
                   <path
@@ -318,46 +351,110 @@ function LoginForm() {
                 <div className="h-px flex-1 bg-white/[0.08]" />
               </div>
 
-              {/* Tabs: OTP (No Password) vs Password */}
-              <div className="flex p-1 bg-black/40 border border-white/[0.06] rounded-xl gap-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMethod("otp");
-                    setMsg({ text: "", type: "info" });
-                  }}
-                  className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    authMethod === "otp"
-                      ? "bg-emerald-500 text-black shadow"
-                      : "text-white/50 hover:text-white"
-                  }`}
-                >
-                  ⚡ Instant Code (OTP)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMethod("password");
-                    setMsg({ text: "", type: "info" });
-                  }}
-                  className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    authMethod === "password"
-                      ? "bg-emerald-500 text-black shadow"
-                      : "text-white/50 hover:text-white"
-                  }`}
-                >
-                  🔑 Password
-                </button>
-              </div>
+              {/* 2. PRIMARY: Email & Password (Default Sign In / Sign Up) */}
+              {authMethod === "password" && (
+                <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-3">
+                  <div className="text-left mb-1">
+                    <p className="text-xs font-bold text-white uppercase tracking-wider">
+                      {mode === "in" ? "Sign In with Password" : "Create a Free Account"}
+                    </p>
+                    <p className="text-[11px] text-white/40 mt-0.5">
+                      {mode === "in"
+                        ? "Enter your email & password to continue"
+                        : "Enter password to receive confirmation email"}
+                    </p>
+                  </div>
 
-              {/* Method A: 6-Digit OTP Flow */}
+                  <input
+                    type="email"
+                    required
+                    placeholder="Email address"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="rounded-xl border border-white/10 bg-[#06070B] px-4 py-3 text-sm outline-none focus:border-emerald-500 transition-colors placeholder:text-white/30"
+                  />
+                  <input
+                    type="password"
+                    required
+                    minLength={8}
+                    placeholder="Password (8+ characters)"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="rounded-xl border border-white/10 bg-[#06070B] px-4 py-3 text-sm outline-none focus:border-emerald-500 transition-colors placeholder:text-white/30"
+                  />
+
+                  <button
+                    disabled={busy}
+                    className="rounded-xl bg-emerald-500 px-4 py-3 font-bold text-sm text-black hover:bg-emerald-400 disabled:opacity-50 transition-colors shadow-md shadow-emerald-900/30"
+                  >
+                    {busy
+                      ? "Please wait…"
+                      : mode === "in"
+                      ? "Sign In →"
+                      : "Create Account & Send Verification →"}
+                  </button>
+
+                  {/* Toggle between Sign In and Sign Up */}
+                  <div className="pt-1 text-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode(mode === "in" ? "up" : "in");
+                        setMsg({ text: "", type: "info" });
+                      }}
+                      className="text-xs text-white/60 hover:text-white transition-colors"
+                    >
+                      {mode === "in" ? (
+                        <>
+                          Don&apos;t have an account?{" "}
+                          <span className="text-emerald-400 font-bold underline">Sign up</span>
+                        </>
+                      ) : (
+                        <>
+                          Already have an account?{" "}
+                          <span className="text-emerald-400 font-bold underline">Sign in</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* 3. Subtle Alternative Option: Sign in with OTP */}
+                  <div className="pt-3 border-t border-white/[0.06] text-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMethod("otp");
+                        setOtpSent(false);
+                        setOtpCode("");
+                        setMsg({ text: "", type: "info" });
+                      }}
+                      className="text-xs text-white/40 hover:text-emerald-400 transition-colors flex items-center justify-center gap-1.5 mx-auto"
+                    >
+                      <span>⚡</span>
+                      <span>
+                        {mode === "in"
+                          ? "Can't remember password? Sign in with OTP instead"
+                          : "Prefer one-time code? Continue with OTP instead"}
+                      </span>
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* 3. SECONDARY: OTP Login Flow (Only when chosen) */}
               {authMethod === "otp" && (
-                <div>
+                <div className="space-y-3">
+                  <div className="text-left mb-1">
+                    <p className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>⚡</span> One-Time Code (OTP) Login
+                    </p>
+                    <p className="text-[11px] text-white/40 mt-0.5">
+                      We will send a 6-digit login code to your email
+                    </p>
+                  </div>
+
                   {!otpSent ? (
                     <form onSubmit={handleSendOtp} className="flex flex-col gap-3">
-                      <p className="text-xs text-white/50">
-                        No password needed. We will send a 6-digit login code directly to your email.
-                      </p>
                       <input
                         type="email"
                         required
@@ -403,58 +500,33 @@ function LoginForm() {
                           setOtpSent(false);
                           setOtpCode("");
                         }}
-                        className="text-xs text-white/40 hover:text-white transition-colors text-center mt-1"
+                        className="text-xs text-white/40 hover:text-white transition-colors text-center"
                       >
-                        ← Change email or resend code
+                        ← Resend code or change email
                       </button>
                     </form>
                   )}
-                </div>
-              )}
 
-              {/* Method B: Password Flow (Host/Admin) */}
-              {authMethod === "password" && (
-                <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-3">
-                  <input
-                    type="email"
-                    required
-                    placeholder="Email address"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="rounded-xl border border-white/10 bg-[#06070B] px-4 py-3 text-sm outline-none focus:border-emerald-500 transition-colors placeholder:text-white/30"
-                  />
-                  <input
-                    type="password"
-                    required
-                    minLength={8}
-                    placeholder="Password (8+ characters)"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="rounded-xl border border-white/10 bg-[#06070B] px-4 py-3 text-sm outline-none focus:border-emerald-500 transition-colors placeholder:text-white/30"
-                  />
-                  <button
-                    disabled={busy}
-                    className="rounded-xl bg-emerald-500 px-4 py-3 font-bold text-sm text-black hover:bg-emerald-400 disabled:opacity-50 transition-colors shadow-md shadow-emerald-900/30"
-                  >
-                    {busy ? "Please wait…" : mode === "in" ? "Sign In →" : "Create Account →"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode(mode === "in" ? "up" : "in");
-                      setMsg({ text: "", type: "info" });
-                    }}
-                    className="text-xs text-white/40 hover:text-white transition-colors text-center"
-                  >
-                    {mode === "in" ? "Need a password account? Sign up" : "Already have an account? Sign in"}
-                  </button>
-                </form>
+                  {/* Switch back to Password */}
+                  <div className="pt-2 text-center border-t border-white/[0.06]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMethod("password");
+                        setMsg({ text: "", type: "info" });
+                      }}
+                      className="text-xs text-white/50 hover:text-white transition-colors"
+                    >
+                      ← Back to Password login
+                    </button>
+                  </div>
+                </div>
               )}
 
               {/* Feedback messages */}
               {msg.text && (
                 <p
-                  className={`text-xs rounded-xl px-3.5 py-2.5 font-medium ${
+                  className={`text-xs rounded-xl px-3.5 py-2.5 font-medium leading-relaxed ${
                     msg.type === "error"
                       ? "text-red-300 bg-red-500/10 border border-red-500/25"
                       : msg.type === "success"
