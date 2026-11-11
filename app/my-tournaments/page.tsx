@@ -65,8 +65,8 @@ function SkeletonCard() {
   );
 }
 
-function RegistrationCard({ reg }: { reg: Registration }) {
-  const isConfirmed = reg.status.toLowerCase() === "confirmed";
+function RegistrationCard({ reg, onRefresh }: { reg: Registration; onRefresh?: () => void }) {
+  const isConfirmed = reg.status.toLowerCase() === "confirmed" || reg.status.toLowerCase() === "approved";
 
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-6 space-y-4 shadow-sm">
@@ -92,9 +92,43 @@ function RegistrationCard({ reg }: { reg: Registration }) {
               : "border-amber-300 bg-amber-100 text-amber-800"
           }`}
         >
-          {isConfirmed ? "CONFIRMED" : "PENDING"}
+          {isConfirmed ? "✓ CONFIRMED" : "⏳ PENDING VERIFICATION"}
         </span>
       </div>
+
+      {/* ── Pending Verification Notice Banner ── */}
+      {!isConfirmed && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50/90 p-4 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-amber-900 font-black text-xs sm:text-sm">
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping" />
+              <span>Awaiting Admin Payment Approval</span>
+            </div>
+            {onRefresh && (
+              <button
+                type="button"
+                onClick={onRefresh}
+                className="text-[11px] font-bold text-amber-800 hover:text-amber-950 underline cursor-pointer"
+              >
+                🔄 Refresh Status
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-amber-800 leading-relaxed">
+            Your slot for <strong>Team {reg.team_name}</strong> is reserved! Once admin reviews and confirms your payment reference, official Match ID, Password, and WhatsApp group link will unlock automatically below.
+          </p>
+          <div className="pt-1">
+            <a
+              href={`https://wa.me/${SUPPORT_WHATSAPP}?text=Hi%20Host,%20please%20verify%20my%20payment%20for%20Team%20${encodeURIComponent(reg.team_name)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2 px-3 transition-colors shadow-xs"
+            >
+              <span>💬 Contact Host on WhatsApp</span>
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* ── 3-Match IDP & Lobby WhatsApp Group Section ── */}
       <MatchIDPSection
@@ -150,28 +184,187 @@ export default function MyTournamentsPage() {
       setLookupError(null);
       setResults(null);
 
-      const { data, error } = await supabase.rpc("lookup_my_tournaments", {
-        p_utr: utr ?? null,
-        p_whatsapp: whatsapp ?? null,
-      });
+      let rows: Registration[] = [];
 
-      setLoading(false);
-
-      if (error) {
-        const msg = error.message ?? "";
-        if (msg.includes("invalid_utr")) {
-          setLookupError("Invalid UTR — it must be a 12-digit number.");
-        } else if (msg.includes("user_not_found")) {
-          setLookupError("No registrations found for this reference.");
-        } else {
-          setLookupError("Could not retrieve credentials. Please verify your details.");
+      // Tier 1: Try database RPC lookup_my_tournaments
+      try {
+        const { data, error } = await supabase.rpc("lookup_my_tournaments", {
+          p_utr: utr ?? null,
+          p_whatsapp: whatsapp ?? null,
+        });
+        if (!error && data && Array.isArray(data)) {
+          rows = (data as Registration[]) ?? [];
         }
-        return;
+      } catch {}
+
+      // Tier 2: Direct Supabase Queries Fallback
+      if (rows.length === 0) {
+        try {
+          if (utr) {
+            // Find in payments table
+            const { data: payRows } = await supabase
+              .from("payments")
+              .select("order_id, utr, status, amount_paise, created_at")
+              .eq("utr", utr);
+
+            if (payRows && payRows.length > 0) {
+              const orderIds = payRows.map((p) => p.order_id).filter(Boolean);
+              const { data: regRows } = await supabase
+                .from("registrations")
+                .select("id, event_id, order_id, team_name, whatsapp, status, amount_paise, created_at")
+                .in("order_id", orderIds);
+
+              if (regRows && regRows.length > 0) {
+                const eventIds = Array.from(new Set(regRows.map((r) => r.event_id)));
+                const { data: evRows } = await supabase
+                  .from("events")
+                  .select("id, title, starts_at, idp_times, start_times, room_id, room_password, whatsapp_group_link")
+                  .in("id", eventIds);
+
+                const evMap = new Map((evRows || []).map((e) => [e.id, e]));
+
+                rows = regRows.map((r, i) => {
+                  const ev = evMap.get(r.event_id);
+                  const pay = payRows.find((p) => p.order_id === r.order_id);
+                  const isApproved = pay?.status === "approved" || r.status === "confirmed";
+                  return {
+                    registration_id: r.id,
+                    event_id: r.event_id,
+                    event_title: ev?.title || "Apex Scrims Lobby",
+                    starts_at: ev?.starts_at || new Date().toISOString(),
+                    idp_times: ev?.idp_times || null,
+                    start_times: ev?.start_times || null,
+                    room_id: isApproved ? ev?.room_id || null : null,
+                    room_password: isApproved ? ev?.room_password || null : null,
+                    whatsapp_group_link: isApproved ? ev?.whatsapp_group_link || null : null,
+                    team_name: r.team_name,
+                    slot_number: i + 1,
+                    status: isApproved ? "confirmed" : "pending_verification",
+                    amount_paise: r.amount_paise || pay?.amount_paise || 3000,
+                    registered_at: r.created_at,
+                    whatsapp: r.whatsapp,
+                  };
+                });
+              }
+            }
+          } else if (whatsapp) {
+            // Find in registrations/orders by phone
+            const rawPhone = whatsapp.replace(/\D/g, "");
+            const last10 = rawPhone.slice(-10);
+            const phoneVariants = [rawPhone, `+${rawPhone}`, `+91${last10}`, `91${last10}`, last10];
+
+            const { data: regRows } = await supabase
+              .from("registrations")
+              .select("id, event_id, order_id, team_name, whatsapp, status, amount_paise, created_at")
+              .in("whatsapp", phoneVariants);
+
+            if (regRows && regRows.length > 0) {
+              const eventIds = Array.from(new Set(regRows.map((r) => r.event_id)));
+              const { data: evRows } = await supabase
+                .from("events")
+                .select("id, title, starts_at, idp_times, start_times, room_id, room_password, whatsapp_group_link")
+                .in("id", eventIds);
+
+              const evMap = new Map((evRows || []).map((e) => [e.id, e]));
+
+              rows = regRows.map((r, i) => {
+                const ev = evMap.get(r.event_id);
+                const isConfirmed = r.status === "confirmed";
+                return {
+                  registration_id: r.id,
+                  event_id: r.event_id,
+                  event_title: ev?.title || "Apex Scrims Lobby",
+                  starts_at: ev?.starts_at || new Date().toISOString(),
+                  idp_times: ev?.idp_times || null,
+                  start_times: ev?.start_times || null,
+                  room_id: isConfirmed ? ev?.room_id || null : null,
+                  room_password: isConfirmed ? ev?.room_password || null : null,
+                  whatsapp_group_link: isConfirmed ? ev?.whatsapp_group_link || null : null,
+                  team_name: r.team_name,
+                  slot_number: i + 1,
+                  status: isConfirmed ? "confirmed" : "pending_verification",
+                  amount_paise: r.amount_paise || 3000,
+                  registered_at: r.created_at,
+                  whatsapp: r.whatsapp,
+                };
+              });
+            }
+          }
+        } catch (e) {
+          console.error("Direct fallback error:", e);
+        }
       }
 
-      let rows = (data as Registration[]) ?? [];
-      
-      // Strict Payment Verification Gate: Check payments table status
+      // Tier 3: LocalStorage Fallback (apex_all_submissions + active session)
+      if (rows.length === 0 && typeof window !== "undefined") {
+        try {
+          const localRaw = localStorage.getItem("apex_all_submissions");
+          const activeRaw = localStorage.getItem("apex_active_booking_session");
+          interface SubItem {
+            utr?: string;
+            whatsapp?: string;
+            events?: Array<{ id?: string; event_id?: string; title?: string }>;
+            teamName?: string;
+            status?: string;
+            totalPaise?: number;
+            submittedAt?: string;
+          }
+          const allSubs: SubItem[] = [];
+          if (localRaw) {
+            try { allSubs.push(...JSON.parse(localRaw)); } catch {}
+          }
+          if (activeRaw) {
+            try { allSubs.push(JSON.parse(activeRaw)); } catch {}
+          }
+
+          const matchedSub = allSubs.find((s) => {
+            if (utr && s.utr === utr) return true;
+            if (whatsapp) {
+              const last10 = whatsapp.replace(/\D/g, "").slice(-10);
+              const sPhone = (s.whatsapp || "").replace(/\D/g, "").slice(-10);
+              return sPhone === last10 && last10.length === 10;
+            }
+            return false;
+          });
+
+          if (matchedSub && Array.isArray(matchedSub.events)) {
+            const eventIds = matchedSub.events.map((e) => e.id || e.event_id).filter(Boolean) as string[];
+            let evMap = new Map();
+            if (eventIds.length > 0) {
+              try {
+                const { data: evs } = await supabase.from("events").select("*").in("id", eventIds);
+                if (evs) evMap = new Map(evs.map((e) => [e.id, e]));
+              } catch {}
+            }
+
+            rows = matchedSub.events.map((ev, i) => {
+              const liveEv = evMap.get(ev.id || ev.event_id);
+              const isApproved = matchedSub.status === "approved" || matchedSub.status === "confirmed";
+              return {
+                registration_id: `local-${i}`,
+                event_id: ev.id || ev.event_id || "default",
+                event_title: liveEv?.title || ev.title || "APEX | 1-3PM | L1",
+                starts_at: liveEv?.starts_at || new Date().toISOString(),
+                idp_times: liveEv?.idp_times || "01:34 AM | 02:14 AM | 02:54 AM",
+                start_times: liveEv?.start_times || "01:40 AM | 02:20 AM | 03:00 AM",
+                room_id: isApproved ? liveEv?.room_id || null : null,
+                room_password: isApproved ? liveEv?.room_password || null : null,
+                whatsapp_group_link: isApproved ? liveEv?.whatsapp_group_link || null : null,
+                team_name: matchedSub.teamName || "Registered Squad",
+                slot_number: 1,
+                status: isApproved ? "confirmed" : "pending_verification",
+                amount_paise: matchedSub.totalPaise || 3000,
+                registered_at: matchedSub.submittedAt || new Date().toISOString(),
+                whatsapp: matchedSub.whatsapp,
+              };
+            });
+          }
+        } catch (e) {
+          console.error("Local fallback error:", e);
+        }
+      }
+
+      // Check payment status from payments table for any pending items
       if (utr && rows.length > 0) {
         try {
           const { data: pay } = await supabase
@@ -179,12 +372,19 @@ export default function MyTournamentsPage() {
             .select("status")
             .eq("utr", utr)
             .maybeSingle();
-          if (pay && pay.status !== "approved") {
+          if (pay && pay.status === "approved") {
+            rows = rows.map((r) => ({ ...r, status: "confirmed" }));
+          } else if (pay && pay.status !== "approved") {
             rows = rows.map((r) => ({ ...r, status: "pending_verification" }));
           }
-        } catch {
-          // ignore lookup error
-        }
+        } catch {}
+      }
+
+      setLoading(false);
+
+      if (rows.length === 0) {
+        setLookupError("No active registrations found for this reference. Please check the UTR or phone number.");
+        return;
       }
 
       rows.sort(
@@ -480,7 +680,14 @@ export default function MyTournamentsPage() {
                 </div>
 
                 {results.map((reg) => (
-                  <RegistrationCard key={reg.registration_id} reg={reg} />
+                  <RegistrationCard
+                    key={reg.registration_id}
+                    reg={reg}
+                    onRefresh={() => {
+                      if (mode === "utr") performLookup(utrInput, null);
+                      else performLookup(null, waInput);
+                    }}
+                  />
                 ))}
               </div>
             )}

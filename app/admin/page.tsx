@@ -12,6 +12,7 @@ import {
   extractMatchCredentials,
 } from "@/lib/matchIdp";
 import { PointsTableTab } from "@/components/PointsTableTab";
+import { resolveGeminiKey, ACTIVE_GEMINI_API_KEY } from "@/lib/gemini";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -3297,7 +3298,7 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
     try {
       let savedKey = "";
       try {
-        savedKey = localStorage.getItem("apex_gemini_api_key") || "";
+        savedKey = resolveGeminiKey(localStorage.getItem("apex_gemini_api_key"));
       } catch {}
 
       const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -4228,7 +4229,9 @@ export default function AdminPage() {
   useEffect(() => {
     try {
       const k = localStorage.getItem("apex_gemini_api_key") || "";
-      setGeminiApiKeyInput(k);
+      const valid = resolveGeminiKey(k);
+      setGeminiApiKeyInput(valid);
+      localStorage.setItem("apex_gemini_api_key", valid);
     } catch {}
   }, []);
 

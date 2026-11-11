@@ -480,12 +480,21 @@ function TeamRoster({
                     {r.masked_whatsapp}
                   </span>
                 </div>
-                <span className="shrink-0 flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
-                  <span className="w-3.5 h-3.5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[9px] font-black">
-                    ✓
+                {r.status === "confirmed" ? (
+                  <span className="shrink-0 flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
+                    <span className="w-3.5 h-3.5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[9px] font-black">
+                      ✓
+                    </span>
+                    <span className="hidden sm:inline">Locked</span>
                   </span>
-                  <span className="hidden sm:inline">Locked</span>
-                </span>
+                ) : (
+                  <span className="shrink-0 flex items-center gap-1 text-[11px] font-semibold text-amber-600">
+                    <span className="w-3.5 h-3.5 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-[9px] font-black">
+                      ⏳
+                    </span>
+                    <span className="hidden sm:inline">In Verification</span>
+                  </span>
+                )}
               </div>
             ))
           )}
@@ -516,9 +525,11 @@ function EventCard({
   clientNow: number;
 }) {
   const eventRegs = regs.filter((r) => r.event_id === e.id);
+  const activeRegs = eventRegs.filter(
+    (r) => r.status !== "cancelled" && r.status !== "rejected"
+  );
   const confirmedCount = eventRegs.filter((r) => r.status === "confirmed").length;
-  const pendingCount = eventRegs.filter((r) => r.status === "pending_payment").length;
-  const realFilled = confirmedCount + pendingCount;
+  const realFilled = Math.max(e.filled_slots || 0, activeRegs.length);
   const slotsLeft = Math.max(0, e.max_slots - realFilled);
   const s = slotState(e.max_slots, realFilled, e.starts_at, e.status, clientNow, e.idp_times);
   const pct = Math.min(100, Math.round((realFilled / e.max_slots) * 100));
@@ -905,41 +916,86 @@ export default function Home() {
     }
   }, []);
 
-  // ── Load public registrations ──
+  // ── Load public registrations (Supabase RPC + Direct table + localStorage Fallback) ──
   const loadRegs = useCallback(async () => {
+    let combined: PublicReg[] = [];
+
+    // 1. Try get_public_registrations RPC
     try {
       const { data, error } = await supabase.rpc("get_public_registrations");
       if (!error && data && Array.isArray(data)) {
-        setRegs(data as PublicReg[]);
-        return;
+        combined = [...(data as PublicReg[])];
       }
-      const { data: directData } = await supabase
-        .from("registrations")
-        .select("event_id, team_name, whatsapp, status, created_at");
-      if (directData) {
-        setRegs(
-          directData.map(
-            (r: {
-              event_id: string;
-              team_name: string;
-              whatsapp: string | null;
-              status: string;
-              created_at: string;
-            }) => ({
-              event_id: r.event_id,
-              team_name: r.team_name,
-              masked_whatsapp: r.whatsapp
-                ? r.whatsapp.slice(0, 3) + "••••" + r.whatsapp.slice(-3)
-                : "",
-              status: r.status,
-              created_at: r.created_at,
-            })
-          )
-        );
-      }
-    } catch {
-      // ignore
+    } catch {}
+
+    // 2. Direct Supabase query fallback on registrations
+    if (combined.length === 0) {
+      try {
+        const { data: directData } = await supabase
+          .from("registrations")
+          .select("event_id, team_name, whatsapp, status, created_at");
+        if (directData && Array.isArray(directData)) {
+          combined = directData.map((r: {
+            event_id: string;
+            team_name: string;
+            whatsapp: string | null;
+            status: string;
+            created_at: string;
+          }) => ({
+            event_id: r.event_id,
+            team_name: r.team_name,
+            masked_whatsapp: r.whatsapp && r.whatsapp.length >= 6
+              ? r.whatsapp.slice(0, 3) + "••••" + r.whatsapp.slice(-3)
+              : "••••••",
+            status: r.status,
+            created_at: r.created_at,
+          }));
+        }
+      } catch {}
     }
+
+    // 3. Hydrate from localStorage submissions (apex_all_submissions)
+    try {
+      if (typeof window !== "undefined") {
+        const localRaw = localStorage.getItem("apex_all_submissions");
+        if (localRaw) {
+          interface SubRecord {
+            events?: Array<{ id?: string; event_id?: string }>;
+            teamName?: string;
+            whatsapp?: string;
+            status?: string;
+            submittedAt?: string;
+          }
+          const list: SubRecord[] = JSON.parse(localRaw);
+          if (Array.isArray(list)) {
+            for (const sub of list) {
+              if (Array.isArray(sub.events)) {
+                for (const ev of sub.events) {
+                  const evId = ev.id || ev.event_id;
+                  if (!evId) continue;
+                  const alreadyPresent = combined.some(
+                    (c) => c.event_id === evId && c.team_name?.trim().toLowerCase() === sub.teamName?.trim().toLowerCase()
+                  );
+                  if (!alreadyPresent) {
+                    combined.push({
+                      event_id: evId,
+                      team_name: sub.teamName || "Registered Team",
+                      masked_whatsapp: sub.whatsapp && sub.whatsapp.length >= 6
+                        ? sub.whatsapp.slice(0, 3) + "••••" + sub.whatsapp.slice(-3)
+                        : "••••••",
+                      status: sub.status || "pending_approval",
+                      created_at: sub.submittedAt || new Date().toISOString(),
+                    });
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch {}
+
+    setRegs(combined);
   }, []);
 
   useEffect(() => {

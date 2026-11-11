@@ -290,5 +290,152 @@ $$;
 
 GRANT EXECUTE ON FUNCTION admin_verify_payment(text, text) TO authenticated, anon;
 
+-- 10. PUBLIC REGISTRATIONS (LIVE SQUAD ROSTER FOR HOMEPAGE)
+DROP FUNCTION IF EXISTS public.get_public_registrations();
+
+CREATE OR REPLACE FUNCTION get_public_registrations()
+RETURNS TABLE (
+  event_id         uuid,
+  team_name        text,
+  masked_whatsapp  text,
+  status           text,
+  created_at       timestamptz
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    r.event_id,
+    r.team_name,
+    CASE
+      WHEN length(COALESCE(r.whatsapp, o.whatsapp, '')) >= 6 THEN
+        left(COALESCE(r.whatsapp, o.whatsapp), 3) || '••••' || right(COALESCE(r.whatsapp, o.whatsapp), 3)
+      ELSE '••••••'
+    END AS masked_whatsapp,
+    r.status::text,
+    r.created_at
+  FROM registrations r
+  LEFT JOIN orders o ON o.id = r.order_id
+  WHERE r.status NOT IN ('cancelled', 'rejected')
+  ORDER BY r.event_id, r.created_at ASC;
+$$;
+
+GRANT EXECUTE ON FUNCTION get_public_registrations() TO authenticated, anon;
+
+-- 11. CREDENTIALS & IDP LOOKUP (MY TOURNAMENTS PORTAL)
+DROP FUNCTION IF EXISTS public.lookup_my_tournaments(text, text);
+
+CREATE OR REPLACE FUNCTION lookup_my_tournaments(
+  p_utr       text DEFAULT NULL,
+  p_whatsapp  text DEFAULT NULL
+)
+RETURNS TABLE (
+  registration_id      uuid,
+  event_id             uuid,
+  event_title          text,
+  starts_at            timestamptz,
+  idp_times            text,
+  start_times          text,
+  room_id              text,
+  room_password        text,
+  whatsapp_group_link  text,
+  team_name            text,
+  slot_number          int,
+  status               text,
+  amount_paise         int,
+  registered_at        timestamptz,
+  whatsapp             text
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_clean_phone text;
+BEGIN
+  IF p_utr IS NULL AND p_whatsapp IS NULL THEN
+    RAISE EXCEPTION 'provide_utr_or_whatsapp: Provide at least one search parameter';
+  END IF;
+
+  IF p_whatsapp IS NOT NULL THEN
+    v_clean_phone := right(regexp_replace(p_whatsapp, '[^0-9]', '', 'g'), 10);
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    r.id                                                                           AS registration_id,
+    r.event_id,
+    e.title                                                                        AS event_title,
+    e.starts_at,
+    e.idp_times,
+    e.start_times,
+    CASE WHEN p.status = 'approved' OR r.status = 'confirmed' THEN e.room_id ELSE NULL END AS room_id,
+    CASE WHEN p.status = 'approved' OR r.status = 'confirmed' THEN e.room_password ELSE NULL END AS room_password,
+    CASE WHEN p.status = 'approved' OR r.status = 'confirmed' THEN e.whatsapp_group_link ELSE NULL END AS whatsapp_group_link,
+    r.team_name,
+    ROW_NUMBER() OVER (PARTITION BY r.event_id ORDER BY r.created_at)::int         AS slot_number,
+    CASE WHEN p.status = 'approved' OR r.status = 'confirmed' THEN 'confirmed' ELSE 'pending_verification' END AS status,
+    COALESCE(r.amount_paise, p.amount_paise, 3000)                                 AS amount_paise,
+    r.created_at                                                                   AS registered_at,
+    COALESCE(r.whatsapp, o.whatsapp, '')                                           AS whatsapp
+  FROM registrations r
+  JOIN events e ON e.id = r.event_id
+  LEFT JOIN orders o ON o.id = r.order_id
+  LEFT JOIN payments p ON p.order_id = r.order_id
+  WHERE
+    r.status NOT IN ('cancelled', 'rejected')
+    AND (
+      (p_utr IS NOT NULL AND (p.utr = p_utr OR EXISTS (SELECT 1 FROM payments p2 WHERE p2.order_id = r.order_id AND p2.utr = p_utr)))
+      OR
+      (v_clean_phone IS NOT NULL AND (
+        right(regexp_replace(COALESCE(r.whatsapp, ''), '[^0-9]', '', 'g'), 10) = v_clean_phone
+        OR right(regexp_replace(COALESCE(o.whatsapp, ''), '[^0-9]', '', 'g'), 10) = v_clean_phone
+      ))
+    )
+  ORDER BY e.starts_at DESC;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION lookup_my_tournaments(text, text) TO authenticated, anon;
+
+-- 12. ENSURE ALL SUPPORTING COLUMNS EXIST
+ALTER TABLE registrations ADD COLUMN IF NOT EXISTS whatsapp text;
+ALTER TABLE registrations ADD COLUMN IF NOT EXISTS amount_paise int;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS room_id text;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS room_password text;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS whatsapp_group_link text;
+
+-- 13. REAL-TIME FILLED SLOTS AUTO-SYNC TRIGGER
+CREATE OR REPLACE FUNCTION sync_event_filled_slots()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_eid uuid;
+BEGIN
+  v_eid := CASE WHEN TG_OP = 'DELETE' THEN OLD.event_id ELSE NEW.event_id END;
+  IF v_eid IS NOT NULL THEN
+    UPDATE events
+    SET filled_slots = (
+      SELECT COUNT(*)::int
+      FROM registrations
+      WHERE event_id = v_eid
+        AND status NOT IN ('cancelled', 'rejected')
+    )
+    WHERE id = v_eid;
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_sync_event_filled_slots ON registrations;
+CREATE TRIGGER trg_sync_event_filled_slots
+AFTER INSERT OR UPDATE OR DELETE ON registrations
+FOR EACH ROW
+EXECUTE FUNCTION sync_event_filled_slots();
+
 
 

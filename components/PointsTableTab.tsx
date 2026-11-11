@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { ORG_NAME, SUPPORT_WHATSAPP } from "@/lib/config";
 import { extractLobbyLabel } from "@/lib/matchIdp";
+import { resolveGeminiKey, ACTIVE_GEMINI_API_KEY } from "@/lib/gemini";
 
 export function getBgmiPlacePoints(rank: number): number {
   switch (rank) {
@@ -90,7 +91,9 @@ export function PointsTableTab({ showToast }: PointsTableTabProps) {
   useEffect(() => {
     try {
       const k = localStorage.getItem("apex_gemini_api_key");
-      if (k) setAiApiKey(k);
+      const valid = resolveGeminiKey(k);
+      setAiApiKey(valid);
+      localStorage.setItem("apex_gemini_api_key", valid);
     } catch {}
 
     (async () => {

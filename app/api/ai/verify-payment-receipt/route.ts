@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { resolveGeminiKey } from "@/lib/gemini";
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,13 +13,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1. Resolve Gemini API Key (Header > Process Env)
+    // 1. Resolve Gemini API Key (Header > Process Env > Safe Fallback)
     const clientKey = req.headers.get("x-gemini-api-key");
-    const apiKey =
-      (clientKey && clientKey.trim().length > 10 ? clientKey.trim() : null) ||
-      process.env.GEMINI_API_KEY ||
-      process.env.GOOGLE_API_KEY ||
-      process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    const apiKey = resolveGeminiKey(clientKey);
 
     if (!apiKey) {
       return NextResponse.json(
