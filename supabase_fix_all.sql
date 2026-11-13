@@ -186,6 +186,10 @@ CREATE TABLE IF NOT EXISTS public.points_tables (
 
 ALTER TABLE events ADD COLUMN IF NOT EXISTS top_teams jsonb DEFAULT '{"first": "", "second": "", "third": "", "fourth": ""}'::jsonb;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS final_points_table_url text;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS slot_range_start int DEFAULT 5;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS slot_range_end int DEFAULT 25;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS is_slot_list_published boolean DEFAULT false;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS custom_slot_assignments jsonb DEFAULT '{}'::jsonb;
 ALTER TABLE payments ADD COLUMN IF NOT EXISTS screenshot_url text;
 
 GRANT ALL ON TABLE orders TO anon, authenticated;
@@ -290,16 +294,18 @@ $$;
 
 GRANT EXECUTE ON FUNCTION admin_verify_payment(text, text) TO authenticated, anon;
 
--- 10. PUBLIC REGISTRATIONS (LIVE SQUAD ROSTER FOR HOMEPAGE)
+-- 10. PUBLIC REGISTRATIONS (LIVE SQUAD ROSTER FOR HOMEPAGE - SAVAGE ESPORTS STYLE)
 DROP FUNCTION IF EXISTS public.get_public_registrations();
 
 CREATE OR REPLACE FUNCTION get_public_registrations()
 RETURNS TABLE (
-  event_id         uuid,
-  team_name        text,
-  masked_whatsapp  text,
-  status           text,
-  created_at       timestamptz
+  event_id               uuid,
+  team_name              text,
+  masked_whatsapp        text,
+  status                 text,
+  created_at             timestamptz,
+  slot_number            int,
+  is_slot_list_published boolean
 )
 LANGUAGE sql
 SECURITY DEFINER
@@ -310,12 +316,19 @@ AS $$
     r.team_name,
     CASE
       WHEN length(COALESCE(r.whatsapp, o.whatsapp, '')) >= 6 THEN
-        left(COALESCE(r.whatsapp, o.whatsapp), 3) || '••••' || right(COALESCE(r.whatsapp, o.whatsapp), 3)
+        left(COALESCE(r.whatsapp, o.whatsapp), 6) || 'XXXX'
       ELSE '••••••'
     END AS masked_whatsapp,
     r.status::text,
-    r.created_at
+    r.created_at,
+    COALESCE(
+      (e.custom_slot_assignments->>r.id::text)::int,
+      (e.custom_slot_assignments->>r.team_name)::int,
+      (ROW_NUMBER() OVER (PARTITION BY r.event_id ORDER BY r.created_at) + COALESCE(e.slot_range_start, 5) - 1)::int
+    ) AS slot_number,
+    COALESCE(e.is_slot_list_published, false) AS is_slot_list_published
   FROM registrations r
+  JOIN events e ON e.id = r.event_id
   LEFT JOIN orders o ON o.id = r.order_id
   WHERE r.status::text != 'cancelled'
   ORDER BY r.event_id, r.created_at ASC;
@@ -331,21 +344,22 @@ CREATE OR REPLACE FUNCTION lookup_my_tournaments(
   p_whatsapp  text DEFAULT NULL
 )
 RETURNS TABLE (
-  registration_id      uuid,
-  event_id             uuid,
-  event_title          text,
-  starts_at            timestamptz,
-  idp_times            text,
-  start_times          text,
-  room_id              text,
-  room_password        text,
-  whatsapp_group_link  text,
-  team_name            text,
-  slot_number          int,
-  status               text,
-  amount_paise         int,
-  registered_at        timestamptz,
-  whatsapp             text
+  registration_id        uuid,
+  event_id               uuid,
+  event_title            text,
+  starts_at              timestamptz,
+  idp_times              text,
+  start_times            text,
+  room_id                text,
+  room_password          text,
+  whatsapp_group_link    text,
+  team_name              text,
+  slot_number            int,
+  status                 text,
+  amount_paise           int,
+  registered_at          timestamptz,
+  whatsapp               text,
+  is_slot_list_published boolean
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -374,11 +388,16 @@ BEGIN
     CASE WHEN p.status = 'approved' OR r.status = 'confirmed' THEN e.room_password ELSE NULL END AS room_password,
     CASE WHEN p.status = 'approved' OR r.status = 'confirmed' THEN e.whatsapp_group_link ELSE NULL END AS whatsapp_group_link,
     r.team_name,
-    ROW_NUMBER() OVER (PARTITION BY r.event_id ORDER BY r.created_at)::int         AS slot_number,
+    COALESCE(
+      (e.custom_slot_assignments->>r.id::text)::int,
+      (e.custom_slot_assignments->>r.team_name)::int,
+      (ROW_NUMBER() OVER (PARTITION BY r.event_id ORDER BY r.created_at) + COALESCE(e.slot_range_start, 5) - 1)::int
+    ) AS slot_number,
     CASE WHEN p.status = 'approved' OR r.status = 'confirmed' THEN 'confirmed' ELSE 'pending_verification' END AS status,
     COALESCE(r.amount_paise, p.amount_paise, 3000)                                 AS amount_paise,
     r.created_at                                                                   AS registered_at,
-    COALESCE(r.whatsapp, o.whatsapp, '')                                           AS whatsapp
+    COALESCE(r.whatsapp, o.whatsapp, '')                                           AS whatsapp,
+    COALESCE(e.is_slot_list_published, false)                                      AS is_slot_list_published
   FROM registrations r
   JOIN events e ON e.id = r.event_id
   LEFT JOIN orders o ON o.id = r.order_id

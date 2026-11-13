@@ -26,6 +26,7 @@ type Registration = {
   amount_paise: number;
   registered_at: string;
   whatsapp?: string | null;
+  is_slot_list_published?: boolean;
 };
 
 type SearchMode = "utr" | "whatsapp";
@@ -74,9 +75,15 @@ function RegistrationCard({ reg, onRefresh }: { reg: Registration; onRefresh?: (
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap mb-1">
-            <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-black text-slate-800">
-              Slot #{reg.slot_number}
-            </span>
+            {reg.is_slot_list_published ? (
+              <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-xs font-black text-indigo-900 font-mono shadow-2xs">
+                🎯 Official Slot #{reg.slot_number}
+              </span>
+            ) : (
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-black text-emerald-800">
+                ✓ Slot Assigned &amp; Paid (Slot # releases before match)
+              </span>
+            )}
             <span className="text-xs font-bold text-slate-500">
               Team: <strong className="text-slate-900">{reg.team_name}</strong>
             </span>
@@ -340,6 +347,24 @@ export default function MyTournamentsPage() {
             rows = matchedSub.events.map((ev, i) => {
               const liveEv = evMap.get(ev.id || ev.event_id);
               const isApproved = matchedSub.status === "approved" || matchedSub.status === "confirmed";
+
+              let isSlotListPub = false;
+              let assignedSlot = 5 + i;
+              try {
+                const targetEvId = ev.id || ev.event_id;
+                const cachedSettings = localStorage.getItem(`apex_slot_settings_${targetEvId}`);
+                if (cachedSettings) {
+                  const parsed = JSON.parse(cachedSettings);
+                  if (parsed.isPublished) isSlotListPub = true;
+                  const custom = parsed.slotMap?.[matchedSub.teamName || ""] ?? parsed.slotMap?.[`local-${i}`];
+                  if (custom !== undefined) {
+                    assignedSlot = custom;
+                  } else if (parsed.slotStart) {
+                    assignedSlot = parsed.slotStart + i;
+                  }
+                }
+              } catch {}
+
               return {
                 registration_id: `local-${i}`,
                 event_id: ev.id || ev.event_id || "default",
@@ -351,11 +376,12 @@ export default function MyTournamentsPage() {
                 room_password: isApproved ? liveEv?.room_password || null : null,
                 whatsapp_group_link: isApproved ? liveEv?.whatsapp_group_link || null : null,
                 team_name: matchedSub.teamName || "Registered Squad",
-                slot_number: 1,
+                slot_number: assignedSlot,
                 status: isApproved ? "confirmed" : "pending_verification",
                 amount_paise: matchedSub.totalPaise || 3000,
                 registered_at: matchedSub.submittedAt || new Date().toISOString(),
                 whatsapp: matchedSub.whatsapp,
+                is_slot_list_published: isSlotListPub,
               };
             });
           }

@@ -47,6 +47,10 @@ type EventAdmin = {
     third?: number;
     fourth?: number;
   } | null;
+  slot_range_start?: number | null;
+  slot_range_end?: number | null;
+  is_slot_list_published?: boolean | null;
+  custom_slot_assignments?: Record<string, number> | null;
 };
 
 type PaymentRow = {
@@ -411,8 +415,7 @@ Instant UPI QR verification & automatic slot confirmation!`;
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Modal: Registered Teams Roster Drawer
+// Modal: Registered Teams Roster & Competitive Slot Manager (Slots 5 to 25)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function TeamsRosterModal({
@@ -426,6 +429,15 @@ function TeamsRosterModal({
 }) {
   const [teams, setTeams] = useState<EventRegistration[]>([]);
   const [loading, setLoading] = useState(true);
+  const [savingSlots, setSavingSlots] = useState(false);
+
+  // Configurable Slot Range (Default: Slots 5 to 25)
+  const [slotStart, setSlotStart] = useState<number>(event.slot_range_start ?? 5);
+  const [slotEnd, setSlotEnd] = useState<number>(event.slot_range_end ?? 25);
+  const [isPublished, setIsPublished] = useState<boolean>(Boolean(event.is_slot_list_published));
+
+  // Custom Slot Map: { [teamName or regId]: slotNumber }
+  const [slotMap, setSlotMap] = useState<Record<string, number>>(event.custom_slot_assignments ?? {});
 
   useEffect(() => {
     (async () => {
@@ -435,8 +447,9 @@ function TeamsRosterModal({
         p_event_id: event.id,
       });
 
+      let loadedTeams: EventRegistration[] = [];
       if (!rpcErr && rpcData) {
-        setTeams(rpcData as EventRegistration[]);
+        loadedTeams = rpcData as EventRegistration[];
       } else {
         const { data: directData } = await supabase
           .from("registrations")
@@ -444,34 +457,238 @@ function TeamsRosterModal({
           .eq("event_id", event.id)
           .order("created_at", { ascending: true });
         if (directData) {
-          setTeams(directData as unknown as EventRegistration[]);
+          loadedTeams = directData as unknown as EventRegistration[];
         }
       }
+
+      // Check localStorage for any local submissions fallback
+      if (loadedTeams.length === 0) {
+        try {
+          const localStr = localStorage.getItem("apex_all_submissions");
+          if (localStr) {
+            const parsed = JSON.parse(localStr);
+            interface LocalSub {
+              events?: Array<{ id?: string; event_id?: string }>;
+              teamName?: string;
+              whatsapp?: string;
+              status?: string;
+              submittedAt?: string;
+              utr?: string;
+              totalPaise?: number;
+            }
+            const matching = parsed.filter((ls: LocalSub) =>
+              ls.events?.some((e) => (e.id || e.event_id) === event.id)
+            );
+            if (matching.length > 0) {
+              loadedTeams = matching.map((m: LocalSub, i: number) => ({
+                registration_id: `local-${i}`,
+                team_name: m.teamName || "Registered Squad",
+                whatsapp: m.whatsapp || "",
+                amount_paise: m.totalPaise || 3000,
+                status: m.status || "confirmed",
+                created_at: m.submittedAt || new Date().toISOString(),
+                utr: m.utr,
+              }));
+            }
+          }
+        } catch {}
+      }
+
+      // Load cached slot settings from localStorage if available
+      try {
+        const cachedSettings = localStorage.getItem(`apex_slot_settings_${event.id}`);
+        if (cachedSettings) {
+          const parsed = JSON.parse(cachedSettings);
+          if (parsed.slotStart) setSlotStart(parsed.slotStart);
+          if (parsed.slotEnd) setSlotEnd(parsed.slotEnd);
+          if (parsed.isPublished !== undefined) setIsPublished(parsed.isPublished);
+          if (parsed.slotMap) setSlotMap(parsed.slotMap);
+        }
+      } catch {}
+
+      setTeams(loadedTeams);
       setLoading(false);
     })();
   }, [event.id]);
 
+  // Auto-Number all registered squads sequentially within slot range (Start to End)
+  const handleAutoNumberSlots = () => {
+    const updated: Record<string, number> = {};
+    teams.forEach((t, idx) => {
+      const assigned = Math.min(slotEnd, slotStart + idx);
+      const key = t.registration_id || t.team_name;
+      updated[key] = assigned;
+    });
+    setSlotMap(updated);
+    showToast(`⚡ Auto-assigned ${teams.length} squads from Slot ${slotStart} to ${Math.min(slotEnd, slotStart + teams.length - 1)}!`, "success");
+  };
+
+  const handleUpdateTeamSlot = (key: string, val: number) => {
+    setSlotMap((prev) => ({
+      ...prev,
+      [key]: Math.max(1, Math.min(99, val)),
+    }));
+  };
+
+  const handleSaveAndSyncSlots = async () => {
+    setSavingSlots(true);
+    try {
+      // 1. Save to Supabase events table
+      try {
+        await supabase
+          .from("events")
+          .update({
+            slot_range_start: slotStart,
+            slot_range_end: slotEnd,
+            is_slot_list_published: isPublished,
+            custom_slot_assignments: slotMap,
+          })
+          .eq("id", event.id);
+      } catch (err) {
+        console.warn("Supabase update fallback:", err);
+      }
+
+      // 2. Cache in localStorage for instant sync across tabs & reloads
+      try {
+        localStorage.setItem(
+          `apex_slot_settings_${event.id}`,
+          JSON.stringify({
+            slotStart,
+            slotEnd,
+            isPublished,
+            slotMap,
+            updatedAt: new Date().toISOString(),
+          })
+        );
+      } catch {}
+
+      showToast(
+        isPublished
+          ? "📢 Slot List Published LIVE to players and website!"
+          : "💾 Slot assignments saved privately! (Slot numbers remain hidden from players until published)",
+        "success"
+      );
+    } catch (e: unknown) {
+      showToast((e as Error).message || "Failed to save slot assignments", "error");
+    } finally {
+      setSavingSlots(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-      <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-2xl w-full shadow-2xl space-y-4 max-h-[85vh] flex flex-col animate-in zoom-in-95 duration-200">
+      <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 max-w-2xl w-full shadow-2xl space-y-4 max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-200">
+        {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div>
-            <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
-              <span>👥</span>
-              <span>Registered Squads — {event.title}</span>
+            <h3 className="font-black text-slate-900 text-base sm:text-lg flex items-center gap-2">
+              <span>🎯</span>
+              <span>Competitive Slot Allocation — {event.title}</span>
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              {teams.length} / {event.max_slots} slots taken
+              Control slot start/end range, manually reassign squad slots, and publish live.
             </p>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-colors flex items-center justify-center"
+            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-colors flex items-center justify-center cursor-pointer"
           >
             ✕
           </button>
         </div>
 
+        {/* ── Admin Slot Range & Publishing Controls Card ── */}
+        <div className="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4 space-y-3">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wider text-indigo-950 flex items-center gap-1.5">
+                <span>⚙️</span>
+                <span>Custom Slot Range Configuration</span>
+              </p>
+              <p className="text-[11px] text-indigo-800">
+                Competitive scrim slots default from Slot 5 to 25 (Slots 1–4 reserved for host/casters).
+              </p>
+            </div>
+
+            {/* Live Publish Status Badge */}
+            <span
+              className={`px-3 py-1 rounded-full text-xs font-black border tracking-wide shadow-2xs ${
+                isPublished
+                  ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                  : "bg-amber-100 text-amber-800 border-amber-300"
+              }`}
+            >
+              {isPublished ? "📢 SLOT LIST LIVE" : "🔒 SLOTS HIDDEN (PRIVATE)"}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+            {/* Start Slot Input */}
+            <div className="bg-white rounded-xl border border-indigo-200 p-2.5 space-y-1">
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-600">
+                Slot Range Start
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={slotStart}
+                onChange={(e) => setSlotStart(Math.max(1, Number(e.target.value) || 1))}
+                className="w-full rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-mono font-bold text-slate-900 outline-none focus:border-indigo-600 focus:bg-white"
+              />
+            </div>
+
+            {/* End Slot Input */}
+            <div className="bg-white rounded-xl border border-indigo-200 p-2.5 space-y-1">
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-600">
+                Slot Range End
+              </label>
+              <input
+                type="number"
+                min={slotStart}
+                max={50}
+                value={slotEnd}
+                onChange={(e) => setSlotEnd(Math.max(slotStart, Number(e.target.value) || 25))}
+                className="w-full rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-mono font-bold text-slate-900 outline-none focus:border-indigo-600 focus:bg-white"
+              />
+            </div>
+
+            {/* Auto-Number Button */}
+            <div className="flex flex-col justify-end">
+              <button
+                type="button"
+                onClick={handleAutoNumberSlots}
+                className="w-full py-2.5 rounded-xl text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white transition-colors cursor-pointer shadow-xs flex items-center justify-center gap-1.5"
+              >
+                <span>⚡</span>
+                <span>Auto-Apply ({slotStart}–{slotEnd})</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Toggle Publish Live */}
+          <div className="flex items-center justify-between pt-2 border-t border-indigo-200/80 flex-wrap gap-2">
+            <p className="text-[11px] text-indigo-900 font-medium">
+              {isPublished
+                ? "Captains can see their exact Slot Number on My Tournaments & the Homepage."
+                : "Captains only see \"Paid & Slot Assigned\". Slot Number remains hidden until you publish."}
+            </p>
+            <button
+              type="button"
+              onClick={() => setIsPublished(!isPublished)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                isPublished
+                  ? "bg-amber-200 text-amber-950 hover:bg-amber-300 border border-amber-400"
+                  : "bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs"
+              }`}
+            >
+              <span>{isPublished ? "🔒 Hide Slot List" : "📢 Publish Slot List Live"}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* ── Squads Table with Editable Slot Number ── */}
         <div className="flex-1 overflow-y-auto space-y-2 pr-1">
           {loading ? (
             <Spinner />
@@ -481,58 +698,90 @@ function TeamsRosterModal({
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
-              {teams.map((t, idx) => (
-                <div
-                  key={t.registration_id || t.created_at + idx}
-                  className="flex items-center justify-between gap-3 py-3 px-2 hover:bg-slate-50 rounded-xl transition-colors"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="font-mono text-xs font-black text-blue-700 w-8">
-                      #{idx + 1}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-black text-slate-900 truncate">{t.team_name}</p>
-                      <p className="text-xs text-slate-500 font-mono">
-                        +91 {t.whatsapp}
-                        {t.utr ? ` · UTR: ${t.utr}` : ""}
-                      </p>
+              {teams.map((t, idx) => {
+                const key = t.registration_id || t.team_name;
+                const assignedSlot = slotMap[key] ?? Math.min(slotEnd, slotStart + idx);
+
+                return (
+                  <div
+                    key={key + idx}
+                    className="flex items-center justify-between gap-3 py-2.5 px-2 hover:bg-slate-50 rounded-xl transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {/* Editable Slot Input */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">Slot</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={50}
+                          value={assignedSlot}
+                          onChange={(e) => handleUpdateTeamSlot(key, Number(e.target.value) || slotStart)}
+                          className="w-14 rounded-lg border border-slate-300 bg-white px-2 py-1 text-center font-mono font-black text-indigo-900 text-xs outline-none focus:border-indigo-600 shadow-2xs"
+                        />
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="text-sm font-black text-slate-900 truncate">{t.team_name}</p>
+                        <p className="text-xs text-slate-500 font-mono">
+                          +91 {t.whatsapp}
+                          {t.utr ? ` · UTR: ${t.utr}` : ""}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                          t.status === "confirmed"
+                            ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                            : "bg-amber-100 text-amber-800 border border-amber-300"
+                        }`}
+                      >
+                        {t.status === "confirmed" ? "PAID" : "HOLD"}
+                      </span>
+                      <a
+                        href={`https://wa.me/91${t.whatsapp}?text=Hi+${encodeURIComponent(
+                          t.team_name
+                        )},+regarding+your+slot+for+${encodeURIComponent(event.title)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 transition-colors flex items-center gap-1 cursor-pointer"
+                        title="Chat on WhatsApp"
+                      >
+                        <span>💬</span> WhatsApp
+                      </a>
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span
-                      className={`px-2.5 py-0.5 rounded text-[10px] font-black ${
-                        t.status === "confirmed"
-                          ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
-                          : "bg-amber-100 text-amber-800 border border-amber-300"
-                      }`}
-                    >
-                      {t.status === "confirmed" ? "LOCKED" : "HOLD"}
-                    </span>
-                    <a
-                      href={`https://wa.me/91${t.whatsapp}?text=Hi+${encodeURIComponent(
-                        t.team_name
-                      )},+regarding+your+slot+for+${encodeURIComponent(event.title)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 transition-colors flex items-center gap-1"
-                      title="Chat on WhatsApp"
-                    >
-                      <span>💬</span> WhatsApp
-                    </a>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
 
-        <div className="pt-3 border-t border-slate-100 flex justify-end">
+        {/* Footer with Save & Sync button */}
+        <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
           <button
+            type="button"
             onClick={onClose}
-            className="px-5 py-2.5 rounded-xl text-xs font-bold text-slate-700 border border-slate-200 hover:bg-slate-50 transition-colors"
+            className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer"
           >
-            Close
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSaveAndSyncSlots}
+            disabled={savingSlots}
+            className="px-5 py-2.5 rounded-xl text-xs font-black bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+          >
+            {savingSlots ? (
+              <span>Saving…</span>
+            ) : (
+              <>
+                <span>💾</span>
+                <span>Save Slot Assignments &amp; Publish Status</span>
+              </>
+            )}
           </button>
         </div>
       </div>

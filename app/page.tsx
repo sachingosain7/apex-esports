@@ -49,6 +49,8 @@ type PublicReg = {
   masked_whatsapp: string;
   status: string;
   created_at: string;
+  slot_number?: number;
+  is_slot_list_published?: boolean;
 };
 
 type FilterKind = "all" | "scrim" | "tournament" | "league";
@@ -460,43 +462,69 @@ function TeamRoster({
       </button>
 
       {open && (
-        <div className="border-t border-slate-100 max-h-48 overflow-y-auto divide-y divide-slate-100 bg-slate-50/50">
+        <div className="border-t border-slate-100 max-h-52 overflow-y-auto divide-y divide-slate-100 bg-slate-50/50">
           {eventRegs.length === 0 ? (
             <p className="px-4 py-3 text-xs text-slate-400 italic text-center">
               No teams registered yet. Be the first squad!
             </p>
           ) : (
-            eventRegs.map((r, i) => (
-              <div
-                key={r.created_at + i}
-                className="flex items-center justify-between gap-2 px-3.5 py-2 text-xs hover:bg-white"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="w-5 h-5 rounded bg-slate-900 text-white text-[10px] font-black flex items-center justify-center shrink-0">
-                    {i + 1}
-                  </span>
-                  <span className="font-bold text-slate-900 truncate">{r.team_name}</span>
-                  <span className="text-slate-400 text-[11px] font-mono shrink-0">
-                    {r.masked_whatsapp}
-                  </span>
+            eventRegs.map((r, i) => {
+              // Savage Esports phone masking: Show first 6 digits, hide last 4 with XXXX
+              let cleanPhone = r.masked_whatsapp || "";
+              const digits = cleanPhone.replace(/\D/g, "");
+              if (digits.length >= 10) {
+                const last10 = digits.slice(-10);
+                cleanPhone = `+91 ${last10.slice(0, 6)}XXXX`;
+              } else if (cleanPhone.includes("•")) {
+                cleanPhone = cleanPhone.replace(/•+/g, "XXXX");
+              } else if (!cleanPhone.includes("X")) {
+                cleanPhone = cleanPhone.slice(0, Math.max(3, cleanPhone.length - 4)) + "XXXX";
+              }
+
+              const isPaid = r.status === "confirmed";
+
+              return (
+                <div
+                  key={r.created_at + i}
+                  className="flex items-center justify-between gap-3 px-3.5 py-2.5 hover:bg-white transition-colors"
+                >
+                  {/* Left: Savage Esports stacked layout (Team Name on top, Number with XX underneath) */}
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <p className="text-xs sm:text-sm font-extrabold text-slate-900 truncate">
+                      {r.team_name}
+                    </p>
+                    <p className="text-[11px] font-mono text-slate-500 font-semibold tracking-wide">
+                      {cleanPhone}
+                    </p>
+                  </div>
+
+                  {/* Right: Slot badge (if published) OR "Paid & Slot Assigned" badge */}
+                  <div className="shrink-0 text-right">
+                    {r.is_slot_list_published ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-black bg-indigo-50 border border-indigo-200 text-indigo-900 font-mono shadow-2xs">
+                        <span>🎯</span>
+                        <span>Slot #{r.slot_number || i + 5}</span>
+                      </span>
+                    ) : isPaid ? (
+                      <div className="flex flex-col items-end">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          <span>✓</span>
+                          <span>Paid &amp; Assigned</span>
+                        </span>
+                        <span className="text-[9px] text-slate-400 font-medium mt-0.5">
+                          Slot # releases with IDP
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300">
+                        <span>⏳</span>
+                        <span>In Verification</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
-                {r.status === "confirmed" ? (
-                  <span className="shrink-0 flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
-                    <span className="w-3.5 h-3.5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[9px] font-black">
-                      ✓
-                    </span>
-                    <span className="hidden sm:inline">Locked</span>
-                  </span>
-                ) : (
-                  <span className="shrink-0 flex items-center gap-1 text-[11px] font-semibold text-amber-600">
-                    <span className="w-3.5 h-3.5 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-[9px] font-black">
-                      ⏳
-                    </span>
-                    <span className="hidden sm:inline">In Verification</span>
-                  </span>
-                )}
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       )}

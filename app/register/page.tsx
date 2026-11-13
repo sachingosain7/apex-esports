@@ -1097,13 +1097,20 @@ function PhaseCSuccess({ utr, events, teamName }: PhaseCProps) {
         <div className="w-16 h-16 rounded-3xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-3xl font-black shadow-md">
           ✓
         </div>
-        <h2 className="text-2xl font-black text-slate-900">Payment Approved &amp; Slot Locked!</h2>
+        <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-black">
+          <span>✓</span>
+          <span>Your slot has been paid and your slot has been assigned!</span>
+        </div>
+        <h2 className="text-2xl font-black text-slate-900">Slot Assigned &amp; Paid</h2>
         <p className="text-xs sm:text-sm text-slate-600">
-          Verified by Admin for Team: <strong className="text-slate-900">{teamName}</strong>
+          Verified by Host for Team: <strong className="text-slate-900">{teamName}</strong> · UTR: <span className="font-mono font-bold text-slate-800">{utr}</span>
         </p>
-        <span className="rounded-full bg-slate-100 border border-slate-200 px-3 py-1 font-mono text-xs font-bold text-slate-600">
-          UTR: {utr}
-        </span>
+        <div className="pt-1">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold">
+            <span>🔒</span>
+            <span>Official Slot Number releases when host publishes the official Slot List</span>
+          </span>
+        </div>
       </div>
 
       {/* ── Where will IDP be given Box ── */}
