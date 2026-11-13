@@ -829,20 +829,33 @@ export function PointsTableTab({ showToast }: PointsTableTabProps) {
                 </div>
                 <div className="flex gap-2">
                   <input
-                    type="password"
+                    type="text"
                     value={aiApiKey}
                     onChange={(e) => setAiApiKey(e.target.value)}
-                    placeholder="AIzaSy..."
+                    placeholder="Paste AIzaSy... or AQ.Ab... key here"
                     className="flex-1 rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-mono text-slate-900 outline-none focus:border-indigo-600 focus:bg-white"
                   />
                   <button
                     type="button"
                     onClick={() => handleSaveAiKey(aiApiKey)}
-                    className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-black text-xs hover:bg-indigo-700 cursor-pointer shadow-xs"
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-black text-xs hover:bg-indigo-700 cursor-pointer shadow-xs shrink-0"
                   >
                     Save Key
                   </button>
+                  {aiApiKey && (
+                    <button
+                      type="button"
+                      onClick={() => handleSaveAiKey("")}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-slate-600 font-bold text-xs hover:bg-slate-100 cursor-pointer shrink-0"
+                      title="Clear key"
+                    >
+                      Clear
+                    </button>
+                  )}
                 </div>
+                <p className="text-[11px] text-slate-500 leading-normal">
+                  💡 <strong>Important:</strong> In Google AI Studio, choose <strong>&quot;Create API key in new project&quot;</strong> to get an instant <code>AIzaSy...</code> key that has the Generative Language API pre-enabled.
+                </p>
               </div>
             )}
 

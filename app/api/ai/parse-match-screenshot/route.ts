@@ -106,12 +106,12 @@ Return ONLY a valid JSON array of objects with no markdown code fences, matching
       const errText = await geminiRes.text();
       let hint = "";
       if (geminiRes.status === 401 || errText.includes("API_KEY_SERVICE_BLOCKED") || errText.includes("UNAUTHENTICATED")) {
-        hint = " Tip: If using Google AI Studio, click 'Create API key in new project' to get a direct AIzaSy... key with Generative Language API enabled.";
+        hint = " Google rejected this key (401). In Google AI Studio (aistudio.google.com/app/apikey), click 'Create API key in new project' (instead of an imported project) to get a pre-enabled AIzaSy... key.";
       }
       return NextResponse.json(
         {
           success: false,
-          message: `Gemini API Error (${geminiRes.status}): ${errText.slice(0, 150)}.${hint}`,
+          message: `Gemini API Error (${geminiRes.status}): ${errText.slice(0, 120)}.${hint}`,
         },
         { status: 200 }
       );
