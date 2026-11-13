@@ -168,11 +168,8 @@ DROP POLICY IF EXISTS "allow_public_all_admin_roles" ON admin_roles;
 CREATE POLICY "allow_public_all_admin_roles" ON admin_roles FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
 -- 5. has_role OVERLOADS (TEXT & ENUM SAFE)
-DROP FUNCTION IF EXISTS has_role(text);
-DROP FUNCTION IF EXISTS has_role(varchar);
-DROP FUNCTION IF EXISTS has_role(text[]);
-DROP FUNCTION IF EXISTS has_role(admin_role_t);
-DROP FUNCTION IF EXISTS has_role(admin_role_t[]);
+-- Note: Never DROP has_role(admin_role_t[]) because active table RLS policies depend on it.
+-- We use CREATE OR REPLACE FUNCTION to upgrade its behavior in-place without breaking dependencies.
 
 CREATE OR REPLACE FUNCTION has_role(roles text[])
 RETURNS boolean
