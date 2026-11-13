@@ -465,31 +465,49 @@ function TeamsRosterModal({
       if (loadedTeams.length === 0) {
         try {
           const localStr = localStorage.getItem("apex_all_submissions");
+          const activeStr = localStorage.getItem("apex_active_booking_session");
+          const allSubs: Array<Record<string, unknown>> = [];
           if (localStr) {
-            const parsed = JSON.parse(localStr);
-            interface LocalSub {
-              events?: Array<{ id?: string; event_id?: string }>;
-              teamName?: string;
-              whatsapp?: string;
-              status?: string;
-              submittedAt?: string;
-              utr?: string;
-              totalPaise?: number;
+            try { allSubs.push(...JSON.parse(localStr)); } catch {}
+          }
+          if (activeStr) {
+            try { allSubs.push(JSON.parse(activeStr)); } catch {}
+          }
+
+          const matching = allSubs.filter((ls) => {
+            if (Array.isArray(ls.events)) {
+              return (ls.events as Array<{ id?: string; event_id?: string }>).some(
+                (e) => (e.id || e.event_id) === event.id
+              );
             }
-            const matching = parsed.filter((ls: LocalSub) =>
-              ls.events?.some((e) => (e.id || e.event_id) === event.id)
-            );
-            if (matching.length > 0) {
-              loadedTeams = matching.map((m: LocalSub, i: number) => ({
+            if (Array.isArray(ls.event_ids)) {
+              return (ls.event_ids as string[]).includes(event.id);
+            }
+            if (Array.isArray(ls.event_titles)) {
+              return (ls.event_titles as string[]).some(
+                (t) => t.toLowerCase().trim() === event.title.toLowerCase().trim()
+              );
+            }
+            return allSubs.length === 1; // if single lobby
+          });
+
+          if (matching.length > 0) {
+            loadedTeams = matching.map((m, i) => {
+              const squad =
+                (m.teamName as string) ||
+                (m.team_name as string) ||
+                (Array.isArray(m.team_names) ? (m.team_names as string[])[0] : null) ||
+                "Registered Squad";
+              return {
                 registration_id: `local-${i}`,
-                team_name: m.teamName || "Registered Squad",
-                whatsapp: m.whatsapp || "",
-                amount_paise: m.totalPaise || 3000,
-                status: m.status || "confirmed",
-                created_at: m.submittedAt || new Date().toISOString(),
-                utr: m.utr,
-              }));
-            }
+                team_name: squad,
+                whatsapp: ((m.phone || m.whatsapp || "") as string).replace("+91", ""),
+                amount_paise: ((m.totalPaise || m.amount_paise || 3000) as number),
+                status: (m.pay_status === "approved" || m.status === "confirmed") ? "confirmed" : "pending_payment",
+                created_at: ((m.submittedAt || m.created_at || new Date().toISOString()) as string),
+                utr: (m.utr as string) || undefined,
+              };
+            });
           }
         } catch {}
       }

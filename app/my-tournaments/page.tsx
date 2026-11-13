@@ -338,12 +338,15 @@ export default function MyTournamentsPage() {
             const rawEvents: Array<{ id?: string; event_id?: string; title?: string }> =
               Array.isArray(matchedSub.events) && matchedSub.events.length > 0
                 ? matchedSub.events
+                : Array.isArray((matchedSub as Record<string, unknown>).event_ids) && ((matchedSub as Record<string, unknown>).event_ids as string[]).length > 0
+                ? ((matchedSub as Record<string, unknown>).event_ids as string[]).map((id) => ({ id, event_id: id }))
                 : Array.isArray((matchedSub as Record<string, unknown>).event_titles) && ((matchedSub as Record<string, unknown>).event_titles as string[]).length > 0
                 ? ((matchedSub as Record<string, unknown>).event_titles as string[]).map((t: string) => ({ title: t }))
                 : [{ title: "Apex Scrims Lobby" }];
 
             const squadName =
               matchedSub.teamName ||
+              ((matchedSub as Record<string, unknown>).team_name as string) ||
               (Array.isArray((matchedSub as Record<string, unknown>).team_names)
                 ? ((matchedSub as Record<string, unknown>).team_names as string[])[0]
                 : null) ||
@@ -464,6 +467,28 @@ export default function MyTournamentsPage() {
             if (cachedMode === "whatsapp" || cachedMode === "utr") {
               savedMode = cachedMode;
             }
+          } else {
+            // Auto-detect from active booking session or submissions
+            const activeRaw = localStorage.getItem("apex_active_booking_session");
+            const allSubsRaw = localStorage.getItem("apex_all_submissions");
+            if (activeRaw) {
+              try {
+                const act = JSON.parse(activeRaw);
+                if (act.utr) {
+                  q = act.utr;
+                  savedMode = "utr";
+                }
+              } catch {}
+            }
+            if (!q && allSubsRaw) {
+              try {
+                const subs = JSON.parse(allSubsRaw);
+                if (Array.isArray(subs) && subs.length > 0 && subs[0].utr) {
+                  q = subs[0].utr;
+                  savedMode = "utr";
+                }
+              } catch {}
+            }
           }
         } catch {}
       }
@@ -485,6 +510,26 @@ export default function MyTournamentsPage() {
         }
       }
     }
+
+    const handleSync = () => {
+      try {
+        const cachedQ = localStorage.getItem("apex_last_lookup_query");
+        if (cachedQ && cachedQ !== utrInput) {
+          const cleaned = cachedQ.replace(/\D/g, "");
+          if (cleaned.length === 12) {
+            setMode("utr");
+            setUtrInput(cleaned);
+            performLookup(cleaned, null);
+          }
+        }
+      } catch {}
+    };
+    window.addEventListener("storage", handleSync);
+    window.addEventListener("focus", handleSync);
+    return () => {
+      window.removeEventListener("storage", handleSync);
+      window.removeEventListener("focus", handleSync);
+    };
   }, [performLookup]);
 
   // Auto-lookup if user has registered WhatsApp in metadata

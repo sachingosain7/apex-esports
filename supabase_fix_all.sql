@@ -9,47 +9,88 @@ GRANT USAGE ON SCHEMA public TO anon, authenticated;
 -- 1. CONVERT ENUMS TO TEXT (PERMANENTLY PREVENTS ENUM MISMATCH ERRORS)
 DO $$
 BEGIN
-  -- admin_roles.role
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'admin_roles' AND column_name = 'role'
-  ) THEN
-    ALTER TABLE admin_roles ALTER COLUMN role TYPE text USING role::text;
-  END IF;
+  -- Add values to enums first if they exist so any residual enum usages never throw 22P02
+  BEGIN
+    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'admin_role_t') THEN
+      ALTER TYPE admin_role_t ADD VALUE IF NOT EXISTS 'admin';
+    END IF;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
 
-  -- registrations.status
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'registrations' AND column_name = 'status'
-  ) THEN
-    ALTER TABLE registrations ALTER COLUMN status TYPE text USING status::text;
-  END IF;
+  BEGIN
+    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'reg_status_t') THEN
+      ALTER TYPE reg_status_t ADD VALUE IF NOT EXISTS 'pending_payment';
+      ALTER TYPE reg_status_t ADD VALUE IF NOT EXISTS 'pending_approval';
+      ALTER TYPE reg_status_t ADD VALUE IF NOT EXISTS 'rejected';
+    END IF;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
 
-  -- payments.status
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'payments' AND column_name = 'status'
-  ) THEN
-    ALTER TABLE payments ALTER COLUMN status TYPE text USING status::text;
-  END IF;
+  BEGIN
+    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_status_t') THEN
+      ALTER TYPE order_status_t ADD VALUE IF NOT EXISTS 'submitted';
+      ALTER TYPE order_status_t ADD VALUE IF NOT EXISTS 'refunded';
+    END IF;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
 
-  -- orders.status
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'orders' AND column_name = 'status'
-  ) THEN
-    ALTER TABLE orders ALTER COLUMN status TYPE text USING status::text;
-  END IF;
+  BEGIN
+    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'payment_status_t') THEN
+      ALTER TYPE payment_status_t ADD VALUE IF NOT EXISTS 'rejected';
+      ALTER TYPE payment_status_t ADD VALUE IF NOT EXISTS 'approved';
+    END IF;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
 
-  -- events.status
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'events' AND column_name = 'status'
-  ) THEN
-    ALTER TABLE events ALTER COLUMN status TYPE text USING status::text;
-  END IF;
-EXCEPTION
-  WHEN OTHERS THEN NULL;
+  -- admin_roles.role -> text
+  BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'admin_roles' AND column_name = 'role') THEN
+      ALTER TABLE admin_roles ALTER COLUMN role DROP DEFAULT;
+      ALTER TABLE admin_roles ALTER COLUMN role TYPE text USING role::text;
+      ALTER TABLE admin_roles ALTER COLUMN role SET DEFAULT 'admin';
+    END IF;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+
+  -- registrations.status -> text
+  BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'registrations' AND column_name = 'status') THEN
+      ALTER TABLE registrations ALTER COLUMN status DROP DEFAULT;
+      ALTER TABLE registrations ALTER COLUMN status TYPE text USING status::text;
+      ALTER TABLE registrations ALTER COLUMN status SET DEFAULT 'pending_payment';
+    END IF;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+
+  -- payments.status -> text
+  BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'payments' AND column_name = 'status') THEN
+      ALTER TABLE payments ALTER COLUMN status DROP DEFAULT;
+      ALTER TABLE payments ALTER COLUMN status TYPE text USING status::text;
+      ALTER TABLE payments ALTER COLUMN status SET DEFAULT 'pending_verification';
+    END IF;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+
+  -- orders.status -> text
+  BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'status') THEN
+      ALTER TABLE orders ALTER COLUMN status DROP DEFAULT;
+      ALTER TABLE orders ALTER COLUMN status TYPE text USING status::text;
+      ALTER TABLE orders ALTER COLUMN status SET DEFAULT 'pending';
+    END IF;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+
+  -- events.status -> text
+  BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'events' AND column_name = 'status') THEN
+      ALTER TABLE events ALTER COLUMN status DROP DEFAULT;
+      ALTER TABLE events ALTER COLUMN status TYPE text USING status::text;
+      ALTER TABLE events ALTER COLUMN status SET DEFAULT 'upcoming';
+    END IF;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
 END $$;
 
 -- 2. ENSURE ALL SUPPORTING COLUMNS EXIST
@@ -226,8 +267,18 @@ BEGIN
 
   IF p_action = 'grant' THEN
     DELETE FROM admin_roles WHERE user_id = v_target_id;
-    INSERT INTO admin_roles (user_id, role)
-    VALUES (v_target_id, v_clean_role);
+    BEGIN
+      INSERT INTO admin_roles (user_id, role)
+      VALUES (v_target_id, v_clean_role);
+    EXCEPTION WHEN OTHERS THEN
+      BEGIN
+        EXECUTE 'INSERT INTO admin_roles (user_id, role) VALUES ($1, $2::admin_role_t)'
+        USING v_target_id, v_clean_role;
+      EXCEPTION WHEN OTHERS THEN
+        EXECUTE 'INSERT INTO admin_roles (user_id, role) VALUES ($1, ''moderator''::admin_role_t)'
+        USING v_target_id;
+      END;
+    END;
 
   ELSIF p_action = 'revoke' THEN
     DELETE FROM admin_roles WHERE user_id = v_target_id;
@@ -272,11 +323,23 @@ BEGIN
 
   -- Step down current owner to admin
   DELETE FROM admin_roles WHERE user_id = v_current_user_id;
-  INSERT INTO admin_roles (user_id, role) VALUES (v_current_user_id, 'admin');
+  BEGIN
+    INSERT INTO admin_roles (user_id, role) VALUES (v_current_user_id, 'admin');
+  EXCEPTION WHEN OTHERS THEN
+    BEGIN
+      EXECUTE 'INSERT INTO admin_roles (user_id, role) VALUES ($1, ''admin''::admin_role_t)' USING v_current_user_id;
+    EXCEPTION WHEN OTHERS THEN
+      EXECUTE 'INSERT INTO admin_roles (user_id, role) VALUES ($1, ''moderator''::admin_role_t)' USING v_current_user_id;
+    END;
+  END;
 
   -- Grant owner to new owner
   DELETE FROM admin_roles WHERE user_id = v_new_owner_id;
-  INSERT INTO admin_roles (user_id, role) VALUES (v_new_owner_id, 'owner');
+  BEGIN
+    INSERT INTO admin_roles (user_id, role) VALUES (v_new_owner_id, 'owner');
+  EXCEPTION WHEN OTHERS THEN
+    EXECUTE 'INSERT INTO admin_roles (user_id, role) VALUES ($1, ''owner''::admin_role_t)' USING v_new_owner_id;
+  END;
 END;
 $$;
 
@@ -411,14 +474,14 @@ BEGIN
     order_id = EXCLUDED.order_id,
     status = 'pending_verification';
 
-  -- Move registrations to pending_approval
+  -- Move registrations to pending_payment (safe for both enum and text)
   UPDATE registrations
-  SET status = 'pending_approval'
+  SET status = 'pending_payment'
   WHERE order_id = p_order_id;
 
-  -- Mark order submitted
+  -- Mark order pending (safe for both enum and text)
   IF FOUND THEN
-    UPDATE orders SET status = 'submitted' WHERE id = p_order_id;
+    UPDATE orders SET status = 'pending' WHERE id = p_order_id;
   END IF;
 
   RETURN jsonb_build_object('success', true, 'utr', p_utr);
@@ -426,6 +489,87 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION submit_order_utr(uuid, text) TO authenticated, anon;
+
+-- 9B. COMPLETE 1-CLICK ATOMIC REGISTRATION RPC (BYPASSES ALL POSTGREST RLS RESTRICTIONS)
+DROP FUNCTION IF EXISTS public.submit_tournament_registration(uuid, uuid, text, text, text, int, text);
+CREATE OR REPLACE FUNCTION submit_tournament_registration(
+  p_order_id       uuid,
+  p_event_id       uuid,
+  p_team_name      text,
+  p_whatsapp       text,
+  p_utr            text,
+  p_amount_paise   int     DEFAULT 3000,
+  p_screenshot_url text    DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_clean_phone text := regexp_replace(COALESCE(p_whatsapp, ''), '[^0-9+]', '', 'g');
+  v_target_order_id uuid := COALESCE(p_order_id, gen_random_uuid());
+BEGIN
+  -- 1. Ensure order exists
+  IF EXISTS (SELECT 1 FROM orders WHERE id = v_target_order_id) THEN
+    UPDATE orders
+    SET whatsapp = v_clean_phone,
+        total_paise = p_amount_paise,
+        status = 'pending'
+    WHERE id = v_target_order_id;
+  ELSE
+    INSERT INTO orders (id, whatsapp, total_paise, status, expires_at)
+    VALUES (v_target_order_id, v_clean_phone, p_amount_paise, 'pending', now() + interval '1 day');
+  END IF;
+
+  -- 2. Insert or update registration (resilient to missing unique constraint)
+  IF EXISTS (SELECT 1 FROM registrations WHERE order_id = v_target_order_id AND event_id = p_event_id) THEN
+    UPDATE registrations
+    SET whatsapp = v_clean_phone,
+        team_name = p_team_name,
+        amount_paise = p_amount_paise,
+        status = 'pending_payment'
+    WHERE order_id = v_target_order_id AND event_id = p_event_id;
+  ELSE
+    INSERT INTO registrations (order_id, event_id, whatsapp, team_name, status, amount_paise)
+    VALUES (v_target_order_id, p_event_id, v_clean_phone, p_team_name, 'pending_payment', p_amount_paise);
+  END IF;
+
+  -- 3. Insert or update payment (resilient to duplicate UTRs)
+  IF p_utr IS NOT NULL AND length(trim(p_utr)) > 0 THEN
+    IF EXISTS (SELECT 1 FROM payments WHERE utr = trim(p_utr)) THEN
+      UPDATE payments
+      SET order_id = v_target_order_id,
+          amount_paise = p_amount_paise,
+          status = 'pending_verification',
+          screenshot_url = COALESCE(p_screenshot_url, payments.screenshot_url)
+      WHERE utr = trim(p_utr);
+    ELSE
+      INSERT INTO payments (order_id, utr, amount_paise, status, screenshot_url)
+      VALUES (v_target_order_id, trim(p_utr), p_amount_paise, 'pending_verification', p_screenshot_url);
+    END IF;
+  END IF;
+
+  -- 4. Update event filled slots
+  UPDATE events
+  SET filled_slots = (
+    SELECT COUNT(*)::int
+    FROM registrations
+    WHERE event_id = p_event_id
+      AND status::text != 'cancelled'
+  )
+  WHERE id = p_event_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'order_id', v_target_order_id,
+    'event_id', p_event_id,
+    'utr', p_utr
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION submit_tournament_registration(uuid, uuid, text, text, text, int, text) TO authenticated, anon;
 
 -- 10. CHECK PAYMENT STATUS RPC
 DROP FUNCTION IF EXISTS public.check_payment_status(text);

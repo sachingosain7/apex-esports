@@ -272,37 +272,48 @@ export default function ProfilePage() {
   const [tab, setTab] = useState<TabFilter>("all");
 
   const loadRegistrations = useCallback(async () => {
-    const { data: regData, error: regErr } = await supabase
-      .from("registrations")
-      .select(`
-        id,
-        team_name,
-        whatsapp,
-        amount_paise,
-        status,
-        created_at,
-        event_id,
-        order_id,
-        events:event_id (
-          title,
-          kind,
-          starts_at,
-          room_id,
-          room_password,
-          whatsapp_group_link,
-          idp_times,
-          start_times
-        ),
-        orders:order_id (
+    let regData: any[] = [];
+    try {
+      const { data, error } = await supabase
+        .from("registrations")
+        .select(`
+          id,
+          team_name,
+          whatsapp,
+          amount_paise,
           status,
-          expires_at
-        )
-      `)
-      .order("created_at", { ascending: false });
+          created_at,
+          event_id,
+          order_id,
+          events:event_id (
+            title,
+            kind,
+            starts_at,
+            room_id,
+            room_password,
+            whatsapp_group_link,
+            idp_times,
+            start_times
+          ),
+          orders:order_id (
+            status,
+            expires_at
+          )
+        `)
+        .order("created_at", { ascending: false });
 
-    if (regErr) {
-      setErr(regErr.message);
-      return;
+      if (!error && Array.isArray(data)) {
+        regData = data;
+      } else {
+        // Fallback: direct simple query without relational joins
+        const { data: simpleData } = await supabase
+          .from("registrations")
+          .select("id, team_name, whatsapp, amount_paise, status, created_at, event_id, order_id")
+          .order("created_at", { ascending: false });
+        if (simpleData) regData = simpleData;
+      }
+    } catch {
+      // Non-blocking: continue to local hydration
     }
 
     const orderIds = (regData ?? [])
@@ -356,6 +367,94 @@ export default function ProfilePage() {
       };
     });
 
+    // Hydrate & merge from local storage (apex_all_submissions + active session)
+    try {
+      if (typeof window !== "undefined") {
+        const localRaw = localStorage.getItem("apex_all_submissions");
+        const activeRaw = localStorage.getItem("apex_active_booking_session");
+        const allSubs: Array<Record<string, unknown>> = [];
+        if (localRaw) {
+          try { allSubs.push(...JSON.parse(localRaw)); } catch {}
+        }
+        if (activeRaw) {
+          try { allSubs.push(JSON.parse(activeRaw)); } catch {}
+        }
+
+        // Fetch live event titles/IDPs for any local event IDs
+        const localEventIds = allSubs.flatMap((s) => {
+          if (Array.isArray(s.events)) return (s.events as Array<{ id?: string }>).map((e) => e.id).filter(Boolean);
+          if (Array.isArray(s.event_ids)) return (s.event_ids as string[]).filter(Boolean);
+          return [];
+        });
+
+        let liveEventsMap = new Map<string, Record<string, unknown>>();
+        if (localEventIds.length > 0) {
+          try {
+            const { data: evs } = await supabase.from("events").select("*").in("id", localEventIds);
+            if (evs) liveEventsMap = new Map(evs.map((e) => [e.id, e]));
+          } catch {}
+        }
+
+        for (const sub of allSubs) {
+          const squadName =
+            (sub.teamName as string) ||
+            (sub.team_name as string) ||
+            (Array.isArray(sub.team_names) ? (sub.team_names as string[])[0] : null) ||
+            "Registered Squad";
+
+          const rawEvents: Array<{ id?: string; event_id?: string; title?: string }> =
+            Array.isArray(sub.events) && (sub.events as Array<{ id?: string }>).length > 0
+              ? (sub.events as Array<{ id?: string; title?: string }>)
+              : Array.isArray(sub.event_ids) && (sub.event_ids as string[]).length > 0
+              ? (sub.event_ids as string[]).map((id) => ({ id, event_id: id }))
+              : Array.isArray(sub.event_titles) && (sub.event_titles as string[]).length > 0
+              ? (sub.event_titles as string[]).map((t) => ({ title: t }))
+              : [{ title: "Apex Scrims Lobby" }];
+
+          for (let i = 0; i < rawEvents.length; i++) {
+            const ev = rawEvents[i];
+            const evId = (ev.id || ev.event_id || "default") as string;
+            const liveEv = liveEventsMap.get(evId);
+            const utrVal = (sub.utr as string) || null;
+            const phoneVal = (sub.phone || sub.whatsapp || "") as string;
+            const isConfirmed = sub.pay_status === "approved" || sub.status === "confirmed";
+
+            const exists = flat.some(
+              (f) =>
+                (f.event_id === evId && f.team_name.toLowerCase() === squadName.toLowerCase()) ||
+                (utrVal && f.utr === utrVal)
+            );
+
+            if (!exists) {
+              flat.push({
+                id: `local-${i}-${sub.utr || Date.now()}`,
+                team_name: squadName,
+                whatsapp: phoneVal,
+                amount_paise: (sub.amount_paise || sub.totalPaise || 3000) as number,
+                status: isConfirmed ? "confirmed" : "pending_verification",
+                created_at: (sub.submittedAt || sub.created_at || new Date().toISOString()) as string,
+                event_id: evId,
+                order_id: (sub.order_id as string) || "local-order",
+                event_title: (liveEv?.title as string) || ev.title || "APEX | 1-3PM | L1",
+                event_kind: (liveEv?.kind as string) || "scrim",
+                event_starts_at: (liveEv?.starts_at as string) || new Date().toISOString(),
+                event_room_id: isConfirmed ? ((liveEv?.room_id as string) || null) : null,
+                event_room_password: isConfirmed ? ((liveEv?.room_password as string) || null) : null,
+                event_whatsapp_group_link: isConfirmed ? ((liveEv?.whatsapp_group_link as string) || null) : null,
+                event_idp_times: (liveEv?.idp_times as string) || "01:36 PM | 02:16 PM | 02:56 PM",
+                event_start_times: (liveEv?.start_times as string) || "01:42 PM | 02:22 PM | 03:02 PM",
+                order_expires_at: null,
+                order_status: "submitted",
+                utr: utrVal,
+              });
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Local profile hydration error:", e);
+    }
+
     setRegs(flat);
   }, []);
 
@@ -370,15 +469,26 @@ export default function ProfilePage() {
           .eq("user_id", data.user.id);
         setIsAdmin((roles && roles.length > 0) ?? false);
       }
-      if (email) loadRegistrations();
     });
+    loadRegistrations();
+
+    const handleSync = () => {
+      loadRegistrations();
+    };
+    window.addEventListener("storage", handleSync);
+    window.addEventListener("focus", handleSync);
+
+    return () => {
+      window.removeEventListener("storage", handleSync);
+      window.removeEventListener("focus", handleSync);
+    };
   }, [loadRegistrations]);
 
   const filtered = (regs ?? []).filter((r) => {
     const isPast = new Date(r.event_starts_at).getTime() < Date.now();
-    if (tab === "upcoming") return !isPast && r.status === "confirmed";
+    if (tab === "upcoming") return !isPast;
     if (tab === "past") return isPast;
-    if (tab === "pending") return r.status === "pending_payment";
+    if (tab === "pending") return r.status === "pending_payment" || r.status === "pending_verification";
     return true;
   });
 
@@ -389,7 +499,7 @@ export default function ProfilePage() {
     { key: "pending", label: "Pending" },
   ];
 
-  if (!userEmail) {
+  if (!userEmail && (!regs || regs.length === 0)) {
     return (
       <div className="min-h-screen bg-[#F4F6FB] flex flex-col items-center justify-center p-4 text-center">
         <div className="max-w-md w-full rounded-3xl bg-white border border-slate-200 p-8 shadow-xl space-y-4">

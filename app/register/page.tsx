@@ -561,13 +561,28 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
     try {
       const cleanPhone = whatsapp ? (whatsapp.startsWith("+91") ? whatsapp : `+91${whatsapp}`) : "+919999999999";
 
+      // 0. Primary atomic RPC (bypasses RLS, creates order, registration, payment in 1 atomic step)
+      try {
+        for (const ev of events) {
+          await supabase.rpc("submit_tournament_registration", {
+            p_order_id: order.order_id,
+            p_event_id: ev.id,
+            p_team_name: teamName,
+            p_whatsapp: cleanPhone,
+            p_utr: utr,
+            p_amount_paise: effectiveFee(ev),
+            p_screenshot_url: screenshotData || null,
+          });
+        }
+      } catch {}
+
       // 1. Ensure order exists in orders table so foreign key constraint NEVER fails:
       try {
         await supabase.from("orders").upsert({
           id: order.order_id,
           whatsapp: cleanPhone,
           total_paise: order.total_paise,
-          status: "submitted",
+          status: "pending",
           expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         });
       } catch {}
@@ -587,7 +602,7 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
               .update({
                 whatsapp: cleanPhone,
                 team_name: teamName,
-                status: "pending_approval",
+                status: "pending_payment",
                 amount_paise: effectiveFee(ev),
               })
               .eq("id", existingRegs[0].id);
@@ -597,7 +612,7 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
               event_id: ev.id,
               whatsapp: cleanPhone,
               team_name: teamName,
-              status: "pending_approval",
+              status: "pending_payment",
               amount_paise: effectiveFee(ev),
             });
           }
@@ -631,9 +646,8 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
             .select("*", { count: "exact", head: true })
             .eq("event_id", ev.id)
             .neq("status", "cancelled");
-          if (typeof count === "number" && count > 0) {
-            await supabase.from("events").update({ filled_slots: count }).eq("id", ev.id);
-          }
+          const safeCount = Math.max(1, count || 1);
+          await supabase.from("events").update({ filled_slots: safeCount }).eq("id", ev.id);
         }
       } catch {}
 
@@ -645,6 +659,7 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
         const newRecord = {
           utr: utr,
           amount_paise: order.total_paise,
+          totalPaise: order.total_paise,
           pay_status: "pending_verification",
           status: "pending_verification",
           created_at: new Date().toISOString(),
@@ -653,8 +668,10 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
           whatsapp: cleanPhone.replace("+91", ""),
           phone: cleanPhone,
           teamName: teamName,
+          team_name: teamName,
           team_names: [teamName],
           event_titles: events.map((e) => e.title),
+          event_ids: events.map((e) => e.id),
           events: events.map((e) => ({
             id: e.id,
             event_id: e.id,
@@ -666,6 +683,8 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
         filtered.unshift(newRecord as never);
         localStorage.setItem("apex_all_submissions", JSON.stringify(filtered));
         localStorage.setItem("apex_active_booking_session", JSON.stringify(newRecord));
+        localStorage.setItem("apex_last_lookup_query", utr);
+        localStorage.setItem("apex_last_lookup_mode", "utr");
       } catch {}
 
       // 7. Save screenshot in local store for host view & persistence

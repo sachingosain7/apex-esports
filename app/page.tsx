@@ -434,7 +434,7 @@ function TeamRoster({
   regs: PublicReg[];
 }) {
   const [open, setOpen] = useState(false);
-  const eventRegs = regs.filter((r) => r.event_id === eventId);
+  const eventRegs = regs.filter((r) => r.event_id === eventId || r.event_id === "default");
 
   return (
     <div className="rounded-xl border border-slate-200/90 overflow-hidden bg-white">
@@ -471,14 +471,19 @@ function TeamRoster({
             eventRegs.map((r, i) => {
               // Savage Esports phone masking: Show first 6 digits, hide last 4 with XXXX
               let cleanPhone = r.masked_whatsapp || "";
-              const digits = cleanPhone.replace(/\D/g, "");
-              if (digits.length >= 10) {
-                const last10 = digits.slice(-10);
-                cleanPhone = `+91 ${last10.slice(0, 6)}XXXX`;
-              } else if (cleanPhone.includes("•")) {
-                cleanPhone = cleanPhone.replace(/•+/g, "XXXX");
-              } else if (!cleanPhone.includes("X")) {
-                cleanPhone = cleanPhone.slice(0, Math.max(3, cleanPhone.length - 4)) + "XXXX";
+              if (cleanPhone.includes("XXXX")) {
+                const parts = cleanPhone.split("XXXX")[0].replace(/\D/g, "");
+                cleanPhone = `+91 ${parts.slice(-6)}XXXX`;
+              } else {
+                const digits = cleanPhone.replace(/\D/g, "");
+                if (digits.length >= 10) {
+                  const last10 = digits.slice(-10);
+                  cleanPhone = `+91 ${last10.slice(0, 6)}XXXX`;
+                } else if (digits.length >= 6) {
+                  cleanPhone = `+91 ${digits.slice(0, 6)}XXXX`;
+                } else {
+                  cleanPhone = "+91 98••••XXXX";
+                }
               }
 
               const isPaid = r.status === "confirmed";
@@ -491,7 +496,7 @@ function TeamRoster({
                   {/* Left: Savage Esports stacked layout (Team Name on top, Number with XX underneath) */}
                   <div className="min-w-0 flex-1 space-y-0.5">
                     <p className="text-xs sm:text-sm font-extrabold text-slate-900 truncate">
-                      {r.team_name}
+                      {r.team_name || `Squad ${i + 1}`}
                     </p>
                     <p className="text-[11px] font-mono text-slate-500 font-semibold tracking-wide">
                       {cleanPhone}
@@ -552,7 +557,7 @@ function EventCard({
   regs: PublicReg[];
   clientNow: number;
 }) {
-  const eventRegs = regs.filter((r) => r.event_id === e.id);
+  const eventRegs = regs.filter((r) => r.event_id === e.id || r.event_id === "default");
   const activeRegs = eventRegs.filter(
     (r) => r.status !== "cancelled" && r.status !== "rejected"
   );
@@ -898,6 +903,7 @@ export default function Home() {
   const [clientNow, setClientNow] = useState<number>(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const checkoutRef = useRef<HTMLDivElement>(null);
+  const eventsRef = useRef<EventRow[] | null>(null);
 
   // ── Auth state & Client Time ──
   useEffect(() => {
@@ -923,6 +929,9 @@ export default function Home() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
+  // ── Forward declaration for loadRegs ──
+  const loadRegsRef = useRef<() => Promise<void>>(async () => {});
+
   // ── Load events ──
   const loadEvents = useCallback(async () => {
     try {
@@ -940,7 +949,9 @@ export default function Home() {
       const published = ((data as EventRow[]) || []).filter(
         (e) => e.is_published !== false && (e.status === "open" || e.status === "live")
       );
+      eventsRef.current = published;
       setEvents(published);
+      loadRegsRef.current();
     }
   }, []);
 
@@ -995,27 +1006,36 @@ export default function Home() {
           try { allLocal.push(JSON.parse(activeRaw)); } catch {}
         }
 
+        const currentEvs = eventsRef.current || [];
+
         for (const sub of allLocal) {
           const squadName =
             (sub.teamName as string) ||
+            (sub.team_name as string) ||
             (Array.isArray(sub.team_names) ? (sub.team_names as string[])[0] : null) ||
             "Registered Team";
 
-          const rawEvents: Array<{ id?: string; event_id?: string; title?: string }> =
-            Array.isArray(sub.events) && (sub.events as Array<{ id?: string }>).length > 0
-              ? (sub.events as Array<{ id?: string; title?: string }>)
-              : Array.isArray(sub.event_titles) && (sub.event_titles as string[]).length > 0
-              ? (sub.event_titles as string[]).map((t) => ({ title: t }))
-              : [{ title: "Apex Scrims Lobby" }];
+          let rawEvents: Array<{ id?: string; event_id?: string; title?: string }> = [];
+          if (Array.isArray(sub.events) && (sub.events as Array<{ id?: string }>).length > 0) {
+            rawEvents = sub.events as Array<{ id?: string; title?: string }>;
+          } else if (Array.isArray(sub.event_ids) && (sub.event_ids as string[]).length > 0) {
+            rawEvents = (sub.event_ids as string[]).map((id) => ({ id, event_id: id }));
+          } else if (Array.isArray(sub.event_titles) && (sub.event_titles as string[]).length > 0) {
+            rawEvents = (sub.event_titles as string[]).map((t) => ({ title: t }));
+          } else {
+            rawEvents = [{ title: "Apex Scrims Lobby" }];
+          }
 
           for (const ev of rawEvents) {
             let evId = ev.id || ev.event_id;
-            if (!evId && ev.title && events) {
-              const matchedEv = events.find((e) => e.title.toLowerCase().trim() === ev.title?.toLowerCase().trim());
+            if (!evId && ev.title) {
+              const matchedEv = currentEvs.find(
+                (e) => e.title.toLowerCase().trim() === ev.title?.toLowerCase().trim()
+              );
               if (matchedEv) evId = matchedEv.id;
             }
-            if (!evId && events && events.length > 0) {
-              evId = events[0].id;
+            if (!evId && currentEvs.length > 0) {
+              evId = currentEvs[0].id;
             }
             if (!evId) continue;
 
@@ -1043,9 +1063,20 @@ export default function Home() {
     setRegs(combined);
   }, []);
 
+  loadRegsRef.current = loadRegs;
+
   useEffect(() => {
     loadEvents();
     loadRegs();
+
+    // Instant cross-tab sync when user registers or host updates in another tab
+    const handleStorageOrFocus = () => {
+      loadEvents();
+      loadRegs();
+    };
+    window.addEventListener("storage", handleStorageOrFocus);
+    window.addEventListener("focus", handleStorageOrFocus);
+
     const ch = supabase
       .channel("apex-realtime-public-board")
       .on("postgres_changes", { event: "*", schema: "public", table: "events" }, () => {
@@ -1057,7 +1088,10 @@ export default function Home() {
         loadRegs();
       })
       .subscribe();
+
     return () => {
+      window.removeEventListener("storage", handleStorageOrFocus);
+      window.removeEventListener("focus", handleStorageOrFocus);
       supabase.removeChannel(ch);
     };
   }, [loadEvents, loadRegs]);
