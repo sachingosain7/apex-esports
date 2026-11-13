@@ -94,6 +94,13 @@ BEGIN
 END $$;
 
 -- 2. ENSURE ALL SUPPORTING COLUMNS EXIST
+ALTER TABLE admin_roles ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
+ALTER TABLE admin_roles ADD COLUMN IF NOT EXISTS role text DEFAULT 'admin';
+ALTER TABLE registrations ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
+ALTER TABLE events ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
+
 ALTER TABLE events ADD COLUMN IF NOT EXISTS is_published boolean NOT NULL DEFAULT true;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS prize_distribution jsonb DEFAULT '{"first": 350, "second": 150, "third": 70, "fourth": 30}'::jsonb;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS top_teams jsonb DEFAULT '{"first": "", "second": "", "third": "", "fourth": ""}'::jsonb;
@@ -342,6 +349,8 @@ $$;
 
 GRANT EXECUTE ON FUNCTION admin_transfer_ownership(text) TO authenticated, anon;
 
+ALTER TABLE admin_roles ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
+
 DROP FUNCTION IF EXISTS public.admin_list_roles();
 CREATE OR REPLACE FUNCTION admin_list_roles()
 RETURNS TABLE (email text, role text, granted_at timestamptz)
@@ -355,7 +364,7 @@ AS $$
     COALESCE(ar.created_at, now()) AS granted_at
   FROM admin_roles ar
   LEFT JOIN auth.users u ON u.id = ar.user_id
-  ORDER BY ar.created_at DESC;
+  ORDER BY 3 DESC;
 $$;
 
 GRANT EXECUTE ON FUNCTION admin_list_roles() TO authenticated, anon;
