@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { resolveGeminiKey } from "@/lib/gemini";
+import { resolveGeminiKey, executeGeminiGenerateContent } from "@/lib/gemini";
 
 interface TeamResult {
   rank: number;
@@ -76,50 +76,30 @@ Return ONLY a valid JSON array of objects with no markdown code fences, matching
       },
     };
 
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-    };
+    const result = await executeGeminiGenerateContent(apiKey, geminiPayload);
 
-    let geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify(geminiPayload),
-      }
-    );
-
-    // Fallback to gemini-2.0-flash if 1.5-flash model not found (404)
-    if (geminiRes.status === 404) {
-      geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify(geminiPayload),
-        }
-      );
-    }
-
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
+    if (!result.ok) {
       let hint = "";
-      if (geminiRes.status === 401 || errText.includes("API_KEY_SERVICE_BLOCKED") || errText.includes("UNAUTHENTICATED")) {
-        hint = " Google rejected this key (401). In Google AI Studio (aistudio.google.com/app/apikey), click 'Create API key in new project' (instead of an imported project) to get a pre-enabled AIzaSy... key.";
+      if (
+        result.status === 401 ||
+        result.text.includes("API_KEY_SERVICE_BLOCKED") ||
+        result.text.includes("UNAUTHENTICATED")
+      ) {
+        hint =
+          " Google rejected this key (401). In Google AI Studio (aistudio.google.com/app/apikey), click 'Create API key in new project' (instead of an imported project) to get a pre-enabled AIzaSy... key.";
       }
       return NextResponse.json(
         {
           success: false,
-          message: `Gemini API Error (${geminiRes.status}): ${errText.slice(0, 120)}.${hint}`,
+          message: `Gemini API Error (${result.status}): ${result.text.slice(0, 140)}.${hint}`,
         },
         { status: 200 }
       );
     }
 
-    const geminiData = await geminiRes.json();
+    const geminiData = result.data;
     const candidateText =
-      geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+      geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || result.text || "[]";
 
     // Clean any accidental markdown fences
     const cleanedText = candidateText.replace(/```json/gi, "").replace(/```/g, "").trim();
