@@ -510,6 +510,22 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
   const [copied, setCopied] = useState(false);
   const [screenshotData, setScreenshotData] = useState<string | null>(null);
 
+  // Restore saved UTR draft across browser reloads
+  useEffect(() => {
+    try {
+      const savedUtr = localStorage.getItem(`apex_draft_utr_${order.order_id}`);
+      if (savedUtr) setUtr(savedUtr);
+    } catch {}
+  }, [order.order_id]);
+
+  const handleUtrChange = (val: string) => {
+    const digits = val.replace(/\D/g, "").slice(0, 12);
+    setUtr(digits);
+    try {
+      localStorage.setItem(`apex_draft_utr_${order.order_id}`, digits);
+    } catch {}
+  };
+
   const secondsLeft = useCountdown(order.expires_at);
   const expired = secondsLeft === 0;
   const upiUri = buildUpiUri(order.total_paise);
@@ -556,70 +572,115 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
         });
       } catch {}
 
-      // 2. Ensure registrations exist in registrations table:
+      // 2. Ensure registrations exist in registrations table (resilient insert/update):
       try {
         for (const ev of events) {
-          await supabase.from("registrations").upsert({
-            order_id: order.order_id,
-            event_id: ev.id,
-            whatsapp: cleanPhone,
-            team_name: teamName,
-            status: "pending_approval",
-            amount_paise: effectiveFee(ev),
-          });
+          const { data: existingRegs } = await supabase
+            .from("registrations")
+            .select("id")
+            .eq("order_id", order.order_id)
+            .eq("event_id", ev.id);
+
+          if (existingRegs && existingRegs.length > 0) {
+            await supabase
+              .from("registrations")
+              .update({
+                whatsapp: cleanPhone,
+                team_name: teamName,
+                status: "pending_approval",
+                amount_paise: effectiveFee(ev),
+              })
+              .eq("id", existingRegs[0].id);
+          } else {
+            await supabase.from("registrations").insert({
+              order_id: order.order_id,
+              event_id: ev.id,
+              whatsapp: cleanPhone,
+              team_name: teamName,
+              status: "pending_approval",
+              amount_paise: effectiveFee(ev),
+            });
+          }
         }
       } catch {}
 
       // 3. Insert or upsert payments row:
-      let submitted = false;
       try {
-        const { error: payErr } = await supabase.from("payments").upsert({
+        await supabase.from("payments").upsert({
           order_id: order.order_id,
           utr: utr,
           amount_paise: order.total_paise,
           status: "pending_verification",
           screenshot_url: screenshotData || null,
         }, { onConflict: "utr" });
-
-        if (!payErr) submitted = true;
       } catch {}
 
       // 4. Try submit_order_utr RPC as well
       try {
-        const { data, error: rpcError } = await supabase.rpc("submit_order_utr", {
+        await supabase.rpc("submit_order_utr", {
           p_order_id: order.order_id,
           p_utr: utr,
         });
-        if (!rpcError && data?.success) submitted = true;
       } catch {}
 
-      // 5. Store in global shared submissions store (instantly visible in Admin Dashboard)
+      // 5. Update events.filled_slots directly so homepage slot count reflects immediately
+      try {
+        for (const ev of events) {
+          const { count } = await supabase
+            .from("registrations")
+            .select("*", { count: "exact", head: true })
+            .eq("event_id", ev.id)
+            .neq("status", "cancelled");
+          if (typeof count === "number" && count > 0) {
+            await supabase.from("events").update({ filled_slots: count }).eq("id", ev.id);
+          }
+        }
+      } catch {}
+
+      // 6. Store in global shared submissions store (instantly visible in Admin Dashboard & My Tournaments)
       try {
         const existingStr = localStorage.getItem("apex_all_submissions");
         const existing: Array<{ utr: string }> = existingStr ? JSON.parse(existingStr) : [];
         const filtered = existing.filter((item) => item.utr !== utr);
-        filtered.unshift({
+        const newRecord = {
           utr: utr,
           amount_paise: order.total_paise,
           pay_status: "pending_verification",
+          status: "pending_verification",
           created_at: new Date().toISOString(),
+          submittedAt: new Date().toISOString(),
           order_id: order.order_id,
           whatsapp: cleanPhone.replace("+91", ""),
+          phone: cleanPhone,
+          teamName: teamName,
           team_names: [teamName],
           event_titles: events.map((e) => e.title),
+          events: events.map((e) => ({
+            id: e.id,
+            event_id: e.id,
+            title: e.title,
+            starts_at: e.starts_at,
+          })),
           screenshot_url: screenshotData || null,
-        } as never);
+        };
+        filtered.unshift(newRecord as never);
         localStorage.setItem("apex_all_submissions", JSON.stringify(filtered));
+        localStorage.setItem("apex_active_booking_session", JSON.stringify(newRecord));
       } catch {}
 
-      // 6. Save screenshot in local store for host view & persistence
+      // 7. Save screenshot in local store for host view & persistence
       if (screenshotData) {
         try {
           localStorage.setItem(`apex_payment_ss_${utr}`, screenshotData);
         } catch {}
       }
 
-      // 7. Broadcast storage event so open Admin windows receive instant real-time notification
+      // 8. Clean up UTR draft
+      try {
+        localStorage.removeItem(`apex_draft_utr_${order.order_id}`);
+      } catch {}
+
+      // 9. Broadcast storage event so open Admin windows receive instant real-time notification
       try {
         window.dispatchEvent(new Event("storage"));
       } catch {}
@@ -767,7 +828,7 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
           inputMode="numeric"
           maxLength={12}
           value={utr}
-          onChange={(e) => setUtr(e.target.value.replace(/\D/g, "").slice(0, 12))}
+          onChange={(e) => handleUtrChange(e.target.value)}
           onBlur={() => setUtrTouched(true)}
           placeholder="e.g. 542198012345"
           className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 font-mono text-sm font-bold text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-colors"

@@ -123,7 +123,13 @@ export function PointsTableTab({ showToast }: PointsTableTabProps) {
       if (!error && data) {
         setEvents(data);
         if (data.length > 0) {
-          setSelectedEventId(data[0].id);
+          try {
+            const savedEventId = localStorage.getItem("apex_points_selected_event_id");
+            const match = data.find((e) => e.id === savedEventId);
+            setSelectedEventId(match ? match.id : data[0].id);
+          } catch {
+            setSelectedEventId(data[0].id);
+          }
         }
       }
       setLoadingEvents(false);
@@ -863,7 +869,12 @@ export function PointsTableTab({ showToast }: PointsTableTabProps) {
           </label>
           <select
             value={selectedEventId}
-            onChange={(e) => setSelectedEventId(e.target.value)}
+            onChange={(e) => {
+              setSelectedEventId(e.target.value);
+              try {
+                localStorage.setItem("apex_points_selected_event_id", e.target.value);
+              } catch {}
+            }}
             disabled={loadingEvents}
             className="flex-1 min-w-[240px] rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-900 outline-none focus:border-blue-600 focus:bg-white"
           >

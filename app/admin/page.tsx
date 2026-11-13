@@ -2719,15 +2719,21 @@ function LiveLobbiesTab({
           startsLocal = "";
         }
 
+        let cachedDraft: Partial<EventDraft> | null = null;
+        try {
+          const raw = localStorage.getItem(`apex_admin_idp_draft_${e.id}`);
+          if (raw) cachedDraft = JSON.parse(raw);
+        } catch {}
+
         newDrafts[e.id] = {
           title: e.title || "",
           kind: e.kind || "scrim",
           mode: e.mode || "Squad",
           maps: e.maps || ["Erangel"],
           starts_at: startsLocal,
-          room_id: e.room_id || "",
-          room_password: e.room_password || "",
-          whatsapp_group_link: e.whatsapp_group_link || "",
+          room_id: cachedDraft?.room_id !== undefined ? cachedDraft.room_id : (e.room_id || ""),
+          room_password: cachedDraft?.room_password !== undefined ? cachedDraft.room_password : (e.room_password || ""),
+          whatsapp_group_link: cachedDraft?.whatsapp_group_link !== undefined ? cachedDraft.whatsapp_group_link : (e.whatsapp_group_link || ""),
           status: e.status,
           max_slots: String(e.max_slots),
           idp_times: e.idp_times || "",
@@ -2768,7 +2774,13 @@ function LiveLobbiesTab({
   }, [loadEvents]);
 
   const updateDraft = <K extends keyof EventDraft>(id: string, field: K, value: EventDraft[K]) => {
-    setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], [field]: value } }));
+    setDrafts((prev) => {
+      const updated = { ...prev, [id]: { ...prev[id], [field]: value } };
+      try {
+        localStorage.setItem(`apex_admin_idp_draft_${id}`, JSON.stringify(updated[id]));
+      } catch {}
+      return updated;
+    });
   };
 
   const handleStatusChange = (id: string, newStatus: string) => {
@@ -2982,6 +2994,9 @@ function LiveLobbiesTab({
         });
         if (rpcErr) throw rpcErr;
       }
+      try {
+        localStorage.removeItem(`apex_admin_idp_draft_${id}`);
+      } catch {}
       showToast("Lobby details & credentials saved successfully!", "success");
       await loadEvents();
     } catch (err: unknown) {
@@ -4341,7 +4356,7 @@ function RoleManagerTab({ showToast }: { showToast: (m: string, t: "success" | "
         p_role: "admin",
         p_action: "grant",
       });
-      if (error && (error.message.includes("invalid_role") || error.message.includes("enum"))) {
+      if (error && (error.message.includes("invalid_role") || error.message.includes("enum") || error.message.includes("admin_role_t") || error.message.includes("type"))) {
         // Fallback to moderator which grants full admin powers
         const fallback = await supabase.rpc("admin_manage_role", {
           p_email: email,
@@ -4350,7 +4365,12 @@ function RoleManagerTab({ showToast }: { showToast: (m: string, t: "success" | "
         });
         error = fallback.error;
       }
-      if (error) throw error;
+      if (error) {
+        if (error.message.includes("admin_role_t") || error.message.includes("is of type") || error.message.includes("expression is of type text")) {
+          throw new Error("Database role update required: Please run supabase_fix_all.sql in your Supabase SQL Editor to enable Admin role creation.");
+        }
+        throw error;
+      }
       showToast(`Promoted ${email} to Admin! Full dashboard access granted.`, "success");
       setAdminEmail("");
       await loadRoles();
@@ -4384,11 +4404,19 @@ function RoleManagerTab({ showToast }: { showToast: (m: string, t: "success" | "
 
   const handleRevoke = async (r: RoleRow) => {
     try {
-      const { error } = await supabase.rpc("admin_manage_role", {
+      let { error } = await supabase.rpc("admin_manage_role", {
         p_email: r.email,
         p_role: r.role,
         p_action: "revoke",
       });
+      if (error && (error.message.includes("invalid_role") || error.message.includes("enum") || error.message.includes("admin_role_t") || error.message.includes("type"))) {
+        const fallback = await supabase.rpc("admin_manage_role", {
+          p_email: r.email,
+          p_role: "moderator",
+          p_action: "revoke",
+        });
+        error = fallback.error;
+      }
       if (error) throw error;
       showToast(`Revoked Admin privileges from ${r.email}`, "success");
       setConfirmRevoke(null);

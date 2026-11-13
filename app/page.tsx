@@ -982,41 +982,58 @@ export default function Home() {
       } catch {}
     }
 
-    // 3. Hydrate from localStorage submissions (apex_all_submissions)
+    // 3. Hydrate from localStorage submissions (apex_all_submissions + active session)
     try {
       if (typeof window !== "undefined") {
         const localRaw = localStorage.getItem("apex_all_submissions");
+        const activeRaw = localStorage.getItem("apex_active_booking_session");
+        const allLocal: Array<Record<string, unknown>> = [];
         if (localRaw) {
-          interface SubRecord {
-            events?: Array<{ id?: string; event_id?: string }>;
-            teamName?: string;
-            whatsapp?: string;
-            status?: string;
-            submittedAt?: string;
-          }
-          const list: SubRecord[] = JSON.parse(localRaw);
-          if (Array.isArray(list)) {
-            for (const sub of list) {
-              if (Array.isArray(sub.events)) {
-                for (const ev of sub.events) {
-                  const evId = ev.id || ev.event_id;
-                  if (!evId) continue;
-                  const alreadyPresent = combined.some(
-                    (c) => c.event_id === evId && c.team_name?.trim().toLowerCase() === sub.teamName?.trim().toLowerCase()
-                  );
-                  if (!alreadyPresent) {
-                    combined.push({
-                      event_id: evId,
-                      team_name: sub.teamName || "Registered Team",
-                      masked_whatsapp: sub.whatsapp && sub.whatsapp.length >= 6
-                        ? sub.whatsapp.slice(0, 3) + "••••" + sub.whatsapp.slice(-3)
-                        : "••••••",
-                      status: sub.status || "pending_approval",
-                      created_at: sub.submittedAt || new Date().toISOString(),
-                    });
-                  }
-                }
-              }
+          try { allLocal.push(...JSON.parse(localRaw)); } catch {}
+        }
+        if (activeRaw) {
+          try { allLocal.push(JSON.parse(activeRaw)); } catch {}
+        }
+
+        for (const sub of allLocal) {
+          const squadName =
+            (sub.teamName as string) ||
+            (Array.isArray(sub.team_names) ? (sub.team_names as string[])[0] : null) ||
+            "Registered Team";
+
+          const rawEvents: Array<{ id?: string; event_id?: string; title?: string }> =
+            Array.isArray(sub.events) && (sub.events as Array<{ id?: string }>).length > 0
+              ? (sub.events as Array<{ id?: string; title?: string }>)
+              : Array.isArray(sub.event_titles) && (sub.event_titles as string[]).length > 0
+              ? (sub.event_titles as string[]).map((t) => ({ title: t }))
+              : [{ title: "Apex Scrims Lobby" }];
+
+          for (const ev of rawEvents) {
+            let evId = ev.id || ev.event_id;
+            if (!evId && ev.title && events) {
+              const matchedEv = events.find((e) => e.title.toLowerCase().trim() === ev.title?.toLowerCase().trim());
+              if (matchedEv) evId = matchedEv.id;
+            }
+            if (!evId && events && events.length > 0) {
+              evId = events[0].id;
+            }
+            if (!evId) continue;
+
+            const alreadyPresent = combined.some(
+              (c) => c.event_id === evId && c.team_name?.trim().toLowerCase() === squadName.trim().toLowerCase()
+            );
+            if (!alreadyPresent) {
+              const rawWa = ((sub.whatsapp || sub.phone || "") as string).replace(/\D/g, "");
+              const isApproved = sub.pay_status === "approved" || sub.status === "confirmed";
+              combined.push({
+                event_id: evId,
+                team_name: squadName,
+                masked_whatsapp: rawWa.length >= 6
+                  ? rawWa.slice(0, 3) + "••••" + rawWa.slice(-3)
+                  : "••••••",
+                status: isApproved ? "confirmed" : "pending_approval",
+                created_at: (sub.submittedAt as string) || (sub.created_at as string) || new Date().toISOString(),
+              });
             }
           }
         }

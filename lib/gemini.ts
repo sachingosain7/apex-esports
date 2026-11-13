@@ -64,10 +64,13 @@ export async function executeGeminiGenerateContent(
   const priorityList = [
     ...activeModels.filter((m) => m.includes("flash") && !m.includes("2.0")),
     ...activeModels,
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
     "gemini-2.5-flash",
     "gemini-1.5-flash-latest",
     "gemini-2.5-pro",
     "gemini-1.5-pro-latest",
+    "gemini-2.0-flash-exp",
   ].filter((m) => m && !m.includes("2.0-flash"));
 
   // Deduplicate while preserving order

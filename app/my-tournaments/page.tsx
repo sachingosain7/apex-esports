@@ -325,17 +325,31 @@ export default function MyTournamentsPage() {
           }
 
           const matchedSub = allSubs.find((s) => {
-            if (utr && s.utr === utr) return true;
+            if (utr && (s.utr === utr || s.utr?.trim() === utr.trim())) return true;
             if (whatsapp) {
               const last10 = whatsapp.replace(/\D/g, "").slice(-10);
-              const sPhone = (s.whatsapp || "").replace(/\D/g, "").slice(-10);
+              const sPhone = ((s.whatsapp || (s as Record<string, unknown>).phone || "") as string).replace(/\D/g, "").slice(-10);
               return sPhone === last10 && last10.length === 10;
             }
             return false;
           });
 
-          if (matchedSub && Array.isArray(matchedSub.events)) {
-            const eventIds = matchedSub.events.map((e) => e.id || e.event_id).filter(Boolean) as string[];
+          if (matchedSub) {
+            const rawEvents: Array<{ id?: string; event_id?: string; title?: string }> =
+              Array.isArray(matchedSub.events) && matchedSub.events.length > 0
+                ? matchedSub.events
+                : Array.isArray((matchedSub as Record<string, unknown>).event_titles) && ((matchedSub as Record<string, unknown>).event_titles as string[]).length > 0
+                ? ((matchedSub as Record<string, unknown>).event_titles as string[]).map((t: string) => ({ title: t }))
+                : [{ title: "Apex Scrims Lobby" }];
+
+            const squadName =
+              matchedSub.teamName ||
+              (Array.isArray((matchedSub as Record<string, unknown>).team_names)
+                ? ((matchedSub as Record<string, unknown>).team_names as string[])[0]
+                : null) ||
+              "Registered Squad";
+
+            const eventIds = rawEvents.map((e) => e.id || e.event_id).filter(Boolean) as string[];
             let evMap = new Map();
             if (eventIds.length > 0) {
               try {
@@ -344,9 +358,12 @@ export default function MyTournamentsPage() {
               } catch {}
             }
 
-            rows = matchedSub.events.map((ev, i) => {
+            rows = rawEvents.map((ev, i) => {
               const liveEv = evMap.get(ev.id || ev.event_id);
-              const isApproved = matchedSub.status === "approved" || matchedSub.status === "confirmed";
+              const isApproved =
+                matchedSub.status === "approved" ||
+                matchedSub.status === "confirmed" ||
+                (matchedSub as Record<string, unknown>).pay_status === "approved";
 
               let isSlotListPub = false;
               let assignedSlot = 5 + i;
@@ -356,7 +373,7 @@ export default function MyTournamentsPage() {
                 if (cachedSettings) {
                   const parsed = JSON.parse(cachedSettings);
                   if (parsed.isPublished) isSlotListPub = true;
-                  const custom = parsed.slotMap?.[matchedSub.teamName || ""] ?? parsed.slotMap?.[`local-${i}`];
+                  const custom = parsed.slotMap?.[squadName] ?? parsed.slotMap?.[`local-${i}`];
                   if (custom !== undefined) {
                     assignedSlot = custom;
                   } else if (parsed.slotStart) {
@@ -375,7 +392,7 @@ export default function MyTournamentsPage() {
                 room_id: isApproved ? liveEv?.room_id || null : null,
                 room_password: isApproved ? liveEv?.room_password || null : null,
                 whatsapp_group_link: isApproved ? liveEv?.whatsapp_group_link || null : null,
-                team_name: matchedSub.teamName || "Registered Squad",
+                team_name: squadName,
                 slot_number: assignedSlot,
                 status: isApproved ? "confirmed" : "pending_verification",
                 amount_paise: matchedSub.totalPaise || 3000,
