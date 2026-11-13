@@ -3,6 +3,7 @@ import { resolveGeminiKey, executeGeminiGenerateContent } from "@/lib/gemini";
 
 interface TeamResult {
   rank: number;
+  slotNumber?: number;
   teamName: string;
   kills: number;
 }
@@ -10,7 +11,7 @@ interface TeamResult {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { imageBase64, matchNumber } = body;
+    const { imageBase64, matchNumber, registeredSquads } = body;
 
     if (!imageBase64 || typeof imageBase64 !== "string") {
       return NextResponse.json(
@@ -45,15 +46,34 @@ export async function POST(req: NextRequest) {
       rawData = dataUrlMatch[2];
     }
 
-    // 3. Prompt Gemini 1.5 Flash Vision
-    const prompt = `You are an expert esports tournament referee for BGMI (Battlegrounds Mobile India) and PUBG Mobile scrims.
+    // 3. Roster-Aware Prompt (Slots 5 to 25)
+    let rosterContext = "";
+    if (Array.isArray(registeredSquads) && registeredSquads.length > 0) {
+      rosterContext = `
+OFFICIAL TOURNAMENT REGISTERED SQUADS (Slots 5 to 25):
+${registeredSquads
+  .map(
+    (s: { slotNumber?: number; teamName?: string }, idx: number) =>
+      `- Slot ${s.slotNumber || idx + 5}: "${s.teamName || "Squad"}"`
+  )
+  .join("\n")}
+
+CRITICAL SQUAD-TO-SLOT MATCHING INSTRUCTIONS:
+- Players in BGMI/PUBG screenshots frequently use clan prefixes, decorative symbols (e.g. 〆, 々, •, ˣ, 亗, 亗, 𝕏), or individual player IGNs instead of the full registered team name.
+- Cross-reference and MATCH each team in the screenshot with the closest official registered squad above.
+- Extract their survival placement rank (1 to 20), their exact Slot Number (between Slots 5 and 25), and total team kill finishes count.
+- If a team is not in the registered list, extract the clean readable clan/team name from the screenshot.
+`;
+    }
+
+    const prompt = `You are an expert esports tournament referee and automated vision parsing engine for BGMI (Battlegrounds Mobile India) and PUBG Mobile competitive scrims.
 Analyze this in-game match results / scoreboard screenshot for Match ${matchNumber || 1}.
-Extract each squad, their survival rank (1 to 20), and their kill finishes count.
-Clean up stylized font symbols (e.g. 〆, 々) to keep standard readable team/player names.
+Extract each squad, their survival rank (1 to 20), their assigned slotNumber (Slots 5 to 25), and their total kill finishes count.
+${rosterContext}
 Return ONLY a valid JSON array of objects with no markdown code fences, matching this structure:
 [
-  { "rank": 1, "teamName": "Team Soul", "kills": 8 },
-  { "rank": 2, "teamName": "GodLike", "kills": 5 }
+  { "rank": 1, "slotNumber": 5, "teamName": "Team Soul", "kills": 8 },
+  { "rank": 2, "slotNumber": 6, "teamName": "GodLike", "kills": 5 }
 ]`;
 
     const geminiPayload = {
@@ -128,10 +148,11 @@ Return ONLY a valid JSON array of objects with no markdown code fences, matching
       );
     }
 
-    // Sanitize results
-    const sanitized = teams.map((t, idx) => ({
+    // Sanitize results with Slot number assignment (Slots 5 to 25)
+    const sanitized: TeamResult[] = teams.map((t, idx) => ({
       rank: Number(t.rank) || idx + 1,
-      teamName: String(t.teamName || `Team ${idx + 1}`).trim(),
+      slotNumber: Number(t.slotNumber) || idx + 5,
+      teamName: String(t.teamName || `Squad ${idx + 1}`).trim(),
       kills: Math.max(0, Number(t.kills) || 0),
     }));
 

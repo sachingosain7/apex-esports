@@ -391,15 +391,40 @@ export default function MyTournamentsPage() {
         (a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()
       );
       setResults(rows);
+
+      // Persist last lookup query across browser reloads
+      try {
+        const queryToSave = utr || (whatsapp ? whatsapp.replace(/^91/, "") : "");
+        if (queryToSave) {
+          localStorage.setItem("apex_last_lookup_query", queryToSave);
+          localStorage.setItem("apex_last_lookup_mode", utr ? "utr" : "whatsapp");
+        }
+      } catch {}
     },
     []
   );
 
-  // Check URL query parameter (e.g. ?q=... or ?utr=...)
+  // Check URL query parameter (e.g. ?q=... or ?utr=...) or cached search from previous session
   useEffect(() => {
     if (typeof window !== "undefined") {
       const urlParams = new URLSearchParams(window.location.search);
-      const q = urlParams.get("q") || urlParams.get("utr");
+      let q = urlParams.get("q") || urlParams.get("utr");
+      let savedMode: SearchMode = "utr";
+
+      // If no URL parameter, restore from localStorage so page reload preserves the booking card
+      if (!q) {
+        try {
+          const cachedQ = localStorage.getItem("apex_last_lookup_query");
+          const cachedMode = localStorage.getItem("apex_last_lookup_mode") as SearchMode | null;
+          if (cachedQ) {
+            q = cachedQ;
+            if (cachedMode === "whatsapp" || cachedMode === "utr") {
+              savedMode = cachedMode;
+            }
+          }
+        } catch {}
+      }
+
       if (q) {
         const cleaned = q.replace(/\D/g, "");
         if (cleaned.length === 12) {
@@ -410,6 +435,10 @@ export default function MyTournamentsPage() {
           setMode("whatsapp");
           setWaInput(cleaned);
           performLookup(null, "91" + cleaned);
+        } else if (savedMode === "utr") {
+          setMode("utr");
+          setUtrInput(cleaned);
+          if (cleaned.length >= 6) performLookup(cleaned, null);
         }
       }
     }

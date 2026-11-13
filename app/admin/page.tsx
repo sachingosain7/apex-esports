@@ -808,6 +808,73 @@ function BulkGeneratorTab({ showToast }: { showToast: (m: string, t: "success" |
     }
   }, []);
 
+  // Restore form draft across browser reloads so data is never lost on refresh
+  useEffect(() => {
+    try {
+      const draftStr = localStorage.getItem("apex_admin_generator_form_draft");
+      if (draftStr) {
+        const d = JSON.parse(draftStr);
+        if (d.manualTitles !== undefined) setManualTitles(d.manualTitles);
+        if (d.entryFee !== undefined) setEntryFee(d.entryFee);
+        if (d.prizePool !== undefined) setPrizePool(d.prizePool);
+        if (d.prizeFirst !== undefined) setPrizeFirst(d.prizeFirst);
+        if (d.prizeSecond !== undefined) setPrizeSecond(d.prizeSecond);
+        if (d.prizeThird !== undefined) setPrizeThird(d.prizeThird);
+        if (d.prizeFourth !== undefined) setPrizeFourth(d.prizeFourth);
+        if (d.maxSlots !== undefined) setMaxSlots(d.maxSlots);
+        if (d.idpTimes !== undefined) setIdpTimes(d.idpTimes);
+        if (d.startTimes !== undefined) setStartTimes(d.startTimes);
+        if (d.firstTime !== undefined) setFirstTime(d.firstTime);
+        if (d.intervalVal !== undefined) setIntervalVal(d.intervalVal);
+        if (d.prefix !== undefined) setPrefix(d.prefix);
+        if (d.count !== undefined) setCount(d.count);
+        if (d.useManual !== undefined) setUseManual(d.useManual);
+      }
+    } catch {}
+  }, []);
+
+  // Auto-save typed values to localStorage on change
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "apex_admin_generator_form_draft",
+        JSON.stringify({
+          manualTitles,
+          entryFee,
+          prizePool,
+          prizeFirst,
+          prizeSecond,
+          prizeThird,
+          prizeFourth,
+          maxSlots,
+          idpTimes,
+          startTimes,
+          firstTime,
+          intervalVal,
+          prefix,
+          count,
+          useManual,
+        })
+      );
+    } catch {}
+  }, [
+    manualTitles,
+    entryFee,
+    prizePool,
+    prizeFirst,
+    prizeSecond,
+    prizeThird,
+    prizeFourth,
+    maxSlots,
+    idpTimes,
+    startTimes,
+    firstTime,
+    intervalVal,
+    prefix,
+    count,
+    useManual,
+  ]);
+
   const effectiveInterval = intervalVal === -1 ? customInterval : intervalVal;
 
   const previewLobbies = (() => {

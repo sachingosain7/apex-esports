@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ORG_NAME, ORG_TAGLINE } from "@/lib/config";
+import { AISupportBot } from "@/components/AISupportBot";
 
 export const viewport: Viewport = {
   themeColor: "#0A1128",
@@ -74,6 +75,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex flex-col bg-[#0A1128] text-slate-100 w-full max-w-full overflow-x-hidden">
         {children}
+        <AISupportBot />
       </body>
     </html>
   );
