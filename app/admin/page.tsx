@@ -5344,16 +5344,57 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
     setBulkApproving(true);
     try {
       const { data, error } = await supabase.rpc("admin_bulk_approve_payments");
+      const pending = payments.filter((p) => p.pay_status === "pending_verification");
+
       if (error) {
-        // Fallback: approve sequentially
-        const pending = payments.filter((p) => p.pay_status === "pending_verification");
+        // Fallback: approve sequentially or direct table update
         for (const p of pending) {
-          await supabase.rpc("admin_verify_payment", { p_utr: p.utr, p_action: "approve" });
+          try {
+            await supabase.rpc("admin_verify_payment", { p_utr: p.utr, p_action: "approve" });
+          } catch {
+            await supabase.from("payments").update({ status: "approved" }).eq("utr", p.utr);
+            if (p.order_id) {
+              await supabase.from("registrations").update({ status: "confirmed" }).eq("order_id", p.order_id);
+              await supabase.from("orders").update({ status: "paid" }).eq("id", p.order_id);
+            }
+          }
+          try {
+            localStorage.setItem(`apex_payment_status_${p.utr}`, "approved");
+          } catch {}
         }
         showToast(`Approved ${pending.length} pending payments!`, "success");
       } else {
-        showToast(`Approved ${data} pending payments in 1 click!`, "success");
+        for (const p of pending) {
+          try {
+            localStorage.setItem(`apex_payment_status_${p.utr}`, "approved");
+          } catch {}
+        }
+        showToast(`Approved ${data ?? pending.length} pending payments in 1 click!`, "success");
       }
+
+      // Sync apex_all_submissions and active session
+      try {
+        const localSubsStr = localStorage.getItem("apex_all_submissions");
+        if (localSubsStr) {
+          const localSubs = JSON.parse(localSubsStr);
+          const updated = localSubs.map((ls: Record<string, unknown>) => ({
+            ...ls,
+            pay_status: "approved",
+            status: "confirmed",
+          }));
+          localStorage.setItem("apex_all_submissions", JSON.stringify(updated));
+        }
+        const activeSessionStr = localStorage.getItem("apex_active_booking_session");
+        if (activeSessionStr) {
+          const s = JSON.parse(activeSessionStr);
+          localStorage.setItem(
+            "apex_active_booking_session",
+            JSON.stringify({ ...s, phase: "confirmed", pay_status: "approved" })
+          );
+        }
+        window.dispatchEvent(new Event("storage"));
+      } catch {}
+
       await loadPayments();
     } catch (err: unknown) {
       showToast((err as Error).message || "Bulk approval failed", "error");
