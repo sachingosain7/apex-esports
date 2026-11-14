@@ -1980,6 +1980,12 @@ function RegisterContent() {
   }, []);
 
   const handleBack = useCallback(() => {
+    if (order?.order_id) {
+      try {
+        supabase.from("registrations").update({ status: "cancelled" }).eq("order_id", order.order_id).then(() => {});
+        supabase.from("orders").update({ status: "cancelled" }).eq("id", order.order_id).then(() => {});
+      } catch {}
+    }
     setPhase("details");
     setOrder(null);
     setSubmittedUtr("");
@@ -1988,7 +1994,7 @@ function RegisterContent() {
       localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
     } catch {}
     window.scrollTo({ top: 0, behavior: "smooth" });
-  }, []);
+  }, [order]);
 
   return (
     <div className="min-h-screen bg-[#F4F6FB] flex flex-col">

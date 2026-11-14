@@ -1098,6 +1098,8 @@ BEGIN
   LEFT JOIN payments p ON p.order_id = r.order_id
   WHERE
     r.status::text != 'cancelled'
+    AND r.status::text != 'rejected'
+    AND (p.id IS NOT NULL OR r.status::text = 'confirmed')
     AND (
       (p_utr IS NOT NULL AND (p.utr = p_utr OR EXISTS (SELECT 1 FROM payments p2 WHERE p2.order_id = r.order_id AND p2.utr = p_utr)))
       OR

@@ -1165,7 +1165,15 @@ export default function Home() {
   const sel = picked.filter((id) =>
     (events ?? []).some((e) => {
       if (e.id !== id) return false;
-      const count = regs.filter((r) => r.event_id === e.id).length;
+      const count = regs.filter((r) => {
+        if (r.event_id !== e.id) return false;
+        if (r.status === "cancelled" || r.status === "rejected") return false;
+        if (r.status === "pending_payment") {
+          const regTime = new Date(r.created_at).getTime();
+          if (!isNaN(regTime) && clientNow - regTime > 15 * 60 * 1000) return false;
+        }
+        return true;
+      }).length;
       const isStarted = clientNow > 0 && new Date(e.starts_at).getTime() <= clientNow;
       const isClosed = e.status !== "open" || isStarted || e.max_slots - count <= 0;
       return !isClosed;

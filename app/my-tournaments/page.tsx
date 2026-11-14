@@ -271,7 +271,25 @@ export default function MyTournamentsPage() {
               .in("whatsapp", phoneVariants);
 
             if (regRows && regRows.length > 0) {
-              const eventIds = Array.from(new Set(regRows.map((r) => r.event_id)));
+              const orderIds = regRows.map((r) => r.order_id).filter(Boolean);
+              let payOrderMap = new Map();
+              if (orderIds.length > 0) {
+                const { data: payRows } = await supabase
+                  .from("payments")
+                  .select("order_id, status")
+                  .in("order_id", orderIds);
+                if (payRows) {
+                  payOrderMap = new Map(payRows.map((p) => [p.order_id, p.status]));
+                }
+              }
+
+              // Only show if payment was submitted or confirmed
+              const validRegs = regRows.filter(
+                (r) => r.status === "confirmed" || payOrderMap.has(r.order_id)
+              );
+              if (validRegs.length === 0) return;
+
+              const eventIds = Array.from(new Set(validRegs.map((r) => r.event_id)));
               const { data: evRows } = await supabase
                 .from("events")
                 .select("id, title, starts_at, idp_times, start_times, room_id, room_password, whatsapp_group_link, is_slot_list_published, slot_range_start, custom_slot_assignments")
@@ -279,9 +297,10 @@ export default function MyTournamentsPage() {
 
               const evMap = new Map((evRows || []).map((e) => [e.id, e]));
 
-              rows = regRows.map((r, i) => {
+              rows = validRegs.map((r, i) => {
                 const ev = evMap.get(r.event_id);
-                const isConfirmed = r.status === "confirmed";
+                const payStatus = payOrderMap.get(r.order_id);
+                const isConfirmed = r.status === "confirmed" || payStatus === "approved";
                 const customSlots = (ev?.custom_slot_assignments as Record<string, number>) || {};
                 const startSlot = (ev?.slot_range_start as number) || 5;
                 const computedSlot = (r as any).slot_number || customSlots[r.id] || customSlots[r.team_name] || (startSlot + i);

@@ -372,7 +372,17 @@ export default function ProfilePage() {
       });
     }
 
-    const flat: MyRegistration[] = (regData ?? []).map((r, i) => {
+    const flat: MyRegistration[] = (regData ?? [])
+      .filter((r) => {
+        if (r.status === "cancelled" || r.status === "rejected") return false;
+        if (r.status === "pending_payment" && !payStatusMap[r.order_id]) {
+          const ord = (r as unknown as { orders?: Record<string, unknown> }).orders ?? {};
+          const expiry = ord.expires_at ? new Date(ord.expires_at as string).getTime() : 0;
+          if (expiry > 0 && expiry < Date.now()) return false;
+        }
+        return true;
+      })
+      .map((r, i) => {
       const ev = (r as unknown as { events: Record<string, unknown> }).events ?? {};
       const ord = (r as unknown as { orders: Record<string, unknown> }).orders ?? {};
       const payStatus = payStatusMap[r.order_id];
