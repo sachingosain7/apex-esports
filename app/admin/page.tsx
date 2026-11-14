@@ -19,7 +19,7 @@ import { resolveGeminiKey, ACTIVE_GEMINI_API_KEY } from "@/lib/gemini";
 // ─────────────────────────────────────────────────────────────────────────────
 
 type UserRole = "owner" | "admin" | "moderator" | "finance";
-type AdminTab = "generator" | "lobbies" | "payments" | "points" | "roles";
+type AdminTab = "generator" | "lobbies" | "slots" | "payments" | "points" | "roles";
 
 type EventAdmin = {
   id: string;
@@ -96,6 +96,7 @@ const INTERVAL_OPTIONS = [
 const TABS: { id: AdminTab; label: string; icon: string; roles: UserRole[] }[] = [
   { id: "generator", label: "Bulk Generator", icon: "⚡", roles: ["owner", "admin", "moderator", "finance"] },
   { id: "lobbies", label: "Live Lobbies & IDP", icon: "🎮", roles: ["owner", "admin", "moderator", "finance"] },
+  { id: "slots", label: "Slot & Squad Shift", icon: "🔄", roles: ["owner", "admin", "moderator", "finance"] },
   { id: "payments", label: "Payments & UTR", icon: "💳", roles: ["owner", "admin", "moderator", "finance"] },
   { id: "points", label: "Points Table & Results", icon: "📊", roles: ["owner", "admin", "moderator", "finance"] },
   { id: "roles", label: "Role & Ownership", icon: "👑", roles: ["owner"] },
@@ -417,19 +418,327 @@ Instant UPI QR verification & automatic slot confirmation!`;
 
 // Modal: Registered Teams Roster & Competitive Slot Manager (Slots 5 to 25)
 // ─────────────────────────────────────────────────────────────────────────────
+// Squad Lobby / Match-Time Shifter Modal
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SquadShiftModal({
+  squad,
+  sourceEvent,
+  allEvents,
+  onClose,
+  onSuccess,
+  showToast,
+}: {
+  squad: EventRegistration;
+  sourceEvent: EventAdmin;
+  allEvents: EventAdmin[];
+  onClose: () => void;
+  onSuccess: () => void;
+  showToast: (m: string, t: "success" | "error") => void;
+}) {
+  const availableTargetEvents = allEvents.filter((e) => e.id !== sourceEvent.id);
+  const [selectedTargetId, setSelectedTargetId] = useState<string>(
+    availableTargetEvents[0]?.id || ""
+  );
+  const targetEvent = availableTargetEvents.find((e) => e.id === selectedTargetId);
+  const defaultNextSlot = (targetEvent?.slot_range_start ?? 5) + (targetEvent?.filled_slots ?? 0);
+  const [targetSlot, setTargetSlot] = useState<number>(defaultNextSlot);
+  const [shifting, setShifting] = useState(false);
+
+  useEffect(() => {
+    if (targetEvent) {
+      const next = (targetEvent.slot_range_start ?? 5) + (targetEvent.filled_slots ?? 0);
+      setTargetSlot(next);
+    }
+  }, [targetEvent]);
+
+  const handleConfirmShift = async () => {
+    if (!targetEvent) {
+      showToast("Please choose a target tournament lobby to shift into.", "error");
+      return;
+    }
+    setShifting(true);
+    try {
+      // 1. Try Supabase atomic RPC admin_shift_squad_event
+      let rpcSucceeded = false;
+      try {
+        const { data, error } = await supabase.rpc("admin_shift_squad_event", {
+          p_registration_id: squad.registration_id,
+          p_from_event_id: sourceEvent.id,
+          p_to_event_id: targetEvent.id,
+          p_new_slot: targetSlot,
+        });
+        if (!error && data?.success) {
+          rpcSucceeded = true;
+        }
+      } catch {}
+
+      // 2. Direct database updates fallback
+      if (!rpcSucceeded) {
+        try {
+          if (!squad.registration_id.startsWith("local-")) {
+            await supabase
+              .from("registrations")
+              .update({
+                event_id: targetEvent.id,
+                slot_number: targetSlot,
+              })
+              .eq("id", squad.registration_id);
+          }
+          // Decrement source filled slots
+          const { count: srcCount } = await supabase
+            .from("registrations")
+            .select("*", { count: "exact", head: true })
+            .eq("event_id", sourceEvent.id)
+            .neq("status", "cancelled");
+          await supabase
+            .from("events")
+            .update({ filled_slots: Math.max(0, (srcCount ?? 1) - 1) })
+            .eq("id", sourceEvent.id);
+
+          // Increment target filled slots
+          const { count: tgtCount } = await supabase
+            .from("registrations")
+            .select("*", { count: "exact", head: true })
+            .eq("event_id", targetEvent.id)
+            .neq("status", "cancelled");
+          await supabase
+            .from("events")
+            .update({ filled_slots: Math.max(1, (tgtCount ?? 0) + 1) })
+            .eq("id", targetEvent.id);
+        } catch {}
+      }
+
+      // 3. Update localStorage (apex_all_submissions and apex_active_booking_session)
+      try {
+        const localRaw = localStorage.getItem("apex_all_submissions");
+        if (localRaw) {
+          const subs = JSON.parse(localRaw);
+          if (Array.isArray(subs)) {
+            const updatedSubs = subs.map((s: Record<string, unknown>) => {
+              const isMatch =
+                (s.teamName && (s.teamName as string).toLowerCase() === squad.team_name.toLowerCase()) ||
+                (s.utr && squad.utr && s.utr === squad.utr) ||
+                (s.phone && squad.whatsapp && (s.phone as string).replace(/\D/g, "").endsWith(squad.whatsapp.replace(/\D/g, "")));
+              if (isMatch) {
+                return {
+                  ...s,
+                  event_ids: [targetEvent.id],
+                  event_titles: [targetEvent.title],
+                  events: [
+                    {
+                      id: targetEvent.id,
+                      event_id: targetEvent.id,
+                      title: targetEvent.title,
+                      starts_at: targetEvent.starts_at,
+                    },
+                  ],
+                };
+              }
+              return s;
+            });
+            localStorage.setItem("apex_all_submissions", JSON.stringify(updatedSubs));
+          }
+        }
+
+        const activeRaw = localStorage.getItem("apex_active_booking_session");
+        if (activeRaw) {
+          const act = JSON.parse(activeRaw);
+          const isMatch =
+            (act.teamName && (act.teamName as string).toLowerCase() === squad.team_name.toLowerCase()) ||
+            (act.utr && squad.utr && act.utr === squad.utr);
+          if (isMatch) {
+            act.event_ids = [targetEvent.id];
+            act.event_titles = [targetEvent.title];
+            act.events = [
+              {
+                id: targetEvent.id,
+                event_id: targetEvent.id,
+                title: targetEvent.title,
+                starts_at: targetEvent.starts_at,
+              },
+            ];
+            localStorage.setItem("apex_active_booking_session", JSON.stringify(act));
+          }
+        }
+
+        // Cache slot mapping in target lobby
+        const tgtSlotKey = `apex_slot_settings_${targetEvent.id}`;
+        const tgtCached = localStorage.getItem(tgtSlotKey);
+        let tgtMap: Record<string, number> = {};
+        if (tgtCached) {
+          try { tgtMap = JSON.parse(tgtCached).slotMap || {}; } catch {}
+        }
+        tgtMap[squad.team_name] = targetSlot;
+        localStorage.setItem(
+          tgtSlotKey,
+          JSON.stringify({
+            slotStart: targetEvent.slot_range_start ?? 5,
+            slotEnd: targetEvent.slot_range_end ?? 25,
+            isPublished: targetEvent.is_slot_list_published ?? false,
+            slotMap: tgtMap,
+            updatedAt: new Date().toISOString(),
+          })
+        );
+
+        // Broadcast cross-tab storage event
+        window.dispatchEvent(new Event("storage"));
+      } catch {}
+
+      showToast(
+        `✓ Shifted Squad "${squad.team_name}" to ${targetEvent.title} (Assigned Slot #${targetSlot})!`,
+        "success"
+      );
+      onSuccess();
+      onClose();
+    } catch (e: unknown) {
+      showToast((e as Error).message || "Failed to shift squad", "error");
+    } finally {
+      setShifting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+      <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 animate-in zoom-in-95 duration-200 text-slate-900">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🔄</span>
+            <div>
+              <h3 className="font-black text-slate-900 text-base">Shift Squad Match Time</h3>
+              <p className="text-xs text-slate-500">
+                Move squad from <strong>{sourceEvent.title}</strong> to another lobby
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-colors flex items-center justify-center cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Squad Details Card */}
+        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black text-slate-900">{squad.team_name}</span>
+            <span className="text-[10px] font-mono text-slate-500">+91 {squad.whatsapp}</span>
+          </div>
+          <div className="text-[11px] text-slate-500">
+            Current Match: <strong className="text-slate-700">{sourceEvent.title}</strong>
+          </div>
+        </div>
+
+        {/* Target Lobby Selector */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+            <span>🎯</span>
+            <span>Target Match / Time Slot:</span>
+          </label>
+          {availableTargetEvents.length === 0 ? (
+            <p className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-xl p-3">
+              No other active lobbies found. Please create or open another lobby first.
+            </p>
+          ) : (
+            <select
+              value={selectedTargetId}
+              onChange={(e) => setSelectedTargetId(e.target.value)}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-900 outline-none focus:border-indigo-600 shadow-2xs"
+            >
+              {availableTargetEvents.map((ev) => (
+                <option key={ev.id} value={ev.id}>
+                  {ev.title} ({ev.starts_at ? new Date(ev.starts_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "Scheduled"}) — {ev.filled_slots}/{ev.max_slots} Filled
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {/* Target Slot Assignment (Range 5 to 25) */}
+        {targetEvent && (
+          <div className="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-3.5 space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-xs font-black text-indigo-950">Target Slot Number</label>
+                <p className="text-[11px] text-indigo-800">
+                  Target lobby accepts slots from {targetEvent.slot_range_start ?? 5} to {targetEvent.slot_range_end ?? 25}
+                </p>
+              </div>
+              <input
+                type="number"
+                min={targetEvent.slot_range_start ?? 5}
+                max={targetEvent.slot_range_end ?? 25}
+                value={targetSlot}
+                onChange={(e) => setTargetSlot(Number(e.target.value) || 5)}
+                className="w-16 rounded-xl border border-indigo-300 bg-white px-2 py-1 text-center font-mono font-black text-indigo-900 text-sm outline-none focus:border-indigo-600 shadow-2xs"
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="pt-2 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirmShift}
+            disabled={shifting || !targetEvent}
+            className="px-5 py-2.5 rounded-xl text-xs font-black bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 transition-colors shadow-sm cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {shifting ? (
+              <span>Shifting Squad…</span>
+            ) : (
+              <>
+                <span>🔄</span>
+                <span>Confirm &amp; Shift Squad</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Teams Roster & Slot Range Manager Modal (Slots 5–25 & Publishing Privacy)
+// ─────────────────────────────────────────────────────────────────────────────
 
 function TeamsRosterModal({
   event,
+  allEvents,
   onClose,
   showToast,
 }: {
   event: EventAdmin;
+  allEvents?: EventAdmin[];
   onClose: () => void;
   showToast: (m: string, t: "success" | "error") => void;
 }) {
   const [teams, setTeams] = useState<EventRegistration[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingSlots, setSavingSlots] = useState(false);
+  const [shiftingSquad, setShiftingSquad] = useState<EventRegistration | null>(null);
+  const [allLobbies, setAllLobbies] = useState<EventAdmin[]>(allEvents || []);
+
+  useEffect(() => {
+    if (!allEvents || allEvents.length === 0) {
+      supabase
+        .from("events")
+        .select("*")
+        .order("starts_at", { ascending: true })
+        .then(({ data }) => {
+          if (data) setAllLobbies(data as EventAdmin[]);
+        });
+    }
+  }, [allEvents]);
 
   // Configurable Slot Range (Default: Slots 5 to 25)
   const [slotStart, setSlotStart] = useState<number>(event.slot_range_start ?? 5);
@@ -439,95 +748,165 @@ function TeamsRosterModal({
   // Custom Slot Map: { [teamName or regId]: slotNumber }
   const [slotMap, setSlotMap] = useState<Record<string, number>>(event.custom_slot_assignments ?? {});
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      // Attempt RPC first, fallback to table query
-      const { data: rpcData, error: rpcErr } = await supabase.rpc("admin_get_event_registrations", {
-        p_event_id: event.id,
-      });
+  const loadTeams = useCallback(async () => {
+    setLoading(true);
+    // Attempt RPC first, fallback to table query
+    const { data: rpcData, error: rpcErr } = await supabase.rpc("admin_get_event_registrations", {
+      p_event_id: event.id,
+    });
 
-      let loadedTeams: EventRegistration[] = [];
-      if (!rpcErr && rpcData) {
-        loadedTeams = rpcData as EventRegistration[];
-      } else {
-        const { data: directData } = await supabase
-          .from("registrations")
-          .select("id, team_name, whatsapp, amount_paise, status, created_at")
-          .eq("event_id", event.id)
-          .order("created_at", { ascending: true });
-        if (directData) {
-          loadedTeams = directData as unknown as EventRegistration[];
-        }
+    let loadedTeams: EventRegistration[] = [];
+    if (!rpcErr && rpcData) {
+      loadedTeams = rpcData as EventRegistration[];
+    } else {
+      const { data: directData } = await supabase
+        .from("registrations")
+        .select("id, team_name, whatsapp, amount_paise, status, created_at")
+        .eq("event_id", event.id)
+        .order("created_at", { ascending: true });
+      if (directData) {
+        loadedTeams = directData as unknown as EventRegistration[];
       }
+    }
 
-      // Check localStorage for any local submissions fallback
-      if (loadedTeams.length === 0) {
-        try {
-          const localStr = localStorage.getItem("apex_all_submissions");
-          const activeStr = localStorage.getItem("apex_active_booking_session");
-          const allSubs: Array<Record<string, unknown>> = [];
-          if (localStr) {
-            try { allSubs.push(...JSON.parse(localStr)); } catch {}
-          }
-          if (activeStr) {
-            try { allSubs.push(JSON.parse(activeStr)); } catch {}
-          }
+    // Check localStorage for any local submissions fallback
+    if (loadedTeams.length === 0) {
+      try {
+        const localStr = localStorage.getItem("apex_all_submissions");
+        const activeStr = localStorage.getItem("apex_active_booking_session");
+        const allSubs: Array<Record<string, unknown>> = [];
+        if (localStr) {
+          try { allSubs.push(...JSON.parse(localStr)); } catch {}
+        }
+        if (activeStr) {
+          try { allSubs.push(JSON.parse(activeStr)); } catch {}
+        }
 
-          const matching = allSubs.filter((ls) => {
-            if (Array.isArray(ls.events)) {
-              return (ls.events as Array<{ id?: string; event_id?: string }>).some(
-                (e) => (e.id || e.event_id) === event.id
-              );
-            }
-            if (Array.isArray(ls.event_ids)) {
-              return (ls.event_ids as string[]).includes(event.id);
-            }
-            if (Array.isArray(ls.event_titles)) {
-              return (ls.event_titles as string[]).some(
-                (t) => t.toLowerCase().trim() === event.title.toLowerCase().trim()
-              );
-            }
-            return allSubs.length === 1; // if single lobby
+        const matching = allSubs.filter((ls) => {
+          if (Array.isArray(ls.events)) {
+            return (ls.events as Array<{ id?: string; event_id?: string }>).some(
+              (e) => (e.id || e.event_id) === event.id
+            );
+          }
+          if (Array.isArray(ls.event_ids)) {
+            return (ls.event_ids as string[]).includes(event.id);
+          }
+          if (Array.isArray(ls.event_titles)) {
+            return (ls.event_titles as string[]).some(
+              (t) => t.toLowerCase().trim() === event.title.toLowerCase().trim()
+            );
+          }
+          return allSubs.length === 1; // if single lobby
+        });
+
+        if (matching.length > 0) {
+          loadedTeams = matching.map((m, i) => {
+            const squad =
+              (m.teamName as string) ||
+              (m.team_name as string) ||
+              (Array.isArray(m.team_names) ? (m.team_names as string[])[0] : null) ||
+              "Registered Squad";
+            return {
+              registration_id: `local-${i}`,
+              team_name: squad,
+              whatsapp: ((m.phone || m.whatsapp || "") as string).replace("+91", ""),
+              amount_paise: ((m.totalPaise || m.amount_paise || 3000) as number),
+              status: (m.pay_status === "approved" || m.status === "confirmed") ? "confirmed" : "pending_payment",
+              created_at: ((m.submittedAt || m.created_at || new Date().toISOString()) as string),
+              utr: (m.utr as string) || undefined,
+            };
           });
+        }
+      } catch {}
+    }
 
-          if (matching.length > 0) {
-            loadedTeams = matching.map((m, i) => {
-              const squad =
-                (m.teamName as string) ||
-                (m.team_name as string) ||
-                (Array.isArray(m.team_names) ? (m.team_names as string[])[0] : null) ||
-                "Registered Squad";
-              return {
-                registration_id: `local-${i}`,
-                team_name: squad,
-                whatsapp: ((m.phone || m.whatsapp || "") as string).replace("+91", ""),
-                amount_paise: ((m.totalPaise || m.amount_paise || 3000) as number),
-                status: (m.pay_status === "approved" || m.status === "confirmed") ? "confirmed" : "pending_payment",
-                created_at: ((m.submittedAt || m.created_at || new Date().toISOString()) as string),
-                utr: (m.utr as string) || undefined,
-              };
-            });
-          }
+    // Load cached slot settings from localStorage if available
+    try {
+      const cachedSettings = localStorage.getItem(`apex_slot_settings_${event.id}`);
+      if (cachedSettings) {
+        const parsed = JSON.parse(cachedSettings);
+        if (parsed.slotStart) setSlotStart(parsed.slotStart);
+        if (parsed.slotEnd) setSlotEnd(parsed.slotEnd);
+        if (parsed.isPublished !== undefined) setIsPublished(parsed.isPublished);
+        if (parsed.slotMap) setSlotMap(parsed.slotMap);
+      }
+    } catch {}
+
+    setTeams(loadedTeams);
+    setLoading(false);
+  }, [event.id, event.title]);
+
+  useEffect(() => {
+    loadTeams();
+  }, [loadTeams]);
+
+  // Cancel and refund slot
+  const handleCancelAndRefundSquad = async (squad: EventRegistration) => {
+    const ok = window.confirm(
+      `Are you sure you want to cancel and refund the slot for "${squad.team_name}"?\n\nThis will free up Slot #${slotMap[squad.registration_id || squad.team_name] || "assigned"} in this lobby.`
+    );
+    if (!ok) return;
+
+    try {
+      let rpcOk = false;
+      try {
+        const { data, error } = await supabase.rpc("admin_cancel_squad_slot", {
+          p_registration_id: squad.registration_id,
+          p_event_id: event.id,
+        });
+        if (!error && data?.success) rpcOk = true;
+      } catch {}
+
+      if (!rpcOk && !squad.registration_id.startsWith("local-")) {
+        try {
+          await supabase
+            .from("registrations")
+            .update({ status: "cancelled" })
+            .eq("id", squad.registration_id);
+          const { count } = await supabase
+            .from("registrations")
+            .select("*", { count: "exact", head: true })
+            .eq("event_id", event.id)
+            .neq("status", "cancelled");
+          await supabase
+            .from("events")
+            .update({ filled_slots: Math.max(0, count || 0) })
+            .eq("id", event.id);
         } catch {}
       }
 
-      // Load cached slot settings from localStorage if available
       try {
-        const cachedSettings = localStorage.getItem(`apex_slot_settings_${event.id}`);
-        if (cachedSettings) {
-          const parsed = JSON.parse(cachedSettings);
-          if (parsed.slotStart) setSlotStart(parsed.slotStart);
-          if (parsed.slotEnd) setSlotEnd(parsed.slotEnd);
-          if (parsed.isPublished !== undefined) setIsPublished(parsed.isPublished);
-          if (parsed.slotMap) setSlotMap(parsed.slotMap);
+        const localRaw = localStorage.getItem("apex_all_submissions");
+        if (localRaw) {
+          const subs = JSON.parse(localRaw);
+          if (Array.isArray(subs)) {
+            const updated = subs.filter((s: Record<string, unknown>) => {
+              const isTarget =
+                (s.teamName && (s.teamName as string).toLowerCase() === squad.team_name.toLowerCase()) ||
+                (s.utr && squad.utr && s.utr === squad.utr);
+              return !isTarget;
+            });
+            localStorage.setItem("apex_all_submissions", JSON.stringify(updated));
+          }
         }
+        window.dispatchEvent(new Event("storage"));
       } catch {}
 
-      setTeams(loadedTeams);
-      setLoading(false);
-    })();
-  }, [event.id]);
+      setTeams((prev) => prev.filter((t) => t.registration_id !== squad.registration_id));
+      showToast(`Cancelled and refunded slot for "${squad.team_name}". Slot is now open!`, "success");
+    } catch (err: unknown) {
+      showToast((err as Error).message || "Failed to cancel slot", "error");
+    }
+  };
+
+  // Rewind and reset slot overrides
+  const handleRewindSlotOverrides = () => {
+    setSlotMap({});
+    try {
+      localStorage.removeItem(`apex_slot_settings_${event.id}`);
+    } catch {}
+    showToast("↺ Slot assignments rewound and reset to default sequence!", "success");
+  };
 
   // Auto-Number all registered squads sequentially within slot range (Start to End)
   const handleAutoNumberSlots = () => {
@@ -672,15 +1051,24 @@ function TeamsRosterModal({
               />
             </div>
 
-            {/* Auto-Number Button */}
-            <div className="flex flex-col justify-end">
+            {/* Action Buttons: Auto-Number & Rewind */}
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={handleAutoNumberSlots}
-                className="w-full py-2.5 rounded-xl text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white transition-colors cursor-pointer shadow-xs flex items-center justify-center gap-1.5"
+                className="flex-1 py-2.5 rounded-xl text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white transition-colors cursor-pointer shadow-xs flex items-center justify-center gap-1.5"
               >
                 <span>⚡</span>
                 <span>Auto-Apply ({slotStart}–{slotEnd})</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleRewindSlotOverrides}
+                className="py-2.5 px-3 rounded-xl text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 transition-colors cursor-pointer shadow-2xs flex items-center gap-1 shrink-0"
+                title="Rewind/reset custom slot numbers"
+              >
+                <span>↺</span>
+                <span>Rewind</span>
               </button>
             </div>
           </div>
@@ -748,7 +1136,7 @@ function TeamsRosterModal({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
                       <span
                         className={`px-2 py-0.5 rounded text-[10px] font-black ${
                           t.status === "confirmed"
@@ -758,6 +1146,29 @@ function TeamsRosterModal({
                       >
                         {t.status === "confirmed" ? "PAID" : "HOLD"}
                       </span>
+
+                      {/* Shift Squad Button */}
+                      <button
+                        type="button"
+                        onClick={() => setShiftingSquad(t)}
+                        className="px-2 py-1 rounded-lg text-xs font-black bg-blue-50 text-blue-800 border border-blue-200 hover:bg-blue-100 transition-colors flex items-center gap-1 cursor-pointer"
+                        title="Shift squad to another lobby / time slot"
+                      >
+                        <span>🔄</span>
+                        <span className="hidden sm:inline">Shift</span>
+                      </button>
+
+                      {/* Refund / Cancel Slot Button */}
+                      <button
+                        type="button"
+                        onClick={() => handleCancelAndRefundSquad(t)}
+                        className="px-2 py-1 rounded-lg text-xs font-black bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100 transition-colors flex items-center gap-1 cursor-pointer"
+                        title="Cancel & refund slot"
+                      >
+                        <span>❌</span>
+                        <span className="hidden sm:inline">Refund</span>
+                      </button>
+
                       <a
                         href={`https://wa.me/91${t.whatsapp}?text=Hi+${encodeURIComponent(
                           t.team_name
@@ -767,7 +1178,7 @@ function TeamsRosterModal({
                         className="px-2 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 transition-colors flex items-center gap-1 cursor-pointer"
                         title="Chat on WhatsApp"
                       >
-                        <span>💬</span> WhatsApp
+                        <span>💬</span>
                       </a>
                     </div>
                   </div>
@@ -776,6 +1187,20 @@ function TeamsRosterModal({
             </div>
           )}
         </div>
+
+        {/* Shifting Squad Modal */}
+        {shiftingSquad && (
+          <SquadShiftModal
+            squad={shiftingSquad}
+            sourceEvent={event}
+            allEvents={allLobbies}
+            onClose={() => setShiftingSquad(null)}
+            onSuccess={() => {
+              loadTeams();
+            }}
+            showToast={showToast}
+          />
+        )}
 
         {/* Footer with Save & Sync button */}
         <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
@@ -3055,6 +3480,7 @@ function LiveLobbiesTab({
       {rosterEvent && (
         <TeamsRosterModal
           event={rosterEvent}
+          allEvents={events}
           onClose={() => setRosterEvent(null)}
           showToast={showToast}
         />
@@ -3609,6 +4035,903 @@ function LiveLobbiesTab({
             );
           })}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tab 2B — Competitive Slot Allocation & Squad Lobby Time Shifter
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SlotSquadShiftTab({
+  showToast,
+}: {
+  showToast: (m: string, t: "success" | "error") => void;
+}) {
+  const [events, setEvents] = useState<EventAdmin[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedEventId, setSelectedEventId] = useState<string>("");
+  const [squads, setSquads] = useState<EventRegistration[]>([]);
+  const [loadingSquads, setLoadingSquads] = useState(false);
+
+  // Slot Configuration state for selected lobby
+  const [slotStart, setSlotStart] = useState<number>(5);
+  const [slotEnd, setSlotEnd] = useState<number>(25);
+  const [isPublished, setIsPublished] = useState<boolean>(false);
+  const [slotMap, setSlotMap] = useState<Record<string, number>>({});
+  const [savingSlots, setSavingSlots] = useState(false);
+
+  // Quick Shift Wizard state
+  const [shiftSquadId, setShiftSquadId] = useState<string>("");
+  const [shiftTargetEventId, setShiftTargetEventId] = useState<string>("");
+  const [shiftTargetSlot, setShiftTargetSlot] = useState<number>(5);
+  const [executingShift, setExecutingShift] = useState(false);
+
+  // Modal Shifter state
+  const [shiftingModalSquad, setShiftingModalSquad] = useState<EventRegistration | null>(null);
+
+  // View Mode: 'slots' = Slot Table & Privacy, 'shift' = Time Shifter Wizard
+  const [viewMode, setViewMode] = useState<"slots" | "shift">("slots");
+
+  // Load all lobbies
+  const loadEvents = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("events")
+        .select("*")
+        .order("starts_at", { ascending: true });
+      if (!error && data) {
+        const evs = data as EventAdmin[];
+        setEvents(evs);
+        if (evs.length > 0 && !selectedEventId) {
+          setSelectedEventId(evs[0].id);
+        }
+      }
+    } catch {}
+    setLoading(false);
+  }, [selectedEventId]);
+
+  useEffect(() => {
+    loadEvents();
+  }, [loadEvents]);
+
+  const activeEvent = events.find((e) => e.id === selectedEventId);
+
+  // When active event changes, load its squads and slot settings
+  const loadActiveEventSquads = useCallback(async () => {
+    if (!selectedEventId) return;
+    setLoadingSquads(true);
+
+    const ev = events.find((e) => e.id === selectedEventId);
+    setSlotStart(ev?.slot_range_start ?? 5);
+    setSlotEnd(ev?.slot_range_end ?? 25);
+    setIsPublished(Boolean(ev?.is_slot_list_published));
+    setSlotMap(ev?.custom_slot_assignments ?? {});
+
+    // Try RPC first
+    const { data: rpcData, error: rpcErr } = await supabase.rpc("admin_get_event_registrations", {
+      p_event_id: selectedEventId,
+    });
+
+    let loaded: EventRegistration[] = [];
+    if (!rpcErr && rpcData) {
+      loaded = rpcData as EventRegistration[];
+    } else {
+      const { data: directData } = await supabase
+        .from("registrations")
+        .select("id, team_name, whatsapp, amount_paise, status, created_at")
+        .eq("event_id", selectedEventId)
+        .order("created_at", { ascending: true });
+      if (directData) loaded = directData as unknown as EventRegistration[];
+    }
+
+    // LocalStorage fallback
+    if (loaded.length === 0) {
+      try {
+        const localRaw = localStorage.getItem("apex_all_submissions");
+        const activeRaw = localStorage.getItem("apex_active_booking_session");
+        const allSubs: Array<Record<string, unknown>> = [];
+        if (localRaw) {
+          try { allSubs.push(...JSON.parse(localRaw)); } catch {}
+        }
+        if (activeRaw) {
+          try { allSubs.push(JSON.parse(activeRaw)); } catch {}
+        }
+
+        const matching = allSubs.filter((ls) => {
+          if (Array.isArray(ls.events)) {
+            return (ls.events as Array<{ id?: string; event_id?: string }>).some(
+              (e) => (e.id || e.event_id) === selectedEventId
+            );
+          }
+          if (Array.isArray(ls.event_ids)) {
+            return (ls.event_ids as string[]).includes(selectedEventId);
+          }
+          if (Array.isArray(ls.event_titles)) {
+            return (ls.event_titles as string[]).some(
+              (t) => t.toLowerCase().trim() === ev?.title.toLowerCase().trim()
+            );
+          }
+          return allSubs.length === 1;
+        });
+
+        if (matching.length > 0) {
+          loaded = matching.map((m, i) => {
+            const squad =
+              (m.teamName as string) ||
+              (m.team_name as string) ||
+              (Array.isArray(m.team_names) ? (m.team_names as string[])[0] : null) ||
+              "Registered Squad";
+            return {
+              registration_id: `local-${i}`,
+              team_name: squad,
+              whatsapp: ((m.phone || m.whatsapp || "") as string).replace("+91", ""),
+              amount_paise: ((m.totalPaise || m.amount_paise || 3000) as number),
+              status: (m.pay_status === "approved" || m.status === "confirmed") ? "confirmed" : "pending_payment",
+              created_at: ((m.submittedAt || m.created_at || new Date().toISOString()) as string),
+              utr: (m.utr as string) || undefined,
+            };
+          });
+        }
+      } catch {}
+    }
+
+    // Check cached slot settings in localStorage
+    try {
+      const cached = localStorage.getItem(`apex_slot_settings_${selectedEventId}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed.slotStart) setSlotStart(parsed.slotStart);
+        if (parsed.slotEnd) setSlotEnd(parsed.slotEnd);
+        if (parsed.isPublished !== undefined) setIsPublished(parsed.isPublished);
+        if (parsed.slotMap) setSlotMap(parsed.slotMap);
+      }
+    } catch {}
+
+    setSquads(loaded);
+    if (loaded.length > 0 && !shiftSquadId) {
+      setShiftSquadId(loaded[0].registration_id);
+    }
+    setLoadingSquads(false);
+  }, [selectedEventId, events, shiftSquadId]);
+
+  useEffect(() => {
+    loadActiveEventSquads();
+  }, [loadActiveEventSquads]);
+
+  // Set default target shift event
+  useEffect(() => {
+    const targets = events.filter((e) => e.id !== selectedEventId);
+    if (targets.length > 0 && (!shiftTargetEventId || shiftTargetEventId === selectedEventId)) {
+      setShiftTargetEventId(targets[0].id);
+      const next = (targets[0].slot_range_start ?? 5) + (targets[0].filled_slots ?? 0);
+      setShiftTargetSlot(next);
+    }
+  }, [selectedEventId, events, shiftTargetEventId]);
+
+  // Auto-Number all registered squads sequentially within slot range (Start to End)
+  const handleAutoNumberSlots = () => {
+    const updated: Record<string, number> = {};
+    squads.forEach((t, idx) => {
+      const assigned = Math.min(slotEnd, slotStart + idx);
+      const key = t.registration_id || t.team_name;
+      updated[key] = assigned;
+    });
+    setSlotMap(updated);
+    showToast(
+      `⚡ Auto-assigned ${squads.length} squads from Slot ${slotStart} to ${Math.min(
+        slotEnd,
+        slotStart + squads.length - 1
+      )}!`,
+      "success"
+    );
+  };
+
+  const handleUpdateTeamSlot = (key: string, val: number) => {
+    setSlotMap((prev) => ({
+      ...prev,
+      [key]: Math.max(1, Math.min(99, val)),
+    }));
+  };
+
+  const handleRewindSlotOverrides = () => {
+    setSlotMap({});
+    try {
+      localStorage.removeItem(`apex_slot_settings_${selectedEventId}`);
+    } catch {}
+    showToast("↺ Slot assignments rewound and reset to default sequence!", "success");
+  };
+
+  const handleSaveAndSyncSlots = async () => {
+    if (!activeEvent) return;
+    setSavingSlots(true);
+    try {
+      try {
+        await supabase
+          .from("events")
+          .update({
+            slot_range_start: slotStart,
+            slot_range_end: slotEnd,
+            is_slot_list_published: isPublished,
+            custom_slot_assignments: slotMap,
+          })
+          .eq("id", activeEvent.id);
+      } catch {}
+
+      try {
+        localStorage.setItem(
+          `apex_slot_settings_${activeEvent.id}`,
+          JSON.stringify({
+            slotStart,
+            slotEnd,
+            isPublished,
+            slotMap,
+            updatedAt: new Date().toISOString(),
+          })
+        );
+        window.dispatchEvent(new Event("storage"));
+      } catch {}
+
+      showToast(
+        isPublished
+          ? "📢 Slot List Published LIVE to players and website!"
+          : "💾 Slot assignments saved privately! (Slot numbers remain hidden from players until published)",
+        "success"
+      );
+    } catch (e: unknown) {
+      showToast((e as Error).message || "Failed to save slot assignments", "error");
+    } finally {
+      setSavingSlots(false);
+    }
+  };
+
+  // Execute Time Shift from Wizard
+  const handleExecuteShiftWizard = async () => {
+    const squadToShift = squads.find((s) => s.registration_id === shiftSquadId);
+    const targetEvent = events.find((e) => e.id === shiftTargetEventId);
+
+    if (!squadToShift || !targetEvent || !activeEvent) {
+      showToast("Please choose a squad and a target match.", "error");
+      return;
+    }
+
+    setExecutingShift(true);
+    try {
+      let rpcOk = false;
+      try {
+        const { data, error } = await supabase.rpc("admin_shift_squad_event", {
+          p_registration_id: squadToShift.registration_id,
+          p_from_event_id: activeEvent.id,
+          p_to_event_id: targetEvent.id,
+          p_new_slot: shiftTargetSlot,
+        });
+        if (!error && data?.success) rpcOk = true;
+      } catch {}
+
+      if (!rpcOk) {
+        try {
+          if (!squadToShift.registration_id.startsWith("local-")) {
+            await supabase
+              .from("registrations")
+              .update({
+                event_id: targetEvent.id,
+                slot_number: shiftTargetSlot,
+              })
+              .eq("id", squadToShift.registration_id);
+          }
+          await supabase
+            .from("events")
+            .update({ filled_slots: Math.max(0, (activeEvent.filled_slots || 1) - 1) })
+            .eq("id", activeEvent.id);
+          await supabase
+            .from("events")
+            .update({ filled_slots: (targetEvent.filled_slots || 0) + 1 })
+            .eq("id", targetEvent.id);
+        } catch {}
+      }
+
+      // Update localStorage
+      try {
+        const localRaw = localStorage.getItem("apex_all_submissions");
+        if (localRaw) {
+          const subs = JSON.parse(localRaw);
+          if (Array.isArray(subs)) {
+            const updated = subs.map((s: Record<string, unknown>) => {
+              const isMatch =
+                (s.teamName && (s.teamName as string).toLowerCase() === squadToShift.team_name.toLowerCase()) ||
+                (s.utr && squadToShift.utr && s.utr === squadToShift.utr);
+              if (isMatch) {
+                return {
+                  ...s,
+                  event_ids: [targetEvent.id],
+                  event_titles: [targetEvent.title],
+                  events: [
+                    {
+                      id: targetEvent.id,
+                      event_id: targetEvent.id,
+                      title: targetEvent.title,
+                      starts_at: targetEvent.starts_at,
+                    },
+                  ],
+                };
+              }
+              return s;
+            });
+            localStorage.setItem("apex_all_submissions", JSON.stringify(updated));
+          }
+        }
+
+        const activeRaw = localStorage.getItem("apex_active_booking_session");
+        if (activeRaw) {
+          const act = JSON.parse(activeRaw);
+          const isMatch =
+            (act.teamName && (act.teamName as string).toLowerCase() === squadToShift.team_name.toLowerCase()) ||
+            (act.utr && squadToShift.utr && act.utr === squadToShift.utr);
+          if (isMatch) {
+            act.event_ids = [targetEvent.id];
+            act.event_titles = [targetEvent.title];
+            act.events = [
+              {
+                id: targetEvent.id,
+                event_id: targetEvent.id,
+                title: targetEvent.title,
+                starts_at: targetEvent.starts_at,
+              },
+            ];
+            localStorage.setItem("apex_active_booking_session", JSON.stringify(act));
+          }
+        }
+
+        // Cache target slot
+        const tgtKey = `apex_slot_settings_${targetEvent.id}`;
+        let tgtMap: Record<string, number> = {};
+        try {
+          const c = localStorage.getItem(tgtKey);
+          if (c) tgtMap = JSON.parse(c).slotMap || {};
+        } catch {}
+        tgtMap[squadToShift.team_name] = shiftTargetSlot;
+        localStorage.setItem(
+          tgtKey,
+          JSON.stringify({
+            slotStart: targetEvent.slot_range_start ?? 5,
+            slotEnd: targetEvent.slot_range_end ?? 25,
+            isPublished: targetEvent.is_slot_list_published ?? false,
+            slotMap: tgtMap,
+            updatedAt: new Date().toISOString(),
+          })
+        );
+
+        window.dispatchEvent(new Event("storage"));
+      } catch {}
+
+      showToast(
+        `✓ Shifted Squad "${squadToShift.team_name}" from ${activeEvent.title} to ${targetEvent.title} (Slot #${shiftTargetSlot})!`,
+        "success"
+      );
+      await loadEvents();
+      await loadActiveEventSquads();
+    } catch (e: unknown) {
+      showToast((e as Error).message || "Failed to shift squad", "error");
+    } finally {
+      setExecutingShift(false);
+    }
+  };
+
+  const handleCancelAndRefundSquad = async (squad: EventRegistration) => {
+    if (!activeEvent) return;
+    const ok = window.confirm(
+      `Are you sure you want to cancel and refund the slot for "${squad.team_name}"?\n\nThis will free up Slot #${slotMap[squad.registration_id || squad.team_name] || "assigned"} in this lobby.`
+    );
+    if (!ok) return;
+
+    try {
+      let rpcOk = false;
+      try {
+        const { data, error } = await supabase.rpc("admin_cancel_squad_slot", {
+          p_registration_id: squad.registration_id,
+          p_event_id: activeEvent.id,
+        });
+        if (!error && data?.success) rpcOk = true;
+      } catch {}
+
+      if (!rpcOk && !squad.registration_id.startsWith("local-")) {
+        try {
+          await supabase
+            .from("registrations")
+            .update({ status: "cancelled" })
+            .eq("id", squad.registration_id);
+          const { count } = await supabase
+            .from("registrations")
+            .select("*", { count: "exact", head: true })
+            .eq("event_id", activeEvent.id)
+            .neq("status", "cancelled");
+          await supabase
+            .from("events")
+            .update({ filled_slots: Math.max(0, count || 0) })
+            .eq("id", activeEvent.id);
+        } catch {}
+      }
+
+      try {
+        const localRaw = localStorage.getItem("apex_all_submissions");
+        if (localRaw) {
+          const subs = JSON.parse(localRaw);
+          if (Array.isArray(subs)) {
+            const updated = subs.filter((s: Record<string, unknown>) => {
+              const isTarget =
+                (s.teamName && (s.teamName as string).toLowerCase() === squad.team_name.toLowerCase()) ||
+                (s.utr && squad.utr && s.utr === squad.utr);
+              return !isTarget;
+            });
+            localStorage.setItem("apex_all_submissions", JSON.stringify(updated));
+          }
+        }
+        window.dispatchEvent(new Event("storage"));
+      } catch {}
+
+      setSquads((prev) => prev.filter((t) => t.registration_id !== squad.registration_id));
+      showToast(`Cancelled and refunded slot for "${squad.team_name}". Slot is now open!`, "success");
+    } catch (err: unknown) {
+      showToast((err as Error).message || "Failed to cancel slot", "error");
+    }
+  };
+
+  const totalRegisteredSquads = events.reduce((sum, e) => sum + (e.filled_slots || 0), 0);
+  const publishedLobbiesCount = events.filter((e) => e.is_slot_list_published).length;
+  const privateLobbiesCount = events.length - publishedLobbiesCount;
+
+  return (
+    <div className="space-y-6">
+      {/* ── Top Header Banner ── */}
+      <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 space-y-4 shadow-sm text-slate-900">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-black text-slate-900 flex items-center gap-2">
+              <span>🔄</span>
+              <span>Slot Allocation &amp; Squad Match Time Shifter</span>
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-500 mt-1">
+              Move squads across lobby timings (e.g. 1–3 PM to 9–11 PM), manage Slots 5–25, rewind slot allocations, and control public privacy.
+            </p>
+          </div>
+
+          {/* Mode Switcher Tabs */}
+          <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200 shrink-0">
+            <button
+              type="button"
+              onClick={() => setViewMode("slots")}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                viewMode === "slots"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-900"
+              }`}
+            >
+              🎯 Slots 5–25 &amp; Privacy
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("shift")}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                viewMode === "shift"
+                  ? "bg-[#FFB800] text-slate-950 shadow-sm"
+                  : "text-slate-500 hover:text-slate-900"
+              }`}
+            >
+              🔄 Squad Time Shifter
+            </button>
+          </div>
+        </div>
+
+        {/* Quick Metrics */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-100">
+          <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Active Lobbies</p>
+            <p className="text-xl font-black text-slate-900 mt-0.5">{events.length}</p>
+          </div>
+          <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Total Registered</p>
+            <p className="text-xl font-black text-indigo-600 mt-0.5">{totalRegisteredSquads} Squads</p>
+          </div>
+          <div className="bg-emerald-50/60 rounded-xl p-3 border border-emerald-200">
+            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-800">Slot Lists Live</p>
+            <p className="text-xl font-black text-emerald-700 mt-0.5">{publishedLobbiesCount} Lobbies</p>
+          </div>
+          <div className="bg-amber-50/60 rounded-xl p-3 border border-amber-200">
+            <p className="text-[10px] font-black uppercase tracking-wider text-amber-800">Slots Hidden (Private)</p>
+            <p className="text-xl font-black text-amber-700 mt-0.5">{privateLobbiesCount} Lobbies</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Active Lobby Selector Ribbon ── */}
+      <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-sm space-y-2">
+        <label className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+          <span>🎮</span>
+          <span>Select Tournament Lobby to Manage:</span>
+        </label>
+        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+          {events.map((ev) => {
+            const isSelected = ev.id === selectedEventId;
+            return (
+              <button
+                key={ev.id}
+                type="button"
+                onClick={() => setSelectedEventId(ev.id)}
+                className={`px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all border text-left cursor-pointer shrink-0 ${
+                  isSelected
+                    ? "bg-[#0A1128] text-white border-[#0A1128] shadow-md shadow-indigo-950/20"
+                    : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span>{ev.title}</span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-black font-mono ${
+                      isSelected ? "bg-amber-400 text-slate-950" : "bg-slate-200 text-slate-700"
+                    }`}
+                  >
+                    {ev.filled_slots}/{ev.max_slots}
+                  </span>
+                </div>
+                <div className="text-[10px] opacity-70 mt-0.5 font-normal">
+                  {ev.starts_at ? new Date(ev.starts_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "Scheduled"} · {ev.is_slot_list_published ? "📢 Live" : "🔒 Hidden"}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── MODE 1: Squad Match Time Shifter Wizard ── */}
+      {viewMode === "shift" && (
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 space-y-5 shadow-sm text-slate-900">
+          <div className="border-b border-slate-100 pb-3">
+            <h3 className="font-black text-slate-900 text-base sm:text-lg flex items-center gap-2">
+              <span>🔄</span>
+              <span>Direct Squad Match Time Shifter (1-Click Reallocate)</span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Instantly transfer a squad from one tournament time slot to another (e.g., from 1–3 PM to 9–11 PM).
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* 1. Pick Squad from Active Lobby */}
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-700 flex items-center gap-1.5">
+                <span>1️⃣</span>
+                <span>Select Squad in {activeEvent?.title || "Lobby"}:</span>
+              </label>
+              {squads.length === 0 ? (
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-400 italic">
+                  No registered squads in this lobby. Pick another lobby above.
+                </div>
+              ) : (
+                <select
+                  value={shiftSquadId}
+                  onChange={(e) => setShiftSquadId(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white p-3 text-xs font-black text-slate-900 outline-none focus:border-indigo-600 shadow-2xs"
+                >
+                  {squads.map((s, idx) => (
+                    <option key={s.registration_id} value={s.registration_id}>
+                      {s.team_name} (+91 {s.whatsapp}) · Current Slot #{slotMap[s.registration_id || s.team_name] ?? (slotStart + idx)}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {/* 2. Pick Target Lobby */}
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-700 flex items-center gap-1.5">
+                <span>2️⃣</span>
+                <span>Select Target Lobby / Match Time:</span>
+              </label>
+              <select
+                value={shiftTargetEventId}
+                onChange={(e) => setShiftTargetEventId(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white p-3 text-xs font-black text-slate-900 outline-none focus:border-indigo-600 shadow-2xs"
+              >
+                {events
+                  .filter((e) => e.id !== selectedEventId)
+                  .map((ev) => (
+                    <option key={ev.id} value={ev.id}>
+                      {ev.title} ({ev.starts_at ? new Date(ev.starts_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "Scheduled"}) — {ev.filled_slots}/{ev.max_slots} Filled
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            {/* 3. Assign Target Slot (5 to 25) */}
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-700 flex items-center gap-1.5">
+                <span>3️⃣</span>
+                <span>Assigned Slot in Target Match:</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={shiftTargetSlot}
+                  onChange={(e) => setShiftTargetSlot(Math.max(1, Number(e.target.value) || 5))}
+                  className="w-24 rounded-xl border border-indigo-300 bg-white p-3 text-center font-mono font-black text-indigo-900 text-sm outline-none focus:border-indigo-600 shadow-2xs"
+                />
+                <span className="text-[11px] text-slate-500 font-medium">
+                  (Competitive slots range: 5 to 25)
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Trigger Card */}
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-black text-amber-950 flex items-center gap-1.5">
+                <span>⚡</span>
+                <span>Automatic Sync &amp; IDP Update</span>
+              </p>
+              <p className="text-[11px] text-amber-800 mt-0.5">
+                Moving this squad automatically frees their slot in {activeEvent?.title}, transfers their booking to the target lobby, and updates their player room credentials.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleExecuteShiftWizard}
+              disabled={executingShift || squads.length === 0}
+              className="px-6 py-3 rounded-xl text-xs font-black bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 transition-colors shadow-md shadow-amber-500/20 cursor-pointer disabled:opacity-40 shrink-0 flex items-center gap-2"
+            >
+              {executingShift ? (
+                <span>Shifting Squad…</span>
+              ) : (
+                <>
+                  <span>🚀</span>
+                  <span>Confirm &amp; Move Squad to New Lobby</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODE 2: Slot Allocation, Privacy & Rewind Grid ── */}
+      {viewMode === "slots" && activeEvent && (
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 space-y-5 shadow-sm text-slate-900">
+          {/* Controls Card */}
+          <div className="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4 space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-wider text-indigo-950 flex items-center gap-1.5">
+                  <span>⚙️</span>
+                  <span>Slot Range Configuration — {activeEvent.title}</span>
+                </p>
+                <p className="text-[11px] text-indigo-800 mt-0.5">
+                  Slots 5 to 25 are allocated to registered teams. Slots 1–4 reserved for host/casters.
+                </p>
+              </div>
+
+              {/* Live Publish Status Badge */}
+              <span
+                className={`px-3 py-1 rounded-full text-xs font-black border tracking-wide shadow-2xs ${
+                  isPublished
+                    ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                    : "bg-amber-100 text-amber-800 border-amber-300"
+                }`}
+              >
+                {isPublished ? "📢 SLOT LIST IS LIVE" : "🔒 SLOTS ARE PRIVATE (HIDDEN)"}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 pt-1">
+              {/* Start Slot */}
+              <div className="bg-white rounded-xl border border-indigo-200 p-2.5 space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-600">
+                  Slot Range Start
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={slotStart}
+                  onChange={(e) => setSlotStart(Math.max(1, Number(e.target.value) || 1))}
+                  className="w-full rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-mono font-bold text-slate-900 outline-none focus:border-indigo-600 focus:bg-white"
+                />
+              </div>
+
+              {/* End Slot */}
+              <div className="bg-white rounded-xl border border-indigo-200 p-2.5 space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-600">
+                  Slot Range End
+                </label>
+                <input
+                  type="number"
+                  min={slotStart}
+                  max={50}
+                  value={slotEnd}
+                  onChange={(e) => setSlotEnd(Math.max(slotStart, Number(e.target.value) || 25))}
+                  className="w-full rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-mono font-bold text-slate-900 outline-none focus:border-indigo-600 focus:bg-white"
+                />
+              </div>
+
+              {/* Auto-Apply Sequential Slots */}
+              <div className="flex flex-col justify-end">
+                <button
+                  type="button"
+                  onClick={handleAutoNumberSlots}
+                  className="w-full py-2.5 rounded-xl text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white transition-colors cursor-pointer shadow-xs flex items-center justify-center gap-1.5"
+                >
+                  <span>⚡</span>
+                  <span>Auto-Apply ({slotStart}–{slotEnd})</span>
+                </button>
+              </div>
+
+              {/* Rewind / Reset Overrides */}
+              <div className="flex flex-col justify-end">
+                <button
+                  type="button"
+                  onClick={handleRewindSlotOverrides}
+                  className="w-full py-2.5 rounded-xl text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 transition-colors cursor-pointer shadow-2xs flex items-center justify-center gap-1.5"
+                >
+                  <span>↺</span>
+                  <span>Rewind Overrides</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Toggle Publishing Live */}
+            <div className="flex items-center justify-between pt-2 border-t border-indigo-200/80 flex-wrap gap-2">
+              <p className="text-[11px] text-indigo-900 font-medium">
+                {isPublished
+                  ? "Captains can see their exact Slot Number on My Tournaments & the Homepage."
+                  : 'Captains only see "Paid & Slot Assigned". Exact Slot Numbers remain hidden until published.'}
+              </p>
+              <button
+                type="button"
+                onClick={() => setIsPublished(!isPublished)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                  isPublished
+                    ? "bg-amber-200 text-amber-950 hover:bg-amber-300 border border-amber-400"
+                    : "bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs"
+                }`}
+              >
+                <span>{isPublished ? "🔒 Hide Slot List" : "📢 Publish Slot List Live"}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* ── Squads Table with Inline Slot & Action Buttons ── */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                <span>👥</span>
+                <span>Registered Squads ({squads.length})</span>
+              </h4>
+              <button
+                type="button"
+                onClick={handleSaveAndSyncSlots}
+                disabled={savingSlots}
+                className="px-4 py-2 rounded-xl text-xs font-black bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {savingSlots ? (
+                  <span>Saving…</span>
+                ) : (
+                  <>
+                    <span>💾</span>
+                    <span>Save Changes &amp; Publish</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {loadingSquads ? (
+              <Spinner />
+            ) : squads.length === 0 ? (
+              <div className="text-center py-12 text-slate-400 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-2xl">
+                No squads registered for this lobby yet.
+              </div>
+            ) : (
+              <div className="border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-100 bg-white">
+                {squads.map((t, idx) => {
+                  const key = t.registration_id || t.team_name;
+                  const assignedSlot = slotMap[key] ?? Math.min(slotEnd, slotStart + idx);
+
+                  return (
+                    <div
+                      key={key + idx}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 hover:bg-slate-50/80 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {/* Editable Slot Input */}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">Slot</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={50}
+                            value={assignedSlot}
+                            onChange={(e) => handleUpdateTeamSlot(key, Number(e.target.value) || slotStart)}
+                            className="w-14 rounded-lg border border-slate-300 bg-white px-2 py-1 text-center font-mono font-black text-indigo-900 text-xs outline-none focus:border-indigo-600 shadow-2xs"
+                          />
+                        </div>
+
+                        <div className="min-w-0">
+                          <p className="text-sm font-black text-slate-900 truncate">{t.team_name}</p>
+                          <p className="text-xs text-slate-500 font-mono">
+                            +91 {t.whatsapp}
+                            {t.utr ? ` · UTR: ${t.utr}` : ""}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                            t.status === "confirmed"
+                              ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                              : "bg-amber-100 text-amber-800 border border-amber-300"
+                          }`}
+                        >
+                          {t.status === "confirmed" ? "PAID" : "HOLD"}
+                        </span>
+
+                        {/* Shift Squad Button */}
+                        <button
+                          type="button"
+                          onClick={() => setShiftingModalSquad(t)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-800 border border-blue-200 hover:bg-blue-100 transition-colors flex items-center gap-1 cursor-pointer"
+                          title="Shift squad to another match time"
+                        >
+                          <span>🔄</span>
+                          <span>Shift Match</span>
+                        </button>
+
+                        {/* Cancel / Refund Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleCancelAndRefundSquad(t)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100 transition-colors flex items-center gap-1 cursor-pointer"
+                          title="Cancel slot and refund squad"
+                        >
+                          <span>❌</span>
+                          <span>Refund Slot</span>
+                        </button>
+
+                        <a
+                          href={`https://wa.me/91${t.whatsapp}?text=Hi+${encodeURIComponent(
+                            t.team_name
+                          )},+regarding+your+slot+for+${encodeURIComponent(activeEvent.title)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 transition-colors flex items-center gap-1 cursor-pointer"
+                          title="Chat on WhatsApp"
+                        >
+                          <span>💬</span>
+                        </a>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal Shifter */}
+      {shiftingModalSquad && activeEvent && (
+        <SquadShiftModal
+          squad={shiftingModalSquad}
+          sourceEvent={activeEvent}
+          allEvents={events}
+          onClose={() => setShiftingModalSquad(null)}
+          onSuccess={() => {
+            loadEvents();
+            loadActiveEventSquads();
+          }}
+          showToast={showToast}
+        />
       )}
     </div>
   );
@@ -4710,6 +6033,7 @@ export default function AdminPage() {
     switch (activeTab) {
       case "generator": return <BulkGeneratorTab showToast={showToast} />;
       case "lobbies": return <LiveLobbiesTab showToast={showToast} onOpenPointsTab={() => setActiveTab("points")} />;
+      case "slots": return <SlotSquadShiftTab showToast={showToast} />;
       case "payments": return <PaymentsTab showToast={showToast} />;
       case "points": return <PointsTableTab showToast={showToast} />;
       case "roles": return <RoleManagerTab showToast={showToast} />;

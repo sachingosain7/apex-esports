@@ -93,37 +93,7 @@ BEGIN
   END;
 END $$;
 
--- 2. ENSURE ALL SUPPORTING COLUMNS EXIST
-ALTER TABLE admin_roles ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
-ALTER TABLE admin_roles ADD COLUMN IF NOT EXISTS role text DEFAULT 'admin';
-ALTER TABLE registrations ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
-ALTER TABLE payments ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
-ALTER TABLE events ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
-
-ALTER TABLE events ADD COLUMN IF NOT EXISTS is_published boolean NOT NULL DEFAULT true;
-ALTER TABLE events ADD COLUMN IF NOT EXISTS prize_distribution jsonb DEFAULT '{"first": 350, "second": 150, "third": 70, "fourth": 30}'::jsonb;
-ALTER TABLE events ADD COLUMN IF NOT EXISTS top_teams jsonb DEFAULT '{"first": "", "second": "", "third": "", "fourth": ""}'::jsonb;
-ALTER TABLE events ADD COLUMN IF NOT EXISTS final_points_table_url text;
-ALTER TABLE events ADD COLUMN IF NOT EXISTS slot_range_start int DEFAULT 5;
-ALTER TABLE events ADD COLUMN IF NOT EXISTS slot_range_end int DEFAULT 25;
-ALTER TABLE events ADD COLUMN IF NOT EXISTS is_slot_list_published boolean DEFAULT false;
-ALTER TABLE events ADD COLUMN IF NOT EXISTS custom_slot_assignments jsonb DEFAULT '{}'::jsonb;
-ALTER TABLE events ADD COLUMN IF NOT EXISTS room_id text;
-ALTER TABLE events ADD COLUMN IF NOT EXISTS room_password text;
-ALTER TABLE events ADD COLUMN IF NOT EXISTS whatsapp_group_link text;
-ALTER TABLE events ALTER COLUMN early_bird_slots DROP NOT NULL;
-ALTER TABLE events ALTER COLUMN early_bird_fee_paise DROP NOT NULL;
-ALTER TABLE events ALTER COLUMN early_bird_slots SET DEFAULT 0;
-ALTER TABLE events ALTER COLUMN early_bird_fee_paise SET DEFAULT 0;
-
-ALTER TABLE registrations ADD COLUMN IF NOT EXISTS whatsapp text;
-ALTER TABLE registrations ADD COLUMN IF NOT EXISTS amount_paise int;
-ALTER TABLE registrations ADD COLUMN IF NOT EXISTS slot_number int;
-
-ALTER TABLE payments ADD COLUMN IF NOT EXISTS screenshot_url text;
-
--- 3. ENSURE TABLES EXIST
+-- 2. ENSURE TABLES AND SUPPORTING COLUMNS EXIST
 CREATE TABLE IF NOT EXISTS public.points_tables (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   event_id uuid REFERENCES public.events(id) ON DELETE CASCADE,
@@ -141,6 +111,36 @@ CREATE TABLE IF NOT EXISTS public.admin_roles (
   created_at timestamptz DEFAULT now(),
   UNIQUE(user_id, role)
 );
+
+DO $$
+BEGIN
+  ALTER TABLE public.admin_roles ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
+  ALTER TABLE public.admin_roles ADD COLUMN IF NOT EXISTS role text DEFAULT 'admin';
+  ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
+  ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS whatsapp text;
+  ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS amount_paise int;
+  ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS slot_number int;
+  ALTER TABLE public.payments ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
+  ALTER TABLE public.payments ADD COLUMN IF NOT EXISTS screenshot_url text;
+  ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
+  ALTER TABLE public.events ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
+  ALTER TABLE public.events ADD COLUMN IF NOT EXISTS is_published boolean NOT NULL DEFAULT true;
+  ALTER TABLE public.events ADD COLUMN IF NOT EXISTS prize_distribution jsonb DEFAULT '{"first": 350, "second": 150, "third": 70, "fourth": 30}'::jsonb;
+  ALTER TABLE public.events ADD COLUMN IF NOT EXISTS top_teams jsonb DEFAULT '{"first": "", "second": "", "third": "", "fourth": ""}'::jsonb;
+  ALTER TABLE public.events ADD COLUMN IF NOT EXISTS final_points_table_url text;
+  ALTER TABLE public.events ADD COLUMN IF NOT EXISTS slot_range_start int DEFAULT 5;
+  ALTER TABLE public.events ADD COLUMN IF NOT EXISTS slot_range_end int DEFAULT 25;
+  ALTER TABLE public.events ADD COLUMN IF NOT EXISTS is_slot_list_published boolean DEFAULT false;
+  ALTER TABLE public.events ADD COLUMN IF NOT EXISTS custom_slot_assignments jsonb DEFAULT '{}'::jsonb;
+  ALTER TABLE public.events ADD COLUMN IF NOT EXISTS room_id text;
+  ALTER TABLE public.events ADD COLUMN IF NOT EXISTS room_password text;
+  ALTER TABLE public.events ADD COLUMN IF NOT EXISTS whatsapp_group_link text;
+  ALTER TABLE public.events ALTER COLUMN early_bird_slots DROP NOT NULL;
+  ALTER TABLE public.events ALTER COLUMN early_bird_fee_paise DROP NOT NULL;
+  ALTER TABLE public.events ALTER COLUMN early_bird_slots SET DEFAULT 0;
+  ALTER TABLE public.events ALTER COLUMN early_bird_fee_paise SET DEFAULT 0;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
 
 -- 4. TABLE PERMISSIONS & RLS POLICIES
 GRANT ALL ON TABLE orders TO anon, authenticated;
@@ -225,11 +225,17 @@ DO $$
 DECLARE
   v_user_id uuid;
 BEGIN
-  SELECT id INTO v_user_id FROM auth.users WHERE email = 'gosainrijpal@gmail.com';
+  SELECT id INTO v_user_id FROM auth.users WHERE lower(email) = 'gosainrijpal@gmail.com';
   IF v_user_id IS NOT NULL THEN
-    INSERT INTO admin_roles (user_id, role)
-    VALUES (v_user_id, 'owner')
-    ON CONFLICT (user_id, role) DO UPDATE SET role = 'owner';
+    DELETE FROM admin_roles WHERE user_id = v_user_id;
+    BEGIN
+      EXECUTE 'INSERT INTO admin_roles (user_id, role) VALUES ($1, $2)' USING v_user_id, 'owner';
+    EXCEPTION WHEN OTHERS THEN
+      BEGIN
+        EXECUTE 'INSERT INTO admin_roles (user_id, role) VALUES ($1, ''owner''::admin_role_t)' USING v_user_id;
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END;
+    END;
   END IF;
 END;
 $$;
@@ -272,8 +278,8 @@ BEGIN
   IF p_action = 'grant' THEN
     DELETE FROM admin_roles WHERE user_id = v_target_id;
     BEGIN
-      INSERT INTO admin_roles (user_id, role)
-      VALUES (v_target_id, v_clean_role);
+      EXECUTE 'INSERT INTO admin_roles (user_id, role) VALUES ($1, $2)'
+      USING v_target_id, v_clean_role;
     EXCEPTION WHEN OTHERS THEN
       BEGIN
         EXECUTE 'INSERT INTO admin_roles (user_id, role) VALUES ($1, $2::admin_role_t)'
@@ -328,7 +334,7 @@ BEGIN
   -- Step down current owner to admin
   DELETE FROM admin_roles WHERE user_id = v_current_user_id;
   BEGIN
-    INSERT INTO admin_roles (user_id, role) VALUES (v_current_user_id, 'admin');
+    EXECUTE 'INSERT INTO admin_roles (user_id, role) VALUES ($1, $2)' USING v_current_user_id, 'admin';
   EXCEPTION WHEN OTHERS THEN
     BEGIN
       EXECUTE 'INSERT INTO admin_roles (user_id, role) VALUES ($1, ''admin''::admin_role_t)' USING v_current_user_id;
@@ -340,7 +346,7 @@ BEGIN
   -- Grant owner to new owner
   DELETE FROM admin_roles WHERE user_id = v_new_owner_id;
   BEGIN
-    INSERT INTO admin_roles (user_id, role) VALUES (v_new_owner_id, 'owner');
+    EXECUTE 'INSERT INTO admin_roles (user_id, role) VALUES ($1, $2)' USING v_new_owner_id, 'owner';
   EXCEPTION WHEN OTHERS THEN
     EXECUTE 'INSERT INTO admin_roles (user_id, role) VALUES ($1, ''owner''::admin_role_t)' USING v_new_owner_id;
   END;
@@ -349,22 +355,23 @@ $$;
 
 GRANT EXECUTE ON FUNCTION admin_transfer_ownership(text) TO authenticated, anon;
 
-ALTER TABLE admin_roles ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
-
 DROP FUNCTION IF EXISTS public.admin_list_roles();
 CREATE OR REPLACE FUNCTION admin_list_roles()
 RETURNS TABLE (email text, role text, granted_at timestamptz)
-LANGUAGE sql
+LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
+BEGIN
+  RETURN QUERY
   SELECT
     COALESCE(u.email::text, ar.user_id::text) AS email,
     ar.role::text AS role,
-    COALESCE(ar.created_at, now()) AS granted_at
+    COALESCE(u.created_at, now()) AS granted_at
   FROM admin_roles ar
   LEFT JOIN auth.users u ON u.id = ar.user_id
   ORDER BY 3 DESC;
+END;
 $$;
 
 GRANT EXECUTE ON FUNCTION admin_list_roles() TO authenticated, anon;
@@ -826,6 +833,152 @@ $$;
 
 GRANT EXECUTE ON FUNCTION admin_get_event_registrations(uuid) TO authenticated, anon;
 
+-- 14B. SQUAD SHIFT & REALLOCATION RPC (MOVE SQUADS BETWEEN LOBBIES / MATCH TIMES)
+DROP FUNCTION IF EXISTS public.admin_shift_squad_event(uuid, uuid, uuid, int);
+CREATE OR REPLACE FUNCTION admin_shift_squad_event(
+  p_registration_id uuid,
+  p_from_event_id   uuid,
+  p_to_event_id     uuid,
+  p_new_slot        int DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_team_name text;
+  v_target_slot int := p_new_slot;
+BEGIN
+  -- 1. Locate registration & team name
+  SELECT team_name INTO v_team_name
+  FROM registrations
+  WHERE id = p_registration_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'registration_not_found: Registration ID % not found', p_registration_id;
+  END IF;
+
+  -- 2. If target slot is null, compute next available slot (defaulting 5-25)
+  IF v_target_slot IS NULL THEN
+    SELECT COALESCE(e.slot_range_start, 5) + (
+      SELECT COUNT(*)::int
+      FROM registrations
+      WHERE event_id = p_to_event_id AND status::text != 'cancelled'
+    )
+    INTO v_target_slot
+    FROM events e
+    WHERE e.id = p_to_event_id;
+
+    IF v_target_slot IS NULL THEN
+      v_target_slot := 5;
+    END IF;
+  END IF;
+
+  -- 3. Move registration to new event
+  UPDATE registrations
+  SET event_id = p_to_event_id,
+      slot_number = v_target_slot
+  WHERE id = p_registration_id;
+
+  -- 4. Sync filled_slots on both source and target events
+  UPDATE events
+  SET filled_slots = (
+    SELECT COUNT(*)::int
+    FROM registrations
+    WHERE event_id = p_from_event_id
+      AND status::text != 'cancelled'
+  )
+  WHERE id = p_from_event_id;
+
+  UPDATE events
+  SET filled_slots = (
+    SELECT COUNT(*)::int
+    FROM registrations
+    WHERE event_id = p_to_event_id
+      AND status::text != 'cancelled'
+  )
+  WHERE id = p_to_event_id;
+
+  -- 5. Record assigned slot in target event's custom_slot_assignments
+  IF v_team_name IS NOT NULL THEN
+    UPDATE events
+    SET custom_slot_assignments = jsonb_set(
+      COALESCE(custom_slot_assignments, '{}'::jsonb),
+      ARRAY[v_team_name],
+      to_jsonb(v_target_slot)
+    )
+    WHERE id = p_to_event_id;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'registration_id', p_registration_id,
+    'team_name', v_team_name,
+    'from_event_id', p_from_event_id,
+    'to_event_id', p_to_event_id,
+    'new_slot', v_target_slot
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION admin_shift_squad_event(uuid, uuid, uuid, int) TO authenticated, anon;
+
+-- 14C. CANCEL & REFUND SQUAD SLOT RPC
+DROP FUNCTION IF EXISTS public.admin_cancel_squad_slot(uuid, uuid);
+CREATE OR REPLACE FUNCTION admin_cancel_squad_slot(
+  p_registration_id uuid,
+  p_event_id        uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_order_id  uuid;
+  v_team_name text;
+BEGIN
+  SELECT order_id, team_name INTO v_order_id, v_team_name
+  FROM registrations
+  WHERE id = p_registration_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'registration_not_found';
+  END IF;
+
+  -- Mark registration cancelled
+  UPDATE registrations
+  SET status = 'cancelled'
+  WHERE id = p_registration_id;
+
+  -- Mark order refunded and payment rejected if found
+  IF v_order_id IS NOT NULL THEN
+    UPDATE orders SET status = 'refunded' WHERE id = v_order_id;
+    UPDATE payments SET status = 'rejected' WHERE order_id = v_order_id;
+  END IF;
+
+  -- Recalculate filled_slots
+  UPDATE events
+  SET filled_slots = (
+    SELECT COUNT(*)::int
+    FROM registrations
+    WHERE event_id = p_event_id
+      AND status::text != 'cancelled'
+  )
+  WHERE id = p_event_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'registration_id', p_registration_id,
+    'team_name', v_team_name,
+    'status', 'cancelled'
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION admin_cancel_squad_slot(uuid, uuid) TO authenticated, anon;
+
 -- 15. BULK GENERATOR RPC
 DROP FUNCTION IF EXISTS admin_bulk_create_lobbies(text, text[], text, text[], timestamptz[], text, text, int, int, int, int, int, boolean, jsonb);
 CREATE OR REPLACE FUNCTION admin_bulk_create_lobbies(
@@ -935,19 +1088,40 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
-DECLARE
-  v_eid uuid;
 BEGIN
-  v_eid := CASE WHEN TG_OP = 'DELETE' THEN OLD.event_id ELSE NEW.event_id END;
-  IF v_eid IS NOT NULL THEN
-    UPDATE events
-    SET filled_slots = (
-      SELECT COUNT(*)::int
-      FROM registrations
-      WHERE event_id = v_eid
-        AND status::text != 'cancelled'
-    )
-    WHERE id = v_eid;
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.event_id IS NOT NULL THEN
+      UPDATE events
+      SET filled_slots = (
+        SELECT COUNT(*)::int
+        FROM registrations
+        WHERE event_id = OLD.event_id
+          AND status::text != 'cancelled'
+      )
+      WHERE id = OLD.event_id;
+    END IF;
+  ELSE
+    IF NEW.event_id IS NOT NULL THEN
+      UPDATE events
+      SET filled_slots = (
+        SELECT COUNT(*)::int
+        FROM registrations
+        WHERE event_id = NEW.event_id
+          AND status::text != 'cancelled'
+      )
+      WHERE id = NEW.event_id;
+    END IF;
+
+    IF TG_OP = 'UPDATE' AND OLD.event_id IS NOT NULL AND OLD.event_id != NEW.event_id THEN
+      UPDATE events
+      SET filled_slots = (
+        SELECT COUNT(*)::int
+        FROM registrations
+        WHERE event_id = OLD.event_id
+          AND status::text != 'cancelled'
+      )
+      WHERE id = OLD.event_id;
+    END IF;
   END IF;
   RETURN NULL;
 END;
