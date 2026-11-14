@@ -5598,6 +5598,12 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
                     {p.event_titles?.map((t, i) => (
                       <Badge key={i} text={t} color="gray" />
                     ))}
+                    {p.team_names && p.team_names.length > 1 && (
+                      <span className="px-2 py-0.5 rounded text-[11px] font-black bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1">
+                        <span>⚠️</span>
+                        <span>Duplicate Claim Alert: {p.team_names.length} Squads on this UTR</span>
+                      </span>
+                    )}
                   </div>
 
                   <p className="text-[11px] text-slate-400 font-medium">{formatTimestamp(p.created_at)}</p>

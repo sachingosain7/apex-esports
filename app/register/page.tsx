@@ -176,6 +176,15 @@ interface PhaseAProps {
   submitError: string | null;
   isLoggedIn: boolean;
   currentUrl: string;
+  existingRegistration?: {
+    team_name: string;
+    whatsapp: string;
+    status: string;
+    pay_status?: string;
+    order_id?: string;
+  } | null;
+  isBookingAdditional: boolean;
+  onStartAdditionalSlot: () => void;
 }
 
 const LOCAL_STORAGE_TEAM_KEY = "apex_saved_team_name";
@@ -191,6 +200,9 @@ function PhaseADetails({
   submitError,
   isLoggedIn,
   currentUrl,
+  existingRegistration,
+  isBookingAdditional,
+  onStartAdditionalSlot,
 }: PhaseAProps) {
   const [whatsapp, setWhatsapp] = useState("");
   const [teamName, setTeamName] = useState("");
@@ -198,20 +210,26 @@ function PhaseADetails({
   const [hasAutoLoaded, setHasAutoLoaded] = useState(false);
   const [showAutoSavedBadge, setShowAutoSavedBadge] = useState(false);
 
-  // Auto-load saved team details on mount
+  // Auto-load saved team details on mount (only if not booking an additional slot)
   useEffect(() => {
     try {
-      const savedTeam = localStorage.getItem(LOCAL_STORAGE_TEAM_KEY);
-      const savedWa = localStorage.getItem(LOCAL_STORAGE_WA_KEY);
-      if (savedTeam) setTeamName(savedTeam);
-      if (savedWa) setWhatsapp(savedWa);
-      if (savedTeam || savedWa) {
-        setHasAutoLoaded(true);
+      if (!isBookingAdditional) {
+        const savedTeam = localStorage.getItem(LOCAL_STORAGE_TEAM_KEY);
+        const savedWa = localStorage.getItem(LOCAL_STORAGE_WA_KEY);
+        if (savedTeam) setTeamName(savedTeam);
+        if (savedWa) setWhatsapp(savedWa);
+        if (savedTeam || savedWa) {
+          setHasAutoLoaded(true);
+        }
+      } else {
+        // Pre-fill phone but require a new team name
+        const savedWa = localStorage.getItem(LOCAL_STORAGE_WA_KEY);
+        if (savedWa) setWhatsapp(savedWa);
       }
     } catch {
       // LocalStorage unavailable
     }
-  }, []);
+  }, [isBookingAdditional]);
 
   const handleTeamNameChange = (val: string) => {
     setTeamName(val);
@@ -288,8 +306,74 @@ function PhaseADetails({
 
   return (
     <div className="space-y-6">
+      {/* Existing Registration Banner (Prevents Duplicate Registrations with Same Number/Email) */}
+      {existingRegistration && !isBookingAdditional && (
+        <div className="rounded-2xl border-2 border-emerald-500/30 bg-emerald-50/90 p-5 shadow-sm space-y-3.5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <span className="text-2xl">🛡️</span>
+              <div>
+                <h3 className="text-sm font-black text-emerald-950 uppercase tracking-wider">
+                  You are already registered in this lobby!
+                </h3>
+                <p className="text-xs text-emerald-700">
+                  Your squad is already locked for this tournament.
+                </p>
+              </div>
+            </div>
+            <span className="px-3 py-1 rounded-full text-[11px] font-black bg-emerald-600 text-white shadow-xs">
+              {existingRegistration.pay_status === "approved" || existingRegistration.status === "confirmed"
+                ? "✓ Confirmed"
+                : "⏳ Verification Pending"}
+            </span>
+          </div>
+
+          <div className="rounded-xl bg-white border border-emerald-200/80 p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Registered Squad</p>
+              <p className="text-base font-black text-slate-900">{existingRegistration.team_name}</p>
+              <p className="text-xs text-slate-600 font-medium mt-0.5">
+                Contact: +91 {existingRegistration.whatsapp.replace("+91", "").slice(-10)}
+              </p>
+            </div>
+            <Link
+              href="/my-tournaments"
+              className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors shadow-xs shrink-0"
+            >
+              View Room ID & Passwords →
+            </Link>
+          </div>
+
+          <div className="pt-2 border-t border-emerald-200/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <p className="text-xs text-slate-700 font-semibold">
+              Want to register an additional squad or lineup in this lobby?
+            </p>
+            <button
+              type="button"
+              onClick={onStartAdditionalSlot}
+              className="px-4 py-2 rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 font-black text-xs transition-colors shadow-xs cursor-pointer shrink-0"
+            >
+              + Book Additional Slot / Second Squad
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Additional Slot Mode Guidance Banner */}
+      {isBookingAdditional && (
+        <div className="rounded-2xl border-2 border-amber-400 bg-amber-50/90 p-4 space-y-1.5 text-xs text-amber-950 shadow-xs">
+          <p className="font-black flex items-center gap-1.5 text-sm text-amber-900">
+            <span>⚡</span>
+            <span>Booking Additional Slot (Second Squad)</span>
+          </p>
+          <p className="text-amber-800 leading-relaxed text-[11px]">
+            Each additional squad requires a separate <strong>₹{formatINR(totalPaise)}</strong> entry payment. Enter your second squad&apos;s team name and scan the QR code to submit a <strong>fresh, unique 12-digit UTR</strong>. Re-using the same UTR or payment screenshot will be blocked.
+          </p>
+        </div>
+      )}
+
       {/* Auto-save notification pill */}
-      {(hasAutoLoaded || showAutoSavedBadge) && (
+      {!isBookingAdditional && (hasAutoLoaded || showAutoSavedBadge) && (
         <div className="flex items-center justify-between rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2 text-xs text-emerald-800 font-semibold shadow-xs">
           <span className="flex items-center gap-1.5">
             <span>💾</span>
@@ -305,6 +389,14 @@ function PhaseADetails({
         </div>
       )}
 
+      {/* Hide the input form if already registered unless user explicitly requested to book an additional slot */}
+      {existingRegistration && !isBookingAdditional ? (
+        <div className="text-center py-4">
+          <p className="text-xs text-slate-500">
+            To view credentials, click <strong>View Room ID & Passwords</strong> above, or click <strong>+ Book Additional Slot</strong> to register another team.
+          </p>
+        </div>
+      ) : (
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -455,6 +547,7 @@ function PhaseADetails({
           )}
         </button>
       </form>
+      )}
     </div>
   );
 }
@@ -509,6 +602,8 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [screenshotData, setScreenshotData] = useState<string | null>(null);
+  const [utrValidationStatus, setUtrValidationStatus] = useState<"idle" | "checking" | "valid" | "duplicate">("idle");
+  const [utrErrorMessage, setUtrErrorMessage] = useState<string | null>(null);
 
   // Restore saved UTR draft across browser reloads
   useEffect(() => {
@@ -521,9 +616,72 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
   const handleUtrChange = (val: string) => {
     const digits = val.replace(/\D/g, "").slice(0, 12);
     setUtr(digits);
+    setUtrTouched(true);
+    setError(null);
     try {
       localStorage.setItem(`apex_draft_utr_${order.order_id}`, digits);
     } catch {}
+
+    if (digits.length === 12) {
+      // 1. Immediate local cache check
+      try {
+        const existingStr = localStorage.getItem("apex_all_submissions");
+        if (existingStr) {
+          const list = JSON.parse(existingStr);
+          const match = list.find((item: any) => item.utr === digits && item.order_id !== order.order_id);
+          if (match) {
+            setUtrValidationStatus("duplicate");
+            setUtrErrorMessage(
+              `Duplicate UTR: This UTR was already submitted for team "${match.teamName || match.team_name}". Every tournament slot requires a separate payment.`
+            );
+            return;
+          }
+        }
+      } catch {}
+
+      // 2. Real-time DB RPC check
+      setUtrValidationStatus("checking");
+      supabase
+        .rpc("validate_utr_availability", {
+          p_utr: digits,
+          p_order_id: order.order_id,
+        })
+        .then(({ data, error: rpcErr }) => {
+          if (!rpcErr && data) {
+            if (!data.available) {
+              setUtrValidationStatus("duplicate");
+              setUtrErrorMessage(
+                data.message || "This UTR has already been submitted for another booking. Please make a fresh payment."
+              );
+            } else {
+              setUtrValidationStatus("valid");
+              setUtrErrorMessage(null);
+            }
+          } else {
+            // Direct table fallback check
+            supabase
+              .from("payments")
+              .select("order_id, utr, status")
+              .eq("utr", digits)
+              .neq("order_id", order.order_id)
+              .maybeSingle()
+              .then(({ data: payData }) => {
+                if (payData && payData.status !== "rejected") {
+                  setUtrValidationStatus("duplicate");
+                  setUtrErrorMessage(
+                    "This UTR has already been submitted for another booking. Each tournament slot requires a fresh payment."
+                  );
+                } else {
+                  setUtrValidationStatus("valid");
+                  setUtrErrorMessage(null);
+                }
+              });
+          }
+        });
+    } else {
+      setUtrValidationStatus("idle");
+      setUtrErrorMessage(null);
+    }
   };
 
   const secondsLeft = useCountdown(order.expires_at);
@@ -556,27 +714,40 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
 
   const handleConfirm = useCallback(async () => {
     if (!utrValid || submitting) return;
+    if (utrValidationStatus === "duplicate") {
+      setError(utrErrorMessage || "This UTR has already been used for another booking.");
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
     try {
       const cleanPhone = whatsapp ? (whatsapp.startsWith("+91") ? whatsapp : `+91${whatsapp}`) : "+919999999999";
 
-      // 0. Primary atomic RPC (bypasses RLS, creates order, registration, payment in 1 atomic step)
-      try {
-        for (const ev of events) {
-          await supabase.rpc("submit_tournament_registration", {
-            p_order_id: order.order_id,
-            p_event_id: ev.id,
-            p_team_name: teamName,
-            p_whatsapp: cleanPhone,
-            p_utr: utr,
-            p_amount_paise: effectiveFee(ev),
-            p_screenshot_url: screenshotData || null,
-          });
-        }
-      } catch {}
+      // 0. Primary atomic RPC (with strict anti-duplicate UTR validation)
+      for (const ev of events) {
+        const { error: rpcErr } = await supabase.rpc("submit_tournament_registration", {
+          p_order_id: order.order_id,
+          p_event_id: ev.id,
+          p_team_name: teamName,
+          p_whatsapp: cleanPhone,
+          p_utr: utr,
+          p_amount_paise: effectiveFee(ev),
+          p_screenshot_url: screenshotData || null,
+        });
 
-      // 1. Ensure order exists in orders table so foreign key constraint NEVER fails:
+        if (rpcErr) {
+          if (rpcErr.message.includes("duplicate_utr")) {
+            throw new Error(
+              rpcErr.message.replace(/^.*duplicate_utr:\s*/, "") ||
+              "Duplicate UTR detected: This UTR has already been used for another tournament registration. Each slot requires a separate payment."
+            );
+          }
+          throw rpcErr;
+        }
+      }
+
+      // 1. Ensure order exists in orders table
       try {
         await supabase.from("orders").upsert({
           id: order.order_id,
@@ -587,7 +758,7 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
         });
       } catch {}
 
-      // 2. Ensure registrations exist in registrations table (resilient insert/update):
+      // 2. Ensure registrations exist in registrations table
       try {
         for (const ev of events) {
           const { data: existingRegs } = await supabase
@@ -619,18 +790,7 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
         }
       } catch {}
 
-      // 3. Insert or upsert payments row:
-      try {
-        await supabase.from("payments").upsert({
-          order_id: order.order_id,
-          utr: utr,
-          amount_paise: order.total_paise,
-          status: "pending_verification",
-          screenshot_url: screenshotData || null,
-        }, { onConflict: "utr" });
-      } catch {}
-
-      // 4. Try submit_order_utr RPC as well
+      // 3. Try submit_order_utr RPC as well
       try {
         await supabase.rpc("submit_order_utr", {
           p_order_id: order.order_id,
@@ -638,7 +798,7 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
         });
       } catch {}
 
-      // 5. Update events.filled_slots directly so homepage slot count reflects immediately
+      // 4. Update events.filled_slots directly so homepage slot count reflects immediately
       try {
         for (const ev of events) {
           const { count } = await supabase
@@ -651,7 +811,7 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
         }
       } catch {}
 
-      // 6. Store in global shared submissions store (instantly visible in Admin Dashboard & My Tournaments)
+      // 5. Store in global shared submissions store (instantly visible in Admin Dashboard & My Tournaments)
       try {
         const existingStr = localStorage.getItem("apex_all_submissions");
         const existing: Array<{ utr: string }> = existingStr ? JSON.parse(existingStr) : [];
@@ -687,19 +847,19 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
         localStorage.setItem("apex_last_lookup_mode", "utr");
       } catch {}
 
-      // 7. Save screenshot in local store for host view & persistence
+      // 6. Save screenshot in local store for host view & persistence
       if (screenshotData) {
         try {
           localStorage.setItem(`apex_payment_ss_${utr}`, screenshotData);
         } catch {}
       }
 
-      // 8. Clean up UTR draft
+      // 7. Clean up UTR draft
       try {
         localStorage.removeItem(`apex_draft_utr_${order.order_id}`);
       } catch {}
 
-      // 9. Broadcast storage event so open Admin windows receive instant real-time notification
+      // 8. Broadcast storage event so open Admin windows receive instant real-time notification
       try {
         window.dispatchEvent(new Event("storage"));
       } catch {}
@@ -707,8 +867,10 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
       onSubmitted(utr);
     } catch (err: unknown) {
       const msg = extractErrorMessage(err);
-      if (msg.includes("duplicate_utr") || msg.includes("duplicate key")) {
-        setError("This UTR has already been submitted. Contact WhatsApp host if you already paid.");
+      if (msg.includes("duplicate_utr") || msg.includes("already been used") || msg.includes("already been submitted")) {
+        setUtrValidationStatus("duplicate");
+        setUtrErrorMessage(msg);
+        setError(msg);
       } else if (msg.includes("order_expired")) {
         setError("Your slot hold expired. Please go back and pick your slot again.");
       } else {
@@ -716,7 +878,7 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
       }
       setSubmitting(false);
     }
-  }, [utr, utrValid, submitting, order.order_id, order.total_paise, screenshotData, whatsapp, events, teamName, onSubmitted]);
+  }, [utr, utrValid, submitting, utrValidationStatus, utrErrorMessage, order.order_id, order.total_paise, screenshotData, whatsapp, events, teamName, onSubmitted]);
 
   if (expired) {
     return (
@@ -850,8 +1012,39 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
           onChange={(e) => handleUtrChange(e.target.value)}
           onBlur={() => setUtrTouched(true)}
           placeholder="e.g. 542198012345"
-          className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 font-mono text-sm font-bold text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-colors"
+          className={`w-full rounded-xl border px-3.5 py-2.5 font-mono text-sm font-bold text-slate-900 outline-none transition-colors ${
+            utrValidationStatus === "duplicate"
+              ? "border-red-500 bg-red-50/50 focus:border-red-600"
+              : utrValidationStatus === "valid"
+              ? "border-emerald-500 bg-emerald-50/40 focus:border-emerald-600"
+              : "border-slate-300 bg-slate-50 focus:border-blue-600 focus:bg-white"
+          }`}
         />
+
+        {/* Real-Time UTR Availability Feedback */}
+        {utrValidationStatus === "checking" && (
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 animate-pulse">
+            <span className="h-3 w-3 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+            <span>Verifying UTR uniqueness…</span>
+          </div>
+        )}
+
+        {utrValidationStatus === "duplicate" && utrErrorMessage && (
+          <div className="rounded-xl border-2 border-red-300 bg-red-50 p-3 text-xs text-red-700 space-y-1">
+            <p className="font-black flex items-center gap-1.5 text-red-900">
+              <span>🚫</span>
+              <span>Duplicate UTR Detected</span>
+            </p>
+            <p className="font-medium leading-relaxed">{utrErrorMessage}</p>
+          </div>
+        )}
+
+        {utrValidationStatus === "valid" && (
+          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700">
+            <span>✓</span>
+            <span>UTR available and valid for this booking.</span>
+          </div>
+        )}
 
         {/* Screenshot Upload for Instant Verification */}
         <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-3 space-y-2">
@@ -898,7 +1091,7 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
 
         <button
           onClick={handleConfirm}
-          disabled={!utrValid || submitting}
+          disabled={!utrValid || submitting || utrValidationStatus === "duplicate" || utrValidationStatus === "checking"}
           className="w-full py-3.5 rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 font-black text-sm transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
         >
           {submitting ? (
@@ -1167,9 +1360,10 @@ interface PhaseCProps {
   utr: string;
   events: EvSummary[];
   teamName: string;
+  onBookAdditional?: () => void;
 }
 
-function PhaseCSuccess({ utr, events, teamName }: PhaseCProps) {
+function PhaseCSuccess({ utr, events, teamName, onBookAdditional }: PhaseCProps) {
   return (
     <div className="space-y-6 text-center">
       {/* Success Badge */}
@@ -1275,6 +1469,23 @@ function PhaseCSuccess({ utr, events, teamName }: PhaseCProps) {
           <span>🔑</span>
           <span>View 3-Match IDP Live on Website →</span>
         </Link>
+
+        {onBookAdditional && (
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+              } catch {}
+              onBookAdditional();
+            }}
+            className="w-full flex items-center justify-center gap-2 rounded-xl border-2 border-amber-400 bg-amber-50 hover:bg-amber-100 py-3 text-xs font-black text-amber-950 transition-colors shadow-xs cursor-pointer"
+          >
+            <span>➕</span>
+            <span>Book An Additional Slot for This Tournament (Second Squad)</span>
+          </button>
+        )}
+
         <Link
           href="/"
           onClick={() => {
@@ -1314,6 +1525,14 @@ function RegisterContent() {
   const [submittedUtr, setSubmittedUtr] = useState("");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUrl, setCurrentUrl] = useState("/register");
+  const [existingRegistration, setExistingRegistration] = useState<{
+    team_name: string;
+    whatsapp: string;
+    status: string;
+    pay_status?: string;
+    order_id?: string;
+  } | null>(null);
+  const [isBookingAdditional, setIsBookingAdditional] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -1356,6 +1575,71 @@ function RegisterContent() {
         }
       }
     } catch {}
+  }, []);
+
+  // Check if current user or saved mobile is already registered in this event
+  useEffect(() => {
+    if (events.length === 0) return;
+    const targetEventId = events[0].id;
+
+    // 1. Check local storage cache
+    try {
+      const localSubsStr = localStorage.getItem("apex_all_submissions");
+      if (localSubsStr) {
+        const localSubs = JSON.parse(localSubsStr);
+        const match = localSubs.find((s: any) =>
+          (Array.isArray(s.event_ids) && s.event_ids.includes(targetEventId)) ||
+          (Array.isArray(s.events) && s.events.some((e: any) => e.id === targetEventId))
+        );
+        if (match) {
+          setExistingRegistration({
+            team_name: match.teamName || match.team_name || "Your Squad",
+            whatsapp: match.whatsapp || match.phone || "",
+            status: match.status || "pending_verification",
+            pay_status: match.pay_status || "pending_verification",
+            order_id: match.order_id,
+          });
+        }
+      }
+    } catch {}
+
+    // 2. Check Supabase database via RPC
+    const savedWa = typeof window !== "undefined" ? localStorage.getItem(LOCAL_STORAGE_WA_KEY) : null;
+    supabase.auth.getUser().then(({ data }) => {
+      const userId = data.user?.id || null;
+      if (savedWa || userId) {
+        supabase
+          .rpc("check_existing_registration", {
+            p_event_id: targetEventId,
+            p_whatsapp: savedWa || null,
+            p_user_id: userId,
+          })
+          .then(({ data: checkData, error }) => {
+            if (!error && checkData && checkData.registered) {
+              setExistingRegistration({
+                team_name: checkData.team_name,
+                whatsapp: checkData.whatsapp,
+                status: checkData.status,
+                pay_status: checkData.pay_status,
+                order_id: checkData.order_id,
+              });
+            }
+          });
+      }
+    });
+  }, [events]);
+
+  const handleStartAdditionalSlot = useCallback(() => {
+    setIsBookingAdditional(true);
+    setPhase("details");
+    setOrder(null);
+    setSubmittedUtr("");
+    setTeamName("");
+    try {
+      localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+      localStorage.removeItem(LOCAL_STORAGE_TEAM_KEY);
+    } catch {}
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
   useEffect(() => {
@@ -1617,6 +1901,9 @@ function RegisterContent() {
                 submitError={submitError}
                 isLoggedIn={isLoggedIn}
                 currentUrl={currentUrl}
+                existingRegistration={existingRegistration}
+                isBookingAdditional={isBookingAdditional}
+                onStartAdditionalSlot={handleStartAdditionalSlot}
               />
             )}
 
@@ -1646,6 +1933,7 @@ function RegisterContent() {
                 utr={submittedUtr}
                 events={events}
                 teamName={teamName}
+                onBookAdditional={handleStartAdditionalSlot}
               />
             )}
           </div>

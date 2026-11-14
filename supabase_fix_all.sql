@@ -116,12 +116,14 @@ DO $$
 BEGIN
   ALTER TABLE public.admin_roles ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
   ALTER TABLE public.admin_roles ADD COLUMN IF NOT EXISTS role text DEFAULT 'admin';
+  ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS user_id uuid;
   ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
   ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS whatsapp text;
   ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS amount_paise int;
   ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS slot_number int;
   ALTER TABLE public.payments ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
   ALTER TABLE public.payments ADD COLUMN IF NOT EXISTS screenshot_url text;
+  ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS user_id uuid;
   ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
   ALTER TABLE public.events ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
   ALTER TABLE public.events ADD COLUMN IF NOT EXISTS is_published boolean NOT NULL DEFAULT true;
@@ -460,7 +462,7 @@ $$;
 
 GRANT EXECUTE ON FUNCTION create_order(text, uuid[], text[]) TO authenticated, anon;
 
--- 9. SUBMIT ORDER UTR (AVAILABLE TO ANON USERS)
+-- 9. SUBMIT ORDER UTR (AVAILABLE TO ANON USERS, STRICT ANTI-DUPLICATE SHIELD)
 DROP FUNCTION IF EXISTS public.submit_order_utr(uuid, text);
 CREATE OR REPLACE FUNCTION submit_order_utr(p_order_id uuid, p_utr text)
 RETURNS jsonb
@@ -470,9 +472,30 @@ SET search_path = public
 AS $$
 DECLARE
   v_order orders%ROWTYPE;
+  v_clean_utr text := trim(p_utr);
+  v_existing_team text;
 BEGIN
-  IF p_utr !~ '^[0-9]{12}$' THEN
+  IF v_clean_utr !~ '^[0-9]{12}$' THEN
     RAISE EXCEPTION 'invalid_utr: UTR must be exactly 12 digits';
+  END IF;
+
+  -- 1. Strict anti-duplicate check: reject if UTR is already tied to a different order
+  IF EXISTS (
+    SELECT 1 FROM payments
+    WHERE utr = v_clean_utr
+      AND order_id IS NOT NULL
+      AND order_id != p_order_id
+      AND status::text != 'rejected'
+  ) THEN
+    SELECT r.team_name INTO v_existing_team
+    FROM payments p
+    JOIN registrations r ON r.order_id = p.order_id
+    WHERE p.utr = v_clean_utr
+    LIMIT 1;
+
+    RAISE EXCEPTION 'duplicate_utr: This UTR (%) has already been used for another booking%s. Every tournament slot requires a fresh, unique payment UTR.',
+      v_clean_utr,
+      CASE WHEN v_existing_team IS NOT NULL THEN ' (Team: ' || v_existing_team || ')' ELSE '' END;
   END IF;
 
   SELECT * INTO v_order
@@ -480,30 +503,160 @@ BEGIN
   WHERE id = p_order_id
   FOR UPDATE;
 
-  -- Upsert payment row
-  INSERT INTO payments (order_id, utr, amount_paise, status)
-  VALUES (p_order_id, p_utr, COALESCE(v_order.total_paise, 3000), 'pending_verification')
-  ON CONFLICT (utr) DO UPDATE SET
-    order_id = EXCLUDED.order_id,
-    status = 'pending_verification';
+  -- 2. Upsert payment row strictly tied to this order
+  IF EXISTS (SELECT 1 FROM payments WHERE utr = v_clean_utr) THEN
+    UPDATE payments
+    SET amount_paise = COALESCE(v_order.total_paise, 3000),
+        status = 'pending_verification'
+    WHERE utr = v_clean_utr AND order_id = p_order_id;
+  ELSE
+    INSERT INTO payments (order_id, utr, amount_paise, status)
+    VALUES (p_order_id, v_clean_utr, COALESCE(v_order.total_paise, 3000), 'pending_verification');
+  END IF;
 
-  -- Move registrations to pending_payment (safe for both enum and text)
+  -- 3. Move registrations to pending_payment (safe for both enum and text)
   UPDATE registrations
   SET status = 'pending_payment'
   WHERE order_id = p_order_id;
 
-  -- Mark order pending (safe for both enum and text)
+  -- 4. Mark order pending (safe for both enum and text)
   IF FOUND THEN
     UPDATE orders SET status = 'pending' WHERE id = p_order_id;
   END IF;
 
-  RETURN jsonb_build_object('success', true, 'utr', p_utr);
+  RETURN jsonb_build_object('success', true, 'utr', v_clean_utr);
 END;
 $$;
 
 GRANT EXECUTE ON FUNCTION submit_order_utr(uuid, text) TO authenticated, anon;
 
--- 9B. COMPLETE 1-CLICK ATOMIC REGISTRATION RPC (BYPASSES ALL POSTGREST RLS RESTRICTIONS)
+-- 9A. REAL-TIME UTR AVAILABILITY VALIDATOR RPC
+DROP FUNCTION IF EXISTS public.validate_utr_availability(text, uuid);
+CREATE OR REPLACE FUNCTION validate_utr_availability(
+  p_utr      text,
+  p_order_id uuid DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_clean_utr text := trim(p_utr);
+  v_existing payments%ROWTYPE;
+  v_registered_team text;
+  v_existing_event text;
+BEGIN
+  IF v_clean_utr !~ '^[0-9]{12}$' THEN
+    RETURN jsonb_build_object(
+      'available', false,
+      'reason', 'invalid_format',
+      'message', 'UTR must be exactly 12 digits'
+    );
+  END IF;
+
+  SELECT * INTO v_existing
+  FROM payments
+  WHERE utr = v_clean_utr;
+
+  IF FOUND THEN
+    -- If it belongs to the exact same order and is pending, it is a safe update/re-submission
+    IF p_order_id IS NOT NULL AND v_existing.order_id = p_order_id THEN
+      RETURN jsonb_build_object('available', true, 'reused_same_order', true);
+    END IF;
+
+    -- Look up squad and event that already claimed this UTR
+    SELECT r.team_name, e.title INTO v_registered_team, v_existing_event
+    FROM registrations r
+    LEFT JOIN events e ON e.id = r.event_id
+    WHERE r.order_id = v_existing.order_id
+    LIMIT 1;
+
+    RETURN jsonb_build_object(
+      'available', false,
+      'reason', 'already_used',
+      'status', v_existing.status::text,
+      'team_name', v_registered_team,
+      'event_title', v_existing_event,
+      'message', format('This UTR (%s) has already been submitted for %s%s. Each tournament slot requires a fresh payment. Duplicate UTR submissions are not permitted.',
+        v_clean_utr,
+        COALESCE(v_registered_team, 'another booking'),
+        CASE WHEN v_existing_event IS NOT NULL THEN ' in ' || v_existing_event ELSE '' END
+      )
+    );
+  END IF;
+
+  RETURN jsonb_build_object('available', true);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION validate_utr_availability(text, uuid) TO authenticated, anon;
+
+-- 9B. CHECK EXISTING REGISTRATION IN LOBBY RPC (PREVENTS ACCIDENTAL DUPLICATES)
+DROP FUNCTION IF EXISTS public.check_existing_registration(uuid, text, uuid);
+CREATE OR REPLACE FUNCTION check_existing_registration(
+  p_event_id uuid,
+  p_whatsapp text DEFAULT NULL,
+  p_user_id  uuid DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_clean_phone text;
+  v_reg registrations%ROWTYPE;
+  v_pay payments%ROWTYPE;
+BEGIN
+  IF p_whatsapp IS NOT NULL THEN
+    v_clean_phone := right(regexp_replace(p_whatsapp, '[^0-9]', '', 'g'), 10);
+  END IF;
+
+  -- 1. Search active registrations for this event by whatsapp
+  IF v_clean_phone IS NOT NULL AND length(v_clean_phone) = 10 THEN
+    SELECT * INTO v_reg
+    FROM registrations
+    WHERE event_id = p_event_id
+      AND status::text != 'cancelled'
+      AND right(regexp_replace(COALESCE(whatsapp, ''), '[^0-9]', '', 'g'), 10) = v_clean_phone
+    ORDER BY created_at DESC
+    LIMIT 1;
+  END IF;
+
+  -- 2. Search by user_id if not found by phone
+  IF NOT FOUND AND p_user_id IS NOT NULL THEN
+    SELECT * INTO v_reg
+    FROM registrations
+    WHERE event_id = p_event_id
+      AND status::text != 'cancelled'
+      AND user_id = p_user_id
+    ORDER BY created_at DESC
+    LIMIT 1;
+  END IF;
+
+  IF FOUND THEN
+    SELECT * INTO v_pay FROM payments WHERE order_id = v_reg.order_id LIMIT 1;
+    RETURN jsonb_build_object(
+      'registered', true,
+      'registration_id', v_reg.id,
+      'order_id', v_reg.order_id,
+      'team_name', v_reg.team_name,
+      'whatsapp', v_reg.whatsapp,
+      'status', v_reg.status::text,
+      'pay_status', COALESCE(v_pay.status::text, 'pending_verification'),
+      'utr', v_pay.utr,
+      'created_at', v_reg.created_at
+    );
+  END IF;
+
+  RETURN jsonb_build_object('registered', false);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION check_existing_registration(uuid, text, uuid) TO authenticated, anon;
+
+-- 9C. COMPLETE 1-CLICK ATOMIC REGISTRATION RPC (WITH BULLETPROOF ANTI-DUPLICATE SHIELD)
 DROP FUNCTION IF EXISTS public.submit_tournament_registration(uuid, uuid, text, text, text, int, text);
 CREATE OR REPLACE FUNCTION submit_tournament_registration(
   p_order_id       uuid,
@@ -521,18 +674,43 @@ SET search_path = public
 AS $$
 DECLARE
   v_clean_phone text := regexp_replace(COALESCE(p_whatsapp, ''), '[^0-9+]', '', 'g');
+  v_clean_utr text := trim(COALESCE(p_utr, ''));
   v_target_order_id uuid := COALESCE(p_order_id, gen_random_uuid());
+  v_existing_team text;
+  v_caller_id uuid := auth.uid();
 BEGIN
+  -- 0. Anti-duplicate UTR validation
+  IF length(v_clean_utr) = 12 THEN
+    IF EXISTS (
+      SELECT 1 FROM payments
+      WHERE utr = v_clean_utr
+        AND order_id IS NOT NULL
+        AND order_id != v_target_order_id
+        AND status::text != 'rejected'
+    ) THEN
+      SELECT r.team_name INTO v_existing_team
+      FROM payments p
+      JOIN registrations r ON r.order_id = p.order_id
+      WHERE p.utr = v_clean_utr
+      LIMIT 1;
+
+      RAISE EXCEPTION 'duplicate_utr: This UTR (%) has already been used for another booking%s. Every tournament slot requires a separate payment. Please make a fresh payment for additional slots.',
+        v_clean_utr,
+        CASE WHEN v_existing_team IS NOT NULL THEN ' (Team: ' || v_existing_team || ')' ELSE '' END;
+    END IF;
+  END IF;
+
   -- 1. Ensure order exists
   IF EXISTS (SELECT 1 FROM orders WHERE id = v_target_order_id) THEN
     UPDATE orders
     SET whatsapp = v_clean_phone,
         total_paise = p_amount_paise,
-        status = 'pending'
+        status = 'pending',
+        user_id = COALESCE(v_caller_id, orders.user_id)
     WHERE id = v_target_order_id;
   ELSE
-    INSERT INTO orders (id, whatsapp, total_paise, status, expires_at)
-    VALUES (v_target_order_id, v_clean_phone, p_amount_paise, 'pending', now() + interval '1 day');
+    INSERT INTO orders (id, whatsapp, total_paise, status, expires_at, user_id)
+    VALUES (v_target_order_id, v_clean_phone, p_amount_paise, 'pending', now() + interval '1 day', v_caller_id);
   END IF;
 
   -- 2. Insert or update registration (resilient to missing unique constraint)
@@ -541,25 +719,25 @@ BEGIN
     SET whatsapp = v_clean_phone,
         team_name = p_team_name,
         amount_paise = p_amount_paise,
-        status = 'pending_payment'
+        status = 'pending_payment',
+        user_id = COALESCE(v_caller_id, registrations.user_id)
     WHERE order_id = v_target_order_id AND event_id = p_event_id;
   ELSE
-    INSERT INTO registrations (order_id, event_id, whatsapp, team_name, status, amount_paise)
-    VALUES (v_target_order_id, p_event_id, v_clean_phone, p_team_name, 'pending_payment', p_amount_paise);
+    INSERT INTO registrations (order_id, event_id, whatsapp, team_name, status, amount_paise, user_id)
+    VALUES (v_target_order_id, p_event_id, v_clean_phone, p_team_name, 'pending_payment', p_amount_paise, v_caller_id);
   END IF;
 
-  -- 3. Insert or update payment (resilient to duplicate UTRs)
-  IF p_utr IS NOT NULL AND length(trim(p_utr)) > 0 THEN
-    IF EXISTS (SELECT 1 FROM payments WHERE utr = trim(p_utr)) THEN
+  -- 3. Insert or update payment (strictly unique to this order)
+  IF length(v_clean_utr) > 0 THEN
+    IF EXISTS (SELECT 1 FROM payments WHERE utr = v_clean_utr) THEN
       UPDATE payments
-      SET order_id = v_target_order_id,
-          amount_paise = p_amount_paise,
+      SET amount_paise = p_amount_paise,
           status = 'pending_verification',
           screenshot_url = COALESCE(p_screenshot_url, payments.screenshot_url)
-      WHERE utr = trim(p_utr);
+      WHERE utr = v_clean_utr AND order_id = v_target_order_id;
     ELSE
       INSERT INTO payments (order_id, utr, amount_paise, status, screenshot_url)
-      VALUES (v_target_order_id, trim(p_utr), p_amount_paise, 'pending_verification', p_screenshot_url);
+      VALUES (v_target_order_id, v_clean_utr, p_amount_paise, 'pending_verification', p_screenshot_url);
     END IF;
   END IF;
 
@@ -577,7 +755,7 @@ BEGIN
     'success', true,
     'order_id', v_target_order_id,
     'event_id', p_event_id,
-    'utr', p_utr
+    'utr', v_clean_utr
   );
 END;
 $$;
