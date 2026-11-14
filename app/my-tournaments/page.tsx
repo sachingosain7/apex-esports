@@ -347,16 +347,18 @@ export default function MyTournamentsPage() {
           if (matchedSubs.length > 0) {
             const allRawEventsWithSub: Array<{ ev: { id?: string; event_id?: string; title?: string }; sub: SubItem; idx: number }> = [];
             matchedSubs.forEach((sub, subIdx) => {
-              const rawEvents =
-                Array.isArray(sub.events) && sub.events.length > 0
-                  ? sub.events
-                  : Array.isArray((sub as Record<string, unknown>).event_ids) && ((sub as Record<string, unknown>).event_ids as string[]).length > 0
-                  ? ((sub as Record<string, unknown>).event_ids as string[]).map((id) => ({ id, event_id: id }))
-                  : Array.isArray((sub as Record<string, unknown>).event_titles) && ((sub as Record<string, unknown>).event_titles as string[]).length > 0
-                  ? ((sub as Record<string, unknown>).event_titles as string[]).map((t: string) => ({ title: t }))
-                  : [{ title: "Apex Scrims Lobby" }];
+              const rawEvents: Array<{ id?: string; event_id?: string; title?: string }> = [];
+              if (Array.isArray(sub.events) && sub.events.length > 0) {
+                rawEvents.push(...sub.events);
+              } else if (Array.isArray((sub as Record<string, unknown>).event_ids) && ((sub as Record<string, unknown>).event_ids as string[]).length > 0) {
+                rawEvents.push(...((sub as Record<string, unknown>).event_ids as string[]).map((id) => ({ id, event_id: id })));
+              } else if (Array.isArray((sub as Record<string, unknown>).event_titles) && ((sub as Record<string, unknown>).event_titles as string[]).length > 0) {
+                rawEvents.push(...((sub as Record<string, unknown>).event_titles as string[]).map((t: string) => ({ title: t })));
+              }
               rawEvents.forEach((ev, evIdx) => {
-                allRawEventsWithSub.push({ ev, sub, idx: subIdx * 10 + evIdx });
+                if (ev.id || ev.event_id || ev.title) {
+                  allRawEventsWithSub.push({ ev, sub, idx: subIdx * 10 + evIdx });
+                }
               });
             });
 
@@ -369,57 +371,59 @@ export default function MyTournamentsPage() {
               } catch {}
             }
 
-            rows = allRawEventsWithSub.map(({ ev, sub, idx }) => {
-              const liveEv = evMap.get(ev.id || ev.event_id);
-              const isApproved =
-                sub.status === "approved" ||
-                sub.status === "confirmed" ||
-                (sub as Record<string, unknown>).pay_status === "approved";
+            rows = allRawEventsWithSub
+              .filter(({ ev }) => Boolean(ev.id || ev.event_id))
+              .map(({ ev, sub, idx }) => {
+                const targetEvId = (ev.id || ev.event_id) as string;
+                const liveEv = evMap.get(targetEvId);
+                const isApproved =
+                  sub.status === "approved" ||
+                  sub.status === "confirmed" ||
+                  (sub as Record<string, unknown>).pay_status === "approved";
 
-              const squadName =
-                sub.teamName ||
-                ((sub as Record<string, unknown>).team_name as string) ||
-                (Array.isArray((sub as Record<string, unknown>).team_names)
-                  ? ((sub as Record<string, unknown>).team_names as string[])[0]
-                  : null) ||
-                "Registered Squad";
+                const squadName =
+                  sub.teamName ||
+                  ((sub as Record<string, unknown>).team_name as string) ||
+                  (Array.isArray((sub as Record<string, unknown>).team_names)
+                    ? ((sub as Record<string, unknown>).team_names as string[])[0]
+                    : null) ||
+                  "Registered Squad";
 
-              let isSlotListPub = false;
-              let assignedSlot = 5 + idx;
-              try {
-                const targetEvId = ev.id || ev.event_id;
-                const cachedSettings = localStorage.getItem(`apex_slot_settings_${targetEvId}`);
-                if (cachedSettings) {
-                  const parsed = JSON.parse(cachedSettings);
-                  if (parsed.isPublished) isSlotListPub = true;
-                  const custom = parsed.slotMap?.[squadName] ?? parsed.slotMap?.[`local-${idx}`];
-                  if (custom !== undefined) {
-                    assignedSlot = custom;
-                  } else if (parsed.slotStart) {
-                    assignedSlot = parsed.slotStart + idx;
+                let isSlotListPub = false;
+                let assignedSlot = 5 + idx;
+                try {
+                  const cachedSettings = localStorage.getItem(`apex_slot_settings_${targetEvId}`);
+                  if (cachedSettings) {
+                    const parsed = JSON.parse(cachedSettings);
+                    if (parsed.isPublished) isSlotListPub = true;
+                    const custom = parsed.slotMap?.[squadName] ?? parsed.slotMap?.[`local-${idx}`];
+                    if (custom !== undefined) {
+                      assignedSlot = custom;
+                    } else if (parsed.slotStart) {
+                      assignedSlot = parsed.slotStart + idx;
+                    }
                   }
-                }
-              } catch {}
+                } catch {}
 
-              return {
-                registration_id: `local-${idx}`,
-                event_id: ev.id || ev.event_id || "default",
-                event_title: liveEv?.title || ev.title || "APEX | 1-3PM | L1",
-                starts_at: liveEv?.starts_at || new Date().toISOString(),
-                idp_times: liveEv?.idp_times || "01:34 AM | 02:14 AM | 02:54 AM",
-                start_times: liveEv?.start_times || "01:40 AM | 02:20 AM | 03:00 AM",
-                room_id: isApproved ? liveEv?.room_id || null : null,
-                room_password: isApproved ? liveEv?.room_password || null : null,
-                whatsapp_group_link: isApproved ? liveEv?.whatsapp_group_link || null : null,
-                team_name: squadName,
-                slot_number: assignedSlot,
-                status: isApproved ? "confirmed" : "pending_verification",
-                amount_paise: sub.totalPaise || 3000,
-                registered_at: sub.submittedAt || new Date().toISOString(),
-                whatsapp: sub.whatsapp,
-                is_slot_list_published: isSlotListPub,
-              };
-            });
+                return {
+                  registration_id: `local-${idx}`,
+                  event_id: targetEvId,
+                  event_title: liveEv?.title || ev.title || "Apex Scrims Lobby",
+                  starts_at: liveEv?.starts_at || new Date().toISOString(),
+                  idp_times: liveEv?.idp_times || null,
+                  start_times: liveEv?.start_times || null,
+                  room_id: isApproved ? liveEv?.room_id || null : null,
+                  room_password: isApproved ? liveEv?.room_password || null : null,
+                  whatsapp_group_link: isApproved ? liveEv?.whatsapp_group_link || null : null,
+                  team_name: squadName,
+                  slot_number: assignedSlot,
+                  status: isApproved ? "confirmed" : "pending_verification",
+                  amount_paise: sub.totalPaise || 3000,
+                  registered_at: sub.submittedAt || new Date().toISOString(),
+                  whatsapp: sub.whatsapp,
+                  is_slot_list_published: isSlotListPub,
+                };
+              });
           }
         } catch (e) {
           console.error("Local fallback error:", e);

@@ -447,19 +447,21 @@ export default function ProfilePage() {
             (Array.isArray(sub.team_names) ? (sub.team_names as string[])[0] : null) ||
             "Registered Squad";
 
-          const rawEvents: Array<{ id?: string; event_id?: string; title?: string }> =
-            Array.isArray(sub.events) && (sub.events as Array<{ id?: string }>).length > 0
-              ? (sub.events as Array<{ id?: string; title?: string }>)
-              : Array.isArray(sub.event_ids) && (sub.event_ids as string[]).length > 0
-              ? (sub.event_ids as string[]).map((id) => ({ id, event_id: id }))
-              : Array.isArray(sub.event_titles) && (sub.event_titles as string[]).length > 0
-              ? (sub.event_titles as string[]).map((t) => ({ title: t }))
-              : [{ title: "Apex Scrims Lobby" }];
+          const rawEvents: Array<{ id?: string; event_id?: string; title?: string }> = [];
+          if (Array.isArray(sub.events) && (sub.events as Array<{ id?: string }>).length > 0) {
+            rawEvents.push(...(sub.events as Array<{ id?: string; title?: string }>));
+          } else if (Array.isArray(sub.event_ids) && (sub.event_ids as string[]).length > 0) {
+            rawEvents.push(...(sub.event_ids as string[]).map((id) => ({ id, event_id: id })));
+          } else if (Array.isArray(sub.event_titles) && (sub.event_titles as string[]).length > 0) {
+            rawEvents.push(...(sub.event_titles as string[]).map((t) => ({ title: t })));
+          }
 
           for (let i = 0; i < rawEvents.length; i++) {
             const ev = rawEvents[i];
-            const evId = (ev.id || ev.event_id || "default") as string;
+            const evId = (ev.id || ev.event_id) as string;
+            if (!evId) continue;
             const liveEv = liveEventsMap.get(evId);
+            if (!liveEv) continue;
             const utrVal = (sub.utr as string) || null;
             const phoneVal = (sub.phone || sub.whatsapp || "") as string;
             const isConfirmed = sub.pay_status === "approved" || sub.status === "confirmed";

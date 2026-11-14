@@ -438,7 +438,7 @@ function TeamRoster({
   regs: PublicReg[];
 }) {
   const [open, setOpen] = useState(false);
-  const eventRegs = regs.filter((r) => r.event_id === eventId || r.event_id === "default");
+  const eventRegs = regs.filter((r) => r.event_id === eventId);
 
   return (
     <div className="rounded-xl border border-slate-200/90 overflow-hidden bg-white">
@@ -561,7 +561,7 @@ function EventCard({
   regs: PublicReg[];
   clientNow: number;
 }) {
-  const eventRegs = regs.filter((r) => r.event_id === e.id || r.event_id === "default");
+  const eventRegs = regs.filter((r) => r.event_id === e.id);
   const activeRegs = eventRegs.filter(
     (r) => r.status !== "cancelled" && r.status !== "rejected"
   );
@@ -1020,7 +1020,18 @@ export default function Home() {
           try { allLocal.push(...JSON.parse(localRaw)); } catch {}
         }
         if (activeRaw) {
-          try { allLocal.push(JSON.parse(activeRaw)); } catch {}
+          try {
+            const parsed = JSON.parse(activeRaw);
+            const rawEvs = Array.isArray(parsed.events) ? parsed.events : [];
+            const hasDefault = rawEvs.some(
+              (e: { id?: string; event_id?: string }) => e.id === "default" || e.event_id === "default"
+            );
+            if (hasDefault) {
+              localStorage.removeItem("apex_active_booking_session");
+            } else {
+              allLocal.push(parsed);
+            }
+          } catch {}
         }
 
         const currentEvs = eventsRef.current || [];
@@ -1039,8 +1050,6 @@ export default function Home() {
             rawEvents = (sub.event_ids as string[]).map((id) => ({ id, event_id: id }));
           } else if (Array.isArray(sub.event_titles) && (sub.event_titles as string[]).length > 0) {
             rawEvents = (sub.event_titles as string[]).map((t) => ({ title: t }));
-          } else {
-            rawEvents = [{ title: "Apex Scrims Lobby" }];
           }
 
           for (const ev of rawEvents) {
@@ -1051,12 +1060,10 @@ export default function Home() {
               );
               if (matchedEv) evId = matchedEv.id;
             }
-            if (!evId && currentEvs.length > 0) {
-              evId = currentEvs[0].id;
-            }
             if (!evId) continue;
 
             const matchedEv = currentEvs.find((e) => e.id === evId);
+            if (!matchedEv) continue;
             const customSlots = (matchedEv?.custom_slot_assignments as Record<string, number>) || {};
             const startSlot = (matchedEv?.slot_range_start as number) || 5;
 

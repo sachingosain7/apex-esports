@@ -796,7 +796,7 @@ function TeamsRosterModal({
               (t) => t.toLowerCase().trim() === event.title.toLowerCase().trim()
             );
           }
-          return allSubs.length === 1; // if single lobby
+          return false;
         });
 
         if (matching.length > 0) {
@@ -4206,7 +4206,7 @@ function SlotSquadShiftTab({
               (t) => t.toLowerCase().trim() === ev?.title.toLowerCase().trim()
             );
           }
-          return allSubs.length === 1;
+          return false;
         });
 
         if (matching.length > 0) {
