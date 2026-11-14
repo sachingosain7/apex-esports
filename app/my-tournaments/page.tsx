@@ -225,7 +225,7 @@ export default function MyTournamentsPage() {
                 const eventIds = Array.from(new Set(regRows.map((r) => r.event_id)));
                 const { data: evRows } = await supabase
                   .from("events")
-                  .select("id, title, starts_at, idp_times, start_times, room_id, room_password, whatsapp_group_link")
+                  .select("id, title, starts_at, idp_times, start_times, room_id, room_password, whatsapp_group_link, is_slot_list_published, slot_range_start, custom_slot_assignments")
                   .in("id", eventIds);
 
                 const evMap = new Map((evRows || []).map((e) => [e.id, e]));
@@ -234,6 +234,10 @@ export default function MyTournamentsPage() {
                   const ev = evMap.get(r.event_id);
                   const pay = payRows.find((p) => p.order_id === r.order_id);
                   const isApproved = pay?.status === "approved" || r.status === "confirmed";
+                  const customSlots = (ev?.custom_slot_assignments as Record<string, number>) || {};
+                  const startSlot = (ev?.slot_range_start as number) || 5;
+                  const computedSlot = (r as any).slot_number || customSlots[r.id] || customSlots[r.team_name] || (startSlot + i);
+
                   return {
                     registration_id: r.id,
                     event_id: r.event_id,
@@ -245,7 +249,8 @@ export default function MyTournamentsPage() {
                     room_password: isApproved ? ev?.room_password || null : null,
                     whatsapp_group_link: isApproved ? ev?.whatsapp_group_link || null : null,
                     team_name: r.team_name,
-                    slot_number: i + 1,
+                    slot_number: computedSlot,
+                    is_slot_list_published: Boolean(ev?.is_slot_list_published),
                     status: isApproved ? "confirmed" : "pending_verification",
                     amount_paise: r.amount_paise || pay?.amount_paise || 3000,
                     registered_at: r.created_at,
@@ -269,7 +274,7 @@ export default function MyTournamentsPage() {
               const eventIds = Array.from(new Set(regRows.map((r) => r.event_id)));
               const { data: evRows } = await supabase
                 .from("events")
-                .select("id, title, starts_at, idp_times, start_times, room_id, room_password, whatsapp_group_link")
+                .select("id, title, starts_at, idp_times, start_times, room_id, room_password, whatsapp_group_link, is_slot_list_published, slot_range_start, custom_slot_assignments")
                 .in("id", eventIds);
 
               const evMap = new Map((evRows || []).map((e) => [e.id, e]));
@@ -277,6 +282,10 @@ export default function MyTournamentsPage() {
               rows = regRows.map((r, i) => {
                 const ev = evMap.get(r.event_id);
                 const isConfirmed = r.status === "confirmed";
+                const customSlots = (ev?.custom_slot_assignments as Record<string, number>) || {};
+                const startSlot = (ev?.slot_range_start as number) || 5;
+                const computedSlot = (r as any).slot_number || customSlots[r.id] || customSlots[r.team_name] || (startSlot + i);
+
                 return {
                   registration_id: r.id,
                   event_id: r.event_id,
@@ -288,7 +297,8 @@ export default function MyTournamentsPage() {
                   room_password: isConfirmed ? ev?.room_password || null : null,
                   whatsapp_group_link: isConfirmed ? ev?.whatsapp_group_link || null : null,
                   team_name: r.team_name,
-                  slot_number: i + 1,
+                  slot_number: computedSlot,
+                  is_slot_list_published: Boolean(ev?.is_slot_list_published),
                   status: isConfirmed ? "confirmed" : "pending_verification",
                   amount_paise: r.amount_paise || 3000,
                   registered_at: r.created_at,

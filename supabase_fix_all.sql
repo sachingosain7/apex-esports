@@ -8,89 +8,69 @@ GRANT USAGE ON SCHEMA public TO anon, authenticated;
 
 -- 1. CONVERT ENUMS TO TEXT (PERMANENTLY PREVENTS ENUM MISMATCH ERRORS)
 DO $$
+DECLARE
+  pol record;
 BEGIN
-  -- Add values to enums first if they exist so any residual enum usages never throw 22P02
-  BEGIN
-    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'admin_role_t') THEN
-      ALTER TYPE admin_role_t ADD VALUE IF NOT EXISTS 'admin';
-    END IF;
-  EXCEPTION WHEN OTHERS THEN NULL;
-  END;
+  -- 1A. Drop existing RLS policies on tables being converted so column type changes are never blocked
+  FOR pol IN 
+    SELECT schemaname, tablename, policyname 
+    FROM pg_policies 
+    WHERE tablename IN ('admin_roles', 'registrations', 'payments', 'orders', 'events') 
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON %I.%I', pol.policyname, pol.schemaname, pol.tablename);
+  END LOOP;
 
-  BEGIN
-    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'reg_status_t') THEN
-      ALTER TYPE reg_status_t ADD VALUE IF NOT EXISTS 'pending_payment';
-      ALTER TYPE reg_status_t ADD VALUE IF NOT EXISTS 'pending_approval';
-      ALTER TYPE reg_status_t ADD VALUE IF NOT EXISTS 'rejected';
-    END IF;
-  EXCEPTION WHEN OTHERS THEN NULL;
-  END;
-
-  BEGIN
-    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_status_t') THEN
-      ALTER TYPE order_status_t ADD VALUE IF NOT EXISTS 'submitted';
-      ALTER TYPE order_status_t ADD VALUE IF NOT EXISTS 'refunded';
-    END IF;
-  EXCEPTION WHEN OTHERS THEN NULL;
-  END;
-
-  BEGIN
-    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'payment_status_t') THEN
-      ALTER TYPE payment_status_t ADD VALUE IF NOT EXISTS 'rejected';
-      ALTER TYPE payment_status_t ADD VALUE IF NOT EXISTS 'approved';
-    END IF;
-  EXCEPTION WHEN OTHERS THEN NULL;
-  END;
-
-  -- admin_roles.role -> text
-  BEGIN
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'admin_roles' AND column_name = 'role') THEN
+  -- 1B. admin_roles.role -> text
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'admin_roles' AND column_name = 'role') THEN
+    BEGIN
+      ALTER TABLE admin_roles DROP CONSTRAINT IF EXISTS admin_roles_user_id_role_key;
       ALTER TABLE admin_roles ALTER COLUMN role DROP DEFAULT;
       ALTER TABLE admin_roles ALTER COLUMN role TYPE text USING role::text;
       ALTER TABLE admin_roles ALTER COLUMN role SET DEFAULT 'admin';
-    END IF;
-  EXCEPTION WHEN OTHERS THEN NULL;
-  END;
+      ALTER TABLE admin_roles ADD CONSTRAINT admin_roles_user_id_role_key UNIQUE (user_id, role);
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+  END IF;
 
-  -- registrations.status -> text
-  BEGIN
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'registrations' AND column_name = 'status') THEN
+  -- 1C. registrations.status -> text
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'registrations' AND column_name = 'status') THEN
+    BEGIN
       ALTER TABLE registrations ALTER COLUMN status DROP DEFAULT;
       ALTER TABLE registrations ALTER COLUMN status TYPE text USING status::text;
       ALTER TABLE registrations ALTER COLUMN status SET DEFAULT 'pending_payment';
-    END IF;
-  EXCEPTION WHEN OTHERS THEN NULL;
-  END;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+  END IF;
 
-  -- payments.status -> text
-  BEGIN
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'payments' AND column_name = 'status') THEN
+  -- 1D. payments.status -> text
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'payments' AND column_name = 'status') THEN
+    BEGIN
       ALTER TABLE payments ALTER COLUMN status DROP DEFAULT;
       ALTER TABLE payments ALTER COLUMN status TYPE text USING status::text;
       ALTER TABLE payments ALTER COLUMN status SET DEFAULT 'pending_verification';
-    END IF;
-  EXCEPTION WHEN OTHERS THEN NULL;
-  END;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+  END IF;
 
-  -- orders.status -> text
-  BEGIN
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'status') THEN
+  -- 1E. orders.status -> text
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'status') THEN
+    BEGIN
       ALTER TABLE orders ALTER COLUMN status DROP DEFAULT;
       ALTER TABLE orders ALTER COLUMN status TYPE text USING status::text;
       ALTER TABLE orders ALTER COLUMN status SET DEFAULT 'pending';
-    END IF;
-  EXCEPTION WHEN OTHERS THEN NULL;
-  END;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+  END IF;
 
-  -- events.status -> text
-  BEGIN
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'events' AND column_name = 'status') THEN
+  -- 1F. events.status -> text
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'events' AND column_name = 'status') THEN
+    BEGIN
       ALTER TABLE events ALTER COLUMN status DROP DEFAULT;
       ALTER TABLE events ALTER COLUMN status TYPE text USING status::text;
       ALTER TABLE events ALTER COLUMN status SET DEFAULT 'upcoming';
-    END IF;
-  EXCEPTION WHEN OTHERS THEN NULL;
-  END;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+  END IF;
 END $$;
 
 -- 2. ENSURE TABLES AND SUPPORTING COLUMNS EXIST
@@ -414,8 +394,8 @@ BEGIN
   END LOOP;
 
   -- Insert order
-  INSERT INTO orders (id, whatsapp, total_paise, status, expires_at)
-  VALUES (v_order_id, p_whatsapp, v_total_paise, 'pending', v_expires_at);
+  INSERT INTO orders (id, whatsapp, total_paise, status, expires_at, user_id)
+  VALUES (v_order_id, p_whatsapp, v_total_paise, 'pending', v_expires_at, auth.uid());
 
   -- Insert registrations
   FOREACH v_eid IN ARRAY p_event_ids LOOP
@@ -426,8 +406,8 @@ BEGIN
       v_fee := v_event.entry_fee_paise;
     END IF;
 
-    INSERT INTO registrations (order_id, event_id, whatsapp, team_name, status, amount_paise)
-    VALUES (v_order_id, v_eid, p_whatsapp, p_team_name, 'pending_payment', v_fee);
+    INSERT INTO registrations (order_id, event_id, whatsapp, team_name, status, amount_paise, user_id)
+    VALUES (v_order_id, v_eid, p_whatsapp, p_team_name, 'pending_payment', v_fee, auth.uid());
   END LOOP;
 
   RETURN jsonb_build_object(
@@ -875,9 +855,11 @@ AS $$
     r.event_id,
     r.team_name,
     CASE
-      WHEN length(COALESCE(r.whatsapp, o.whatsapp, '')) >= 6 THEN
-        left(COALESCE(r.whatsapp, o.whatsapp), 6) || 'XXXX'
-      ELSE '••••••'
+      WHEN length(regexp_replace(COALESCE(r.whatsapp, o.whatsapp, ''), '[^0-9]', '', 'g')) >= 10 THEN
+        left(right(regexp_replace(COALESCE(r.whatsapp, o.whatsapp, ''), '[^0-9]', '', 'g'), 10), 6) || 'XXXX'
+      WHEN length(regexp_replace(COALESCE(r.whatsapp, o.whatsapp, ''), '[^0-9]', '', 'g')) >= 6 THEN
+        left(regexp_replace(COALESCE(r.whatsapp, o.whatsapp, ''), '[^0-9]', '', 'g'), 6) || 'XXXX'
+      ELSE '98••••XXXX'
     END AS masked_whatsapp,
     r.status::text,
     r.created_at,

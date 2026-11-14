@@ -983,9 +983,10 @@ export default function Home() {
           }) => ({
             event_id: r.event_id,
             team_name: r.team_name,
-            masked_whatsapp: r.whatsapp && r.whatsapp.length >= 6
-              ? r.whatsapp.slice(0, 3) + "••••" + r.whatsapp.slice(-3)
-              : "••••••",
+            masked_whatsapp: (() => {
+              const digits = (r.whatsapp || "").replace(/\D/g, "").slice(-10);
+              return digits.length >= 6 ? digits.slice(0, 6) + "XXXX" : "98••••XXXX";
+            })(),
             status: r.status,
             created_at: r.created_at,
           }));
@@ -1048,9 +1049,10 @@ export default function Home() {
               combined.push({
                 event_id: evId,
                 team_name: squadName,
-                masked_whatsapp: rawWa.length >= 6
-                  ? rawWa.slice(0, 3) + "••••" + rawWa.slice(-3)
-                  : "••••••",
+                masked_whatsapp: (() => {
+                  const digits = rawWa.slice(-10);
+                  return digits.length >= 6 ? digits.slice(0, 6) + "XXXX" : "98••••XXXX";
+                })(),
                 status: isApproved ? "confirmed" : "pending_approval",
                 created_at: (sub.submittedAt as string) || (sub.created_at as string) || new Date().toISOString(),
               });

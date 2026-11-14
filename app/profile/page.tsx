@@ -35,6 +35,8 @@ type MyRegistration = {
   order_status: string;
   // joined from payments
   utr: string | null;
+  slot_number?: number;
+  is_slot_list_published?: boolean;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -138,6 +140,15 @@ function RegistrationCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+            {reg.is_slot_list_published ? (
+              <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-xs font-black text-indigo-900 font-mono shadow-2xs">
+                🎯 Official Slot #{reg.slot_number || 5}
+              </span>
+            ) : (
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-black text-emerald-800">
+                ✓ Slot Assigned &amp; Paid (Slot # releases before match)
+              </span>
+            )}
             {reg.event_kind && (
               <span
                 className={`rounded-md border px-2 py-0.5 text-[10px] font-black tracking-wider uppercase ${
@@ -282,6 +293,7 @@ export default function ProfilePage() {
           whatsapp,
           amount_paise,
           status,
+          slot_number,
           created_at,
           event_id,
           order_id,
@@ -293,7 +305,10 @@ export default function ProfilePage() {
             room_password,
             whatsapp_group_link,
             idp_times,
-            start_times
+            start_times,
+            is_slot_list_published,
+            slot_range_start,
+            custom_slot_assignments
           ),
           orders:order_id (
             status,
@@ -308,7 +323,7 @@ export default function ProfilePage() {
         // Fallback: direct simple query without relational joins
         const { data: simpleData } = await supabase
           .from("registrations")
-          .select("id, team_name, whatsapp, amount_paise, status, created_at, event_id, order_id")
+          .select("id, team_name, whatsapp, amount_paise, status, slot_number, created_at, event_id, order_id")
           .order("created_at", { ascending: false });
         if (simpleData) regData = simpleData;
       }
@@ -333,7 +348,7 @@ export default function ProfilePage() {
       });
     }
 
-    const flat: MyRegistration[] = (regData ?? []).map((r) => {
+    const flat: MyRegistration[] = (regData ?? []).map((r, i) => {
       const ev = (r as unknown as { events: Record<string, unknown> }).events ?? {};
       const ord = (r as unknown as { orders: Record<string, unknown> }).orders ?? {};
       const payStatus = payStatusMap[r.order_id];
@@ -344,6 +359,10 @@ export default function ProfilePage() {
         effectiveStatus = "cancelled";
       }
 
+      const customSlots = (ev.custom_slot_assignments as Record<string, number>) || {};
+      const startSlot = (ev.slot_range_start as number) || 5;
+      const computedSlot = r.slot_number || customSlots[r.id] || customSlots[r.team_name] || (startSlot + i);
+
       return {
         id: r.id,
         team_name: r.team_name,
@@ -353,6 +372,8 @@ export default function ProfilePage() {
         created_at: r.created_at,
         event_id: r.event_id,
         order_id: r.order_id,
+        slot_number: computedSlot,
+        is_slot_list_published: Boolean(ev.is_slot_list_published),
         event_title: (ev.title as string) ?? "Tournament",
         event_kind: (ev.kind as string) ?? "scrim",
         event_starts_at: (ev.starts_at as string) ?? new Date().toISOString(),
@@ -446,6 +467,8 @@ export default function ProfilePage() {
                 order_expires_at: null,
                 order_status: "submitted",
                 utr: utrVal,
+                slot_number: 5 + i,
+                is_slot_list_published: Boolean(liveEv?.is_slot_list_published),
               });
             }
           }

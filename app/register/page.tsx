@@ -790,6 +790,46 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
         }
       } catch {}
 
+      // 2b. Ensure payment exists in payments table (with strict duplicate protection)
+      try {
+        const { data: existingPay } = await supabase
+          .from("payments")
+          .select("order_id, status")
+          .eq("utr", utr)
+          .maybeSingle();
+
+        if (existingPay && existingPay.order_id !== order.order_id && existingPay.status !== "rejected") {
+          throw new Error(
+            `Duplicate UTR detected: This UTR (${utr}) has already been used for another booking. Every slot requires a fresh payment.`
+          );
+        }
+
+        if (existingPay) {
+          if (existingPay.order_id === order.order_id) {
+            await supabase
+              .from("payments")
+              .update({
+                amount_paise: order.total_paise,
+                status: "pending_verification",
+                screenshot_url: screenshotData || null,
+              })
+              .eq("utr", utr);
+          }
+        } else {
+          await supabase.from("payments").insert({
+            order_id: order.order_id,
+            utr: utr,
+            amount_paise: order.total_paise,
+            status: "pending_verification",
+            screenshot_url: screenshotData || null,
+          });
+        }
+      } catch (err: unknown) {
+        if ((err as Error)?.message?.includes("Duplicate UTR detected")) {
+          throw err;
+        }
+      }
+
       // 3. Try submit_order_utr RPC as well
       try {
         await supabase.rpc("submit_order_utr", {
