@@ -334,7 +334,7 @@ export default function MyTournamentsPage() {
             try { allSubs.push(JSON.parse(activeRaw)); } catch {}
           }
 
-          const matchedSub = allSubs.find((s) => {
+          const matchedSubs = allSubs.filter((s) => {
             if (utr && (s.utr === utr || s.utr?.trim() === utr.trim())) return true;
             if (whatsapp) {
               const last10 = whatsapp.replace(/\D/g, "").slice(-10);
@@ -344,25 +344,23 @@ export default function MyTournamentsPage() {
             return false;
           });
 
-          if (matchedSub) {
-            const rawEvents: Array<{ id?: string; event_id?: string; title?: string }> =
-              Array.isArray(matchedSub.events) && matchedSub.events.length > 0
-                ? matchedSub.events
-                : Array.isArray((matchedSub as Record<string, unknown>).event_ids) && ((matchedSub as Record<string, unknown>).event_ids as string[]).length > 0
-                ? ((matchedSub as Record<string, unknown>).event_ids as string[]).map((id) => ({ id, event_id: id }))
-                : Array.isArray((matchedSub as Record<string, unknown>).event_titles) && ((matchedSub as Record<string, unknown>).event_titles as string[]).length > 0
-                ? ((matchedSub as Record<string, unknown>).event_titles as string[]).map((t: string) => ({ title: t }))
-                : [{ title: "Apex Scrims Lobby" }];
+          if (matchedSubs.length > 0) {
+            const allRawEventsWithSub: Array<{ ev: { id?: string; event_id?: string; title?: string }; sub: SubItem; idx: number }> = [];
+            matchedSubs.forEach((sub, subIdx) => {
+              const rawEvents =
+                Array.isArray(sub.events) && sub.events.length > 0
+                  ? sub.events
+                  : Array.isArray((sub as Record<string, unknown>).event_ids) && ((sub as Record<string, unknown>).event_ids as string[]).length > 0
+                  ? ((sub as Record<string, unknown>).event_ids as string[]).map((id) => ({ id, event_id: id }))
+                  : Array.isArray((sub as Record<string, unknown>).event_titles) && ((sub as Record<string, unknown>).event_titles as string[]).length > 0
+                  ? ((sub as Record<string, unknown>).event_titles as string[]).map((t: string) => ({ title: t }))
+                  : [{ title: "Apex Scrims Lobby" }];
+              rawEvents.forEach((ev, evIdx) => {
+                allRawEventsWithSub.push({ ev, sub, idx: subIdx * 10 + evIdx });
+              });
+            });
 
-            const squadName =
-              matchedSub.teamName ||
-              ((matchedSub as Record<string, unknown>).team_name as string) ||
-              (Array.isArray((matchedSub as Record<string, unknown>).team_names)
-                ? ((matchedSub as Record<string, unknown>).team_names as string[])[0]
-                : null) ||
-              "Registered Squad";
-
-            const eventIds = rawEvents.map((e) => e.id || e.event_id).filter(Boolean) as string[];
+            const eventIds = Array.from(new Set(allRawEventsWithSub.map(({ ev }) => ev.id || ev.event_id).filter(Boolean))) as string[];
             let evMap = new Map();
             if (eventIds.length > 0) {
               try {
@@ -371,32 +369,40 @@ export default function MyTournamentsPage() {
               } catch {}
             }
 
-            rows = rawEvents.map((ev, i) => {
+            rows = allRawEventsWithSub.map(({ ev, sub, idx }) => {
               const liveEv = evMap.get(ev.id || ev.event_id);
               const isApproved =
-                matchedSub.status === "approved" ||
-                matchedSub.status === "confirmed" ||
-                (matchedSub as Record<string, unknown>).pay_status === "approved";
+                sub.status === "approved" ||
+                sub.status === "confirmed" ||
+                (sub as Record<string, unknown>).pay_status === "approved";
+
+              const squadName =
+                sub.teamName ||
+                ((sub as Record<string, unknown>).team_name as string) ||
+                (Array.isArray((sub as Record<string, unknown>).team_names)
+                  ? ((sub as Record<string, unknown>).team_names as string[])[0]
+                  : null) ||
+                "Registered Squad";
 
               let isSlotListPub = false;
-              let assignedSlot = 5 + i;
+              let assignedSlot = 5 + idx;
               try {
                 const targetEvId = ev.id || ev.event_id;
                 const cachedSettings = localStorage.getItem(`apex_slot_settings_${targetEvId}`);
                 if (cachedSettings) {
                   const parsed = JSON.parse(cachedSettings);
                   if (parsed.isPublished) isSlotListPub = true;
-                  const custom = parsed.slotMap?.[squadName] ?? parsed.slotMap?.[`local-${i}`];
+                  const custom = parsed.slotMap?.[squadName] ?? parsed.slotMap?.[`local-${idx}`];
                   if (custom !== undefined) {
                     assignedSlot = custom;
                   } else if (parsed.slotStart) {
-                    assignedSlot = parsed.slotStart + i;
+                    assignedSlot = parsed.slotStart + idx;
                   }
                 }
               } catch {}
 
               return {
-                registration_id: `local-${i}`,
+                registration_id: `local-${idx}`,
                 event_id: ev.id || ev.event_id || "default",
                 event_title: liveEv?.title || ev.title || "APEX | 1-3PM | L1",
                 starts_at: liveEv?.starts_at || new Date().toISOString(),
@@ -408,9 +414,9 @@ export default function MyTournamentsPage() {
                 team_name: squadName,
                 slot_number: assignedSlot,
                 status: isApproved ? "confirmed" : "pending_verification",
-                amount_paise: matchedSub.totalPaise || 3000,
-                registered_at: matchedSub.submittedAt || new Date().toISOString(),
-                whatsapp: matchedSub.whatsapp,
+                amount_paise: sub.totalPaise || 3000,
+                registered_at: sub.submittedAt || new Date().toISOString(),
+                whatsapp: sub.whatsapp,
                 is_slot_list_published: isSlotListPub,
               };
             });

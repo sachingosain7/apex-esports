@@ -470,6 +470,10 @@ export default function ProfilePage() {
                 (utrVal && f.utr === utrVal)
             );
 
+            const customSlots = (liveEv?.custom_slot_assignments as Record<string, number>) || {};
+            const startSlot = (liveEv?.slot_range_start as number) || 5;
+            const computedSlot = customSlots[squadName] || (startSlot + flat.filter((f) => f.event_id === evId).length);
+
             if (!exists) {
               flat.push({
                 id: `local-${i}-${sub.utr || Date.now()}`,
@@ -491,7 +495,7 @@ export default function ProfilePage() {
                 order_expires_at: null,
                 order_status: "submitted",
                 utr: utrVal,
-                slot_number: 5 + i,
+                slot_number: computedSlot,
                 is_slot_list_published: Boolean(liveEv?.is_slot_list_published),
               });
             }
