@@ -74,6 +74,69 @@ BEGIN
 END $$;
 
 -- 2. ENSURE TABLES AND SUPPORTING COLUMNS EXIST
+CREATE TABLE IF NOT EXISTS public.events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  kind text NOT NULL DEFAULT 'scrim',
+  title text NOT NULL,
+  mode text NOT NULL DEFAULT 'squad',
+  maps text[] NOT NULL DEFAULT ARRAY['Erangel', 'Miramar', 'Rondo']::text[],
+  starts_at timestamptz NOT NULL,
+  idp_times text,
+  start_times text,
+  entry_fee_paise int NOT NULL DEFAULT 3000,
+  early_bird_fee_paise int DEFAULT 0,
+  early_bird_slots int DEFAULT 0,
+  prize_pool_paise int NOT NULL DEFAULT 60000,
+  max_slots int NOT NULL DEFAULT 20,
+  filled_slots int NOT NULL DEFAULT 0,
+  status text NOT NULL DEFAULT 'open',
+  is_published boolean NOT NULL DEFAULT true,
+  prize_distribution jsonb DEFAULT '{"first": 350, "second": 150, "third": 70, "fourth": 30}'::jsonb,
+  top_teams jsonb DEFAULT '{"first": "", "second": "", "third": "", "fourth": ""}'::jsonb,
+  final_points_table_url text,
+  slot_range_start int DEFAULT 5,
+  slot_range_end int DEFAULT 25,
+  is_slot_list_published boolean DEFAULT false,
+  custom_slot_assignments jsonb DEFAULT '{}'::jsonb,
+  room_id text,
+  room_password text,
+  whatsapp_group_link text,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.orders (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  whatsapp text,
+  total_paise int NOT NULL DEFAULT 3000,
+  status text NOT NULL DEFAULT 'pending',
+  expires_at timestamptz,
+  user_id uuid,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.registrations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id uuid REFERENCES public.orders(id) ON DELETE CASCADE,
+  event_id uuid REFERENCES public.events(id) ON DELETE CASCADE,
+  team_name text NOT NULL,
+  whatsapp text,
+  amount_paise int DEFAULT 3000,
+  status text NOT NULL DEFAULT 'pending_payment',
+  slot_number int,
+  user_id uuid,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.payments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id uuid REFERENCES public.orders(id) ON DELETE SET NULL,
+  utr text UNIQUE,
+  amount_paise int DEFAULT 3000,
+  status text NOT NULL DEFAULT 'pending_verification',
+  screenshot_url text,
+  created_at timestamptz DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS public.points_tables (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   event_id uuid REFERENCES public.events(id) ON DELETE CASCADE,
@@ -835,6 +898,33 @@ $$;
 
 GRANT EXECUTE ON FUNCTION admin_verify_payment(text, text) TO authenticated, anon;
 
+DROP FUNCTION IF EXISTS public.admin_bulk_approve_payments();
+CREATE OR REPLACE FUNCTION admin_bulk_approve_payments()
+RETURNS int
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_count int := 0;
+  v_rec record;
+BEGIN
+  FOR v_rec IN 
+    SELECT p.utr, p.order_id 
+    FROM payments p 
+    WHERE p.status::text = 'pending_verification' 
+  LOOP
+    UPDATE payments SET status = 'approved' WHERE utr = v_rec.utr;
+    UPDATE registrations SET status = 'confirmed' WHERE order_id = v_rec.order_id;
+    UPDATE orders SET status = 'paid' WHERE id = v_rec.order_id;
+    v_count := v_count + 1;
+  END LOOP;
+  RETURN v_count;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION admin_bulk_approve_payments() TO authenticated, anon;
+
 -- 12. PUBLIC ROSTER ACCORDION (SAVAGE ESPORTS STYLE)
 DROP FUNCTION IF EXISTS public.get_public_registrations();
 CREATE OR REPLACE FUNCTION get_public_registrations()
@@ -1197,6 +1287,101 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION admin_bulk_create_lobbies(text, text[], text, text[], timestamptz[], text, text, int, int, int, int, int, boolean, jsonb) TO authenticated, anon;
+
+DROP FUNCTION IF EXISTS public.admin_clone_todays_lobbies(date);
+CREATE OR REPLACE FUNCTION admin_clone_todays_lobbies(
+  p_source_date date DEFAULT (CURRENT_DATE - 1)
+)
+RETURNS uuid[]
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_ids   uuid[] := '{}';
+  v_id    uuid;
+  v_ev    events%ROWTYPE;
+  v_days  interval;
+BEGIN
+  v_days := CURRENT_DATE - p_source_date;
+
+  FOR v_ev IN
+    SELECT * FROM events
+    WHERE starts_at::date = p_source_date
+    ORDER BY starts_at
+  LOOP
+    INSERT INTO events (
+      kind, title, mode, maps, starts_at,
+      idp_times, start_times,
+      entry_fee_paise, early_bird_fee_paise, early_bird_slots,
+      prize_pool_paise, max_slots, filled_slots, status,
+      is_published, prize_distribution
+    ) VALUES (
+      v_ev.kind, v_ev.title, v_ev.mode, v_ev.maps,
+      v_ev.starts_at + v_days,
+      v_ev.idp_times, v_ev.start_times,
+      v_ev.entry_fee_paise, v_ev.early_bird_fee_paise, v_ev.early_bird_slots,
+      v_ev.prize_pool_paise, v_ev.max_slots, 0, 'open',
+      v_ev.is_published, v_ev.prize_distribution
+    )
+    RETURNING id INTO v_id;
+
+    v_ids := v_ids || v_id;
+  END LOOP;
+
+  RETURN v_ids;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION admin_clone_todays_lobbies(date) TO authenticated, anon;
+
+DROP FUNCTION IF EXISTS public.admin_update_event(uuid, int, int, int, text, text, text, text, text, text);
+CREATE OR REPLACE FUNCTION admin_update_event(
+  p_event_id             uuid,
+  p_max_slots            int    DEFAULT NULL,
+  p_entry_fee_paise      int    DEFAULT NULL,
+  p_prize_pool_paise     int    DEFAULT NULL,
+  p_status               text   DEFAULT NULL,
+  p_room_id              text   DEFAULT NULL,
+  p_room_password        text   DEFAULT NULL,
+  p_whatsapp_group_link  text   DEFAULT NULL,
+  p_idp_times            text   DEFAULT NULL,
+  p_start_times          text   DEFAULT NULL
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_confirmed int;
+BEGIN
+  -- Guard: cannot lower max_slots below confirmed count
+  IF p_max_slots IS NOT NULL THEN
+    SELECT count(*) INTO v_confirmed
+    FROM registrations
+    WHERE event_id = p_event_id AND status::text = 'confirmed';
+
+    IF p_max_slots < v_confirmed THEN
+      RAISE EXCEPTION 'max_slots_below_confirmed: % confirmed registrations exist', v_confirmed;
+    END IF;
+  END IF;
+
+  UPDATE events SET
+    max_slots            = COALESCE(p_max_slots,           max_slots),
+    entry_fee_paise      = COALESCE(p_entry_fee_paise,     entry_fee_paise),
+    prize_pool_paise     = COALESCE(p_prize_pool_paise,    prize_pool_paise),
+    status               = COALESCE(p_status,              status),
+    room_id              = COALESCE(p_room_id,             room_id),
+    room_password        = COALESCE(p_room_password,       room_password),
+    whatsapp_group_link  = COALESCE(p_whatsapp_group_link, whatsapp_group_link),
+    idp_times            = COALESCE(p_idp_times,           idp_times),
+    start_times          = COALESCE(p_start_times,         start_times)
+  WHERE id = p_event_id;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION admin_update_event(uuid, int, int, int, text, text, text, text, text, text) TO authenticated, anon;
 
 -- 16. TOGGLE PUBLISH RPC
 DROP FUNCTION IF EXISTS admin_toggle_event_publish(uuid, boolean);
