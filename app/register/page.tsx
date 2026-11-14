@@ -1158,6 +1158,7 @@ interface PhasePendingProps {
   events: EvSummary[];
   teamName: string;
   onApproved: () => void;
+  onBookAdditional?: () => void;
 }
 
 function PhasePendingVerification({
@@ -1166,6 +1167,7 @@ function PhasePendingVerification({
   events,
   teamName,
   onApproved,
+  onBookAdditional,
 }: PhasePendingProps) {
   const [isChecking, setIsChecking] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Awaiting verification by Admin or Owner…");
@@ -1380,6 +1382,22 @@ function PhasePendingVerification({
           <span>💬</span>
           <span>Need Instant Approval? WhatsApp Host (+91 {SUPPORT_WHATSAPP})</span>
         </a>
+
+        {onBookAdditional && (
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+              } catch {}
+              onBookAdditional();
+            }}
+            className="w-full flex items-center justify-center gap-2 rounded-xl border-2 border-amber-400 bg-amber-50 hover:bg-amber-100 py-3 text-xs font-black text-amber-950 transition-colors shadow-xs cursor-pointer mt-1"
+          >
+            <span>➕</span>
+            <span>Book An Additional Slot for This Tournament (Second Squad)</span>
+          </button>
+        )}
 
         <Link
           href="/"
@@ -1965,6 +1983,7 @@ function RegisterContent() {
                 events={events}
                 teamName={teamName}
                 onApproved={handlePaymentApproved}
+                onBookAdditional={handleStartAdditionalSlot}
               />
             )}
 
