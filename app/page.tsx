@@ -28,6 +28,10 @@ type EventRow = {
   is_published?: boolean;
   status: string;
   whatsapp_group_link?: string | null;
+  is_slot_list_published?: boolean;
+  slot_range_start?: number;
+  slot_range_end?: number;
+  custom_slot_assignments?: Record<string, number> | null;
   top_teams?: {
     first?: string;
     second?: string;
@@ -972,24 +976,36 @@ export default function Home() {
       try {
         const { data: directData } = await supabase
           .from("registrations")
-          .select("event_id, team_name, whatsapp, status, created_at");
+          .select("event_id, team_name, whatsapp, status, slot_number, created_at")
+          .neq("status", "cancelled");
         if (directData && Array.isArray(directData)) {
+          const currentEvs = eventsRef.current || [];
           combined = directData.map((r: {
             event_id: string;
             team_name: string;
             whatsapp: string | null;
             status: string;
+            slot_number?: number | null;
             created_at: string;
-          }) => ({
-            event_id: r.event_id,
-            team_name: r.team_name,
-            masked_whatsapp: (() => {
-              const digits = (r.whatsapp || "").replace(/\D/g, "").slice(-10);
-              return digits.length >= 6 ? digits.slice(0, 6) + "XXXX" : "98••••XXXX";
-            })(),
-            status: r.status,
-            created_at: r.created_at,
-          }));
+          }, idx: number) => {
+            const matchedEv = currentEvs.find((e) => e.id === r.event_id);
+            const customSlots = (matchedEv?.custom_slot_assignments as Record<string, number>) || {};
+            const startSlot = (matchedEv?.slot_range_start as number) || 5;
+            const computedSlot = r.slot_number || customSlots[r.team_name] || (startSlot + idx);
+
+            return {
+              event_id: r.event_id,
+              team_name: r.team_name,
+              masked_whatsapp: (() => {
+                const digits = (r.whatsapp || "").replace(/\D/g, "").slice(-10);
+                return digits.length >= 6 ? digits.slice(0, 6) + "XXXX" : "98••••XXXX";
+              })(),
+              status: r.status,
+              created_at: r.created_at,
+              slot_number: computedSlot,
+              is_slot_list_published: Boolean(matchedEv?.is_slot_list_published),
+            };
+          });
         }
       } catch {}
     }
@@ -1040,12 +1056,19 @@ export default function Home() {
             }
             if (!evId) continue;
 
+            const matchedEv = currentEvs.find((e) => e.id === evId);
+            const customSlots = (matchedEv?.custom_slot_assignments as Record<string, number>) || {};
+            const startSlot = (matchedEv?.slot_range_start as number) || 5;
+
             const alreadyPresent = combined.some(
               (c) => c.event_id === evId && c.team_name?.trim().toLowerCase() === squadName.trim().toLowerCase()
             );
             if (!alreadyPresent) {
               const rawWa = ((sub.whatsapp || sub.phone || "") as string).replace(/\D/g, "");
               const isApproved = sub.pay_status === "approved" || sub.status === "confirmed";
+              const existingForEvent = combined.filter((c) => c.event_id === evId).length;
+              const computedSlot = (sub.slot_number as number) || customSlots[squadName] || (startSlot + existingForEvent);
+
               combined.push({
                 event_id: evId,
                 team_name: squadName,
@@ -1055,6 +1078,8 @@ export default function Home() {
                 })(),
                 status: isApproved ? "confirmed" : "pending_approval",
                 created_at: (sub.submittedAt as string) || (sub.created_at as string) || new Date().toISOString(),
+                slot_number: computedSlot,
+                is_slot_list_published: Boolean(matchedEv?.is_slot_list_published),
               });
             }
           }

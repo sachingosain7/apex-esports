@@ -327,6 +327,30 @@ export default function ProfilePage() {
           .order("created_at", { ascending: false });
         if (simpleData) regData = simpleData;
       }
+
+      // Guest lookup fallback by stored phone number
+      if (regData.length === 0 && typeof window !== "undefined") {
+        const savedWa = localStorage.getItem("apex_reg_whatsapp") || localStorage.getItem("apex_whatsapp");
+        if (savedWa) {
+          const rawPhone = savedWa.replace(/\D/g, "");
+          const last10 = rawPhone.slice(-10);
+          const phoneVariants = [rawPhone, `+${rawPhone}`, `+91${last10}`, `91${last10}`, last10];
+          const { data: phoneRegs } = await supabase
+            .from("registrations")
+            .select(`
+              id, team_name, whatsapp, amount_paise, status, slot_number, created_at, event_id, order_id,
+              events:event_id (
+                title, kind, starts_at, room_id, room_password, whatsapp_group_link, idp_times, start_times,
+                is_slot_list_published, slot_range_start, custom_slot_assignments
+              ),
+              orders:order_id (status, expires_at)
+            `)
+            .in("whatsapp", phoneVariants);
+          if (phoneRegs && phoneRegs.length > 0) {
+            regData = phoneRegs;
+          }
+        }
+      }
     } catch {
       // Non-blocking: continue to local hydration
     }
