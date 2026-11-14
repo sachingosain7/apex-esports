@@ -688,6 +688,15 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
 
   const secondsLeft = useCountdown(order.expires_at);
   const expired = secondsLeft === 0;
+
+  // Immediately release slot in database when the 10-minute hold window expires
+  useEffect(() => {
+    if (expired && order.order_id) {
+      supabase.from("registrations").update({ status: "cancelled" }).eq("order_id", order.order_id).then(() => {});
+      supabase.from("orders").update({ status: "cancelled" }).eq("id", order.order_id).then(() => {});
+      try { localStorage.removeItem("apex_active_booking_session"); } catch {}
+    }
+  }, [expired, order.order_id]);
   const upiUri = buildUpiUri(order.total_paise);
   const utrValid = /^\d{12}$/.test(utr);
 
@@ -2007,6 +2016,13 @@ function RegisterContent() {
           </Link>
           <Link
             href="/"
+            onClick={() => {
+              if (order?.order_id && phase === "paying") {
+                supabase.from("registrations").update({ status: "cancelled" }).eq("order_id", order.order_id).then(() => {});
+                supabase.from("orders").update({ status: "cancelled" }).eq("id", order.order_id).then(() => {});
+                try { localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY); } catch {}
+              }
+            }}
             className="text-xs font-bold text-slate-300 hover:text-white transition-colors"
           >
             ← Back to tournaments

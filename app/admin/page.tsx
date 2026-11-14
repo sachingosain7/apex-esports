@@ -769,57 +769,6 @@ function TeamsRosterModal({
       }
     }
 
-    // Check localStorage for any local submissions fallback
-    if (loadedTeams.length === 0) {
-      try {
-        const localStr = localStorage.getItem("apex_all_submissions");
-        const activeStr = localStorage.getItem("apex_active_booking_session");
-        const allSubs: Array<Record<string, unknown>> = [];
-        if (localStr) {
-          try { allSubs.push(...JSON.parse(localStr)); } catch {}
-        }
-        if (activeStr) {
-          try { allSubs.push(JSON.parse(activeStr)); } catch {}
-        }
-
-        const matching = allSubs.filter((ls) => {
-          if (Array.isArray(ls.events)) {
-            return (ls.events as Array<{ id?: string; event_id?: string }>).some(
-              (e) => (e.id || e.event_id) === event.id
-            );
-          }
-          if (Array.isArray(ls.event_ids)) {
-            return (ls.event_ids as string[]).includes(event.id);
-          }
-          if (Array.isArray(ls.event_titles)) {
-            return (ls.event_titles as string[]).some(
-              (t) => t.toLowerCase().trim() === event.title.toLowerCase().trim()
-            );
-          }
-          return false;
-        });
-
-        if (matching.length > 0) {
-          loadedTeams = matching.map((m, i) => {
-            const squad =
-              (m.teamName as string) ||
-              (m.team_name as string) ||
-              (Array.isArray(m.team_names) ? (m.team_names as string[])[0] : null) ||
-              "Registered Squad";
-            return {
-              registration_id: `local-${i}`,
-              team_name: squad,
-              whatsapp: ((m.phone || m.whatsapp || "") as string).replace("+91", ""),
-              amount_paise: ((m.totalPaise || m.amount_paise || 3000) as number),
-              status: (m.pay_status === "approved" || m.status === "confirmed") ? "confirmed" : "pending_payment",
-              created_at: ((m.submittedAt || m.created_at || new Date().toISOString()) as string),
-              utr: (m.utr as string) || undefined,
-            };
-          });
-        }
-      } catch {}
-    }
-
     // Load cached slot settings from localStorage if available
     try {
       const cachedSettings = localStorage.getItem(`apex_slot_settings_${event.id}`);
@@ -4239,57 +4188,6 @@ function SlotSquadShiftTab({
       if (directData) loaded = directData as unknown as EventRegistration[];
     }
 
-    // LocalStorage fallback
-    if (loaded.length === 0) {
-      try {
-        const localRaw = localStorage.getItem("apex_all_submissions");
-        const activeRaw = localStorage.getItem("apex_active_booking_session");
-        const allSubs: Array<Record<string, unknown>> = [];
-        if (localRaw) {
-          try { allSubs.push(...JSON.parse(localRaw)); } catch {}
-        }
-        if (activeRaw) {
-          try { allSubs.push(JSON.parse(activeRaw)); } catch {}
-        }
-
-        const matching = allSubs.filter((ls) => {
-          if (Array.isArray(ls.events)) {
-            return (ls.events as Array<{ id?: string; event_id?: string }>).some(
-              (e) => (e.id || e.event_id) === selectedEventId
-            );
-          }
-          if (Array.isArray(ls.event_ids)) {
-            return (ls.event_ids as string[]).includes(selectedEventId);
-          }
-          if (Array.isArray(ls.event_titles)) {
-            return (ls.event_titles as string[]).some(
-              (t) => t.toLowerCase().trim() === ev?.title.toLowerCase().trim()
-            );
-          }
-          return false;
-        });
-
-        if (matching.length > 0) {
-          loaded = matching.map((m, i) => {
-            const squad =
-              (m.teamName as string) ||
-              (m.team_name as string) ||
-              (Array.isArray(m.team_names) ? (m.team_names as string[])[0] : null) ||
-              "Registered Squad";
-            return {
-              registration_id: `local-${i}`,
-              team_name: squad,
-              whatsapp: ((m.phone || m.whatsapp || "") as string).replace("+91", ""),
-              amount_paise: ((m.totalPaise || m.amount_paise || 3000) as number),
-              status: (m.pay_status === "approved" || m.status === "confirmed") ? "confirmed" : "pending_payment",
-              created_at: ((m.submittedAt || m.created_at || new Date().toISOString()) as string),
-              utr: (m.utr as string) || undefined,
-            };
-          });
-        }
-      } catch {}
-    }
-
     // Check cached slot settings in localStorage
     try {
       const cached = localStorage.getItem(`apex_slot_settings_${selectedEventId}`);
@@ -5241,59 +5139,6 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
             }
           } else {
             rows.push(dp);
-          }
-        }
-      }
-    } catch {}
-
-    // Layer 3: Merge any local submissions from localStorage (ensures instant visibility!)
-    try {
-      const localSubsStr = localStorage.getItem("apex_all_submissions");
-      if (localSubsStr) {
-        const localSubs: PaymentRow[] = JSON.parse(localSubsStr);
-        for (const ls of localSubs) {
-          // Check if this UTR has been updated locally
-          const localStatus = localStorage.getItem(`apex_payment_status_${ls.utr}`);
-          const effectiveStatus = localStatus || ls.pay_status;
-          const lsObj = { ...ls, pay_status: effectiveStatus };
-
-          const matchIdx = rows.findIndex((r) => r.utr === ls.utr);
-          if (matchIdx >= 0) {
-            if (!rows[matchIdx].screenshot_url && ls.screenshot_url) {
-              rows[matchIdx].screenshot_url = ls.screenshot_url;
-            }
-            if ((!rows[matchIdx].team_names || rows[matchIdx].team_names.length === 0) && ls.team_names) {
-              rows[matchIdx].team_names = ls.team_names;
-            }
-          } else {
-            if (!statusFilter || effectiveStatus === statusFilter) {
-              rows.unshift(lsObj);
-            }
-          }
-        }
-      }
-
-      // Also check active booking session
-      const activeSessionStr = localStorage.getItem("apex_active_booking_session");
-      if (activeSessionStr) {
-        const s = JSON.parse(activeSessionStr);
-        if (s.utr) {
-          const localStatus = localStorage.getItem(`apex_payment_status_${s.utr}`);
-          const effectiveStatus = localStatus || "pending_verification";
-          if (!statusFilter || effectiveStatus === statusFilter) {
-            if (!rows.some((r) => r.utr === s.utr)) {
-              rows.unshift({
-                utr: s.utr,
-                amount_paise: s.total_paise || 3000,
-                pay_status: effectiveStatus,
-                created_at: new Date().toISOString(),
-                order_id: s.order_id,
-                whatsapp: (s.whatsapp || "").replace("+91", ""),
-                team_names: s.team_name ? [s.team_name] : ["Squad"],
-                event_titles: [],
-                screenshot_url: localStorage.getItem(`apex_payment_ss_${s.utr}`) || null,
-              });
-            }
           }
         }
       }

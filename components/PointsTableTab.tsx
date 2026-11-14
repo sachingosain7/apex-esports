@@ -156,29 +156,6 @@ export function PointsTableTab({ showToast }: PointsTableTabProps) {
           whatsapp: r.whatsapp,
           isConfirmed: r.status === "confirmed",
         }));
-      } else {
-        try {
-          const localStr = localStorage.getItem("apex_all_submissions");
-          if (localStr) {
-            const allLocal = JSON.parse(localStr);
-            interface LocalSub {
-              events?: Array<{ id?: string; event_id?: string }>;
-              teamName?: string;
-              whatsapp?: string;
-              status?: string;
-            }
-            const matching = allLocal.filter((ls: LocalSub) =>
-              ls.events?.some((e) => (e.id || e.event_id) === eventId)
-            );
-            if (matching.length > 0) {
-              teamList = matching.map((m: LocalSub) => ({
-                team_name: m.teamName || "Registered Squad",
-                whatsapp: m.whatsapp,
-                isConfirmed: m.status === "approved" || m.status === "confirmed",
-              }));
-            }
-          }
-        } catch {}
       }
 
       // De-duplicate unique squad names

@@ -440,11 +440,7 @@ function TeamRoster({
   const [open, setOpen] = useState(false);
   const eventRegs = regs.filter((r) => {
     if (r.event_id !== eventId) return false;
-    if (r.status === "cancelled" || r.status === "rejected") return false;
-    if (r.status === "pending_payment") {
-      const regTime = new Date(r.created_at).getTime();
-      if (!isNaN(regTime) && Date.now() - regTime > 15 * 60 * 1000) return false;
-    }
+    if (r.status === "cancelled" || r.status === "rejected" || r.status === "pending_payment") return false;
     return true;
   });
 
@@ -571,15 +567,11 @@ function EventCard({
 }) {
   const eventRegs = regs.filter((r) => r.event_id === e.id);
   const activeRegs = eventRegs.filter((r) => {
-    if (r.status === "cancelled" || r.status === "rejected") return false;
-    if (r.status === "pending_payment") {
-      const regTime = new Date(r.created_at).getTime();
-      if (!isNaN(regTime) && clientNow - regTime > 15 * 60 * 1000) return false;
-    }
+    if (r.status === "cancelled" || r.status === "rejected" || r.status === "pending_payment") return false;
     return true;
   });
   const confirmedCount = eventRegs.filter((r) => r.status === "confirmed").length;
-  const realFilled = Math.max(e.filled_slots || 0, activeRegs.length);
+  const realFilled = Math.max(e.filled_slots || 0, confirmedCount);
   const slotsLeft = Math.max(0, e.max_slots - realFilled);
   const s = slotState(e.max_slots, realFilled, e.starts_at, e.status, clientNow, e.idp_times);
   const pct = Math.min(100, Math.round((realFilled / e.max_slots) * 100));
@@ -990,7 +982,7 @@ export default function Home() {
         const { data: directData } = await supabase
           .from("registrations")
           .select("event_id, team_name, whatsapp, status, slot_number, created_at")
-          .neq("status", "cancelled");
+          .in("status", ["confirmed", "pending_approval"]);
         if (directData && Array.isArray(directData)) {
           const currentEvs = eventsRef.current || [];
           combined = directData.map((r: {
@@ -1023,79 +1015,14 @@ export default function Home() {
       } catch {}
     }
 
-    // 3. Hydrate from localStorage submissions (apex_all_submissions + active session)
+    // 3. Purge expired checkout hold session from localStorage
     try {
       if (typeof window !== "undefined") {
-        const localRaw = localStorage.getItem("apex_all_submissions");
         const activeRaw = localStorage.getItem("apex_active_booking_session");
-        const allLocal: Array<Record<string, unknown>> = [];
-        if (localRaw) {
-          try { allLocal.push(...JSON.parse(localRaw)); } catch {}
-        }
         if (activeRaw) {
-          try {
-            const parsed = JSON.parse(activeRaw);
-            const rawEvs = Array.isArray(parsed.events) ? parsed.events : [];
-            const hasDefault = rawEvs.some(
-              (e: { id?: string; event_id?: string }) => e.id === "default" || e.event_id === "default"
-            );
-            if (hasDefault) {
-              localStorage.removeItem("apex_active_booking_session");
-            } else {
-              allLocal.push(parsed);
-            }
-          } catch {}
-        }
-
-        const currentEvs = eventsRef.current || [];
-
-        for (const sub of allLocal) {
-          const squadName =
-            (sub.teamName as string) ||
-            (sub.team_name as string) ||
-            (Array.isArray(sub.team_names) ? (sub.team_names as string[])[0] : null) ||
-            "Registered Team";
-
-          let rawEvents: Array<{ id?: string; event_id?: string; title?: string }> = [];
-          if (Array.isArray(sub.events) && (sub.events as Array<{ id?: string }>).length > 0) {
-            rawEvents = sub.events as Array<{ id?: string; title?: string }>;
-          } else if (Array.isArray(sub.event_ids) && (sub.event_ids as string[]).length > 0) {
-            rawEvents = (sub.event_ids as string[]).map((id) => ({ id, event_id: id }));
-          } else if (Array.isArray(sub.event_titles) && (sub.event_titles as string[]).length > 0) {
-            rawEvents = (sub.event_titles as string[]).map((t) => ({ title: t }));
-          }
-
-          for (const ev of rawEvents) {
-            const evId = ev.id || ev.event_id;
-            if (!evId) continue;
-
-            const matchedEv = currentEvs.find((e) => e.id === evId);
-            if (!matchedEv) continue;
-            const customSlots = (matchedEv?.custom_slot_assignments as Record<string, number>) || {};
-            const startSlot = (matchedEv?.slot_range_start as number) || 5;
-
-            const alreadyPresent = combined.some(
-              (c) => c.event_id === evId && c.team_name?.trim().toLowerCase() === squadName.trim().toLowerCase()
-            );
-            if (!alreadyPresent) {
-              const rawWa = ((sub.whatsapp || sub.phone || "") as string).replace(/\D/g, "");
-              const isApproved = sub.pay_status === "approved" || sub.status === "confirmed";
-              const existingForEvent = combined.filter((c) => c.event_id === evId).length;
-              const computedSlot = (sub.slot_number as number) || customSlots[squadName] || (startSlot + existingForEvent);
-
-              combined.push({
-                event_id: evId,
-                team_name: squadName,
-                masked_whatsapp: (() => {
-                  const digits = rawWa.slice(-10);
-                  return digits.length >= 6 ? digits.slice(0, 6) + "XXXX" : "98••••XXXX";
-                })(),
-                status: isApproved ? "confirmed" : "pending_approval",
-                created_at: (sub.submittedAt as string) || (sub.created_at as string) || new Date().toISOString(),
-                slot_number: computedSlot,
-                is_slot_list_published: Boolean(matchedEv?.is_slot_list_published),
-              });
-            }
+          const parsed = JSON.parse(activeRaw);
+          if (parsed.expires_at && new Date(parsed.expires_at).getTime() < Date.now()) {
+            localStorage.removeItem("apex_active_booking_session");
           }
         }
       }

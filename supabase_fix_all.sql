@@ -567,6 +567,21 @@ BEGIN
     UPDATE orders SET status = 'pending' WHERE id = p_order_id;
   END IF;
 
+  -- 5. Recompute filled_slots for all events in this order
+  UPDATE events e
+  SET filled_slots = (
+    SELECT COUNT(*)::int
+    FROM registrations r
+    WHERE r.event_id = e.id
+      AND r.status::text != 'cancelled'
+      AND r.status::text != 'rejected'
+      AND (
+        r.status::text = 'confirmed'
+        OR EXISTS (SELECT 1 FROM payments p WHERE p.order_id = r.order_id AND p.status::text != 'rejected')
+      )
+  )
+  WHERE id IN (SELECT event_id FROM registrations WHERE order_id = p_order_id);
+
   RETURN jsonb_build_object('success', true, 'utr', v_clean_utr);
 END;
 $$;
@@ -969,11 +984,7 @@ AS $$
       OR EXISTS (
         SELECT 1 FROM payments p 
         WHERE p.order_id = r.order_id 
-          AND p.status::text = 'pending_verification'
-      )
-      OR (
-        r.status::text = 'pending_payment'
-        AND (o.expires_at IS NULL OR o.expires_at > now())
+          AND p.status::text IN ('pending_verification', 'pending')
       )
     )
   ORDER BY r.event_id, r.created_at ASC;
