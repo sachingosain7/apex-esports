@@ -602,6 +602,8 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [screenshotData, setScreenshotData] = useState<string | null>(null);
+  const [detectingUtr, setDetectingUtr] = useState(false);
+  const [detectedUtrInfo, setDetectedUtrInfo] = useState<string | null>(null);
   const [utrValidationStatus, setUtrValidationStatus] = useState<"idle" | "checking" | "valid" | "duplicate">("idle");
   const [utrErrorMessage, setUtrErrorMessage] = useState<string | null>(null);
 
@@ -696,6 +698,39 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
     });
   }, []);
 
+  const handleAutoDetectUtr = async (imgOverride?: string) => {
+    const targetImg = imgOverride || screenshotData;
+    if (!targetImg || detectingUtr) return;
+    setDetectingUtr(true);
+    setDetectedUtrInfo(null);
+    try {
+      const res = await fetch("/api/ai/verify-payment-receipt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageBase64: targetImg,
+          expectedAmountRupees: order.total_paise / 100,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.detectedUtr) {
+        const cleanDigits = String(data.detectedUtr).replace(/\D/g, "").slice(0, 12);
+        if (cleanDigits.length === 12) {
+          handleUtrChange(cleanDigits);
+          setDetectedUtrInfo(`✨ Extracted UTR ${cleanDigits} from ${data.appName || "receipt"}!`);
+        } else {
+          setDetectedUtrInfo("Found partial reference, please verify 12-digit UTR manually.");
+        }
+      } else {
+        setDetectedUtrInfo(data.message || "Please enter the 12-digit UTR manually.");
+      }
+    } catch {
+      setDetectedUtrInfo("Could not scan screenshot. Please enter UTR manually.");
+    } finally {
+      setDetectingUtr(false);
+    }
+  };
+
   const handleScreenshotChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -706,7 +741,11 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === "string") {
-        setScreenshotData(reader.result);
+        const resStr = reader.result;
+        setScreenshotData(resStr);
+        if (utr.length === 0) {
+          handleAutoDetectUtr(resStr);
+        }
       }
     };
     reader.readAsDataURL(file);
@@ -1105,13 +1144,41 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
           </div>
 
           {screenshotData ? (
-            <div className="flex items-center gap-2.5 bg-white p-2 rounded-lg border border-slate-200">
-              <img
-                src={screenshotData}
-                alt="Payment proof"
-                className="h-10 w-10 object-cover rounded-md border border-slate-200"
-              />
-              <span className="text-xs text-emerald-700 font-extrabold">Screenshot ready for Admin check ✓</span>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2.5 bg-white p-2.5 rounded-xl border border-slate-200">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <img
+                    src={screenshotData}
+                    alt="Payment proof"
+                    className="h-10 w-10 object-cover rounded-md border border-slate-200 shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-xs text-emerald-700 font-black truncate">Screenshot attached ✓</p>
+                    <p className="text-[10px] text-slate-500">Fast-tracks approval by tournament hosts</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleAutoDetectUtr()}
+                  disabled={detectingUtr}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-black text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-colors shrink-0 flex items-center gap-1 cursor-pointer disabled:opacity-50 shadow-2xs"
+                >
+                  {detectingUtr ? (
+                    <span>Scanning…</span>
+                  ) : (
+                    <>
+                      <span>✨</span>
+                      <span>Auto-Detect UTR</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              {detectedUtrInfo && (
+                <p className="text-[11px] font-bold text-indigo-700 bg-indigo-50/70 border border-indigo-100 rounded-lg p-2 flex items-center gap-1.5">
+                  <span>ℹ️</span>
+                  <span>{detectedUtrInfo}</span>
+                </p>
+              )}
             </div>
           ) : (
             <input
