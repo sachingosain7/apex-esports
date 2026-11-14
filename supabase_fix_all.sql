@@ -73,6 +73,12 @@ BEGIN
   END IF;
 END $$;
 
+-- 1G. RELAX WHATSAPP CHECK CONSTRAINTS (ACCEPTS 10 DIGITS, WITH OR WITHOUT +91)
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_whatsapp_check;
+ALTER TABLE registrations DROP CONSTRAINT IF EXISTS registrations_whatsapp_check;
+ALTER TABLE orders ADD CONSTRAINT orders_whatsapp_check CHECK (length(regexp_replace(whatsapp, '[^0-9]', '', 'g')) >= 10);
+ALTER TABLE registrations ADD CONSTRAINT registrations_whatsapp_check CHECK (length(regexp_replace(whatsapp, '[^0-9]', '', 'g')) >= 10);
+
 -- 2. ENSURE TABLES AND SUPPORTING COLUMNS EXIST
 CREATE TABLE IF NOT EXISTS public.events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -437,6 +443,7 @@ DECLARE
   v_order_id uuid := gen_random_uuid();
   v_expires_at timestamptz := now() + interval '10 minutes';
   v_total_paise int := 0;
+  v_clean_phone text := right(regexp_replace(COALESCE(p_whatsapp, ''), '[^0-9]', '', 'g'), 10);
   v_event events%ROWTYPE;
   v_eid uuid;
   v_fee int;
@@ -458,7 +465,7 @@ BEGIN
 
   -- Insert order
   INSERT INTO orders (id, whatsapp, total_paise, status, expires_at, user_id)
-  VALUES (v_order_id, p_whatsapp, v_total_paise, 'pending', v_expires_at, auth.uid());
+  VALUES (v_order_id, v_clean_phone, v_total_paise, 'pending', v_expires_at, auth.uid());
 
   -- Insert registrations
   FOREACH v_eid IN ARRAY p_event_ids LOOP
@@ -470,7 +477,7 @@ BEGIN
     END IF;
 
     INSERT INTO registrations (order_id, event_id, whatsapp, team_name, status, amount_paise, user_id)
-    VALUES (v_order_id, v_eid, p_whatsapp, p_team_name, 'pending_payment', v_fee, auth.uid());
+    VALUES (v_order_id, v_eid, v_clean_phone, p_team_name, 'pending_payment', v_fee, auth.uid());
   END LOOP;
 
   RETURN jsonb_build_object(
@@ -731,7 +738,7 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_clean_phone text := regexp_replace(COALESCE(p_whatsapp, ''), '[^0-9+]', '', 'g');
+  v_clean_phone text := right(regexp_replace(COALESCE(p_whatsapp, ''), '[^0-9]', '', 'g'), 10);
   v_clean_utr text := trim(COALESCE(p_utr, ''));
   v_target_order_id uuid := COALESCE(p_order_id, gen_random_uuid());
   v_existing_team text;

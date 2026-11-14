@@ -150,6 +150,24 @@ function RegistrationCard({ reg, onRefresh }: { reg: Registration; onRefresh?: (
         teamName={reg.team_name}
         whatsapp={reg.whatsapp}
       />
+
+      {/* ── Slot Shift & Support Bar ── */}
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 px-1 border-t border-slate-100 text-xs">
+        <span className="text-[11px] text-slate-500 font-medium">
+          Need to shift your slot number or match timing?
+        </span>
+        <a
+          href={`https://wa.me/${SUPPORT_WHATSAPP}?text=Hi+Host,+I+want+to+request+a+slot+shift+for+Team+${encodeURIComponent(
+            reg.team_name
+          )}+in+${encodeURIComponent(reg.event_title)}.+Current+Slot:+${reg.slot_number || "Assigned"}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-800 transition-colors shadow-2xs cursor-pointer"
+        >
+          <span>🔄</span>
+          <span>Request Slot Shift with Host</span>
+        </a>
+      </div>
     </div>
   );
 }

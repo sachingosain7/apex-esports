@@ -770,7 +770,7 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
     setSubmitting(true);
     setError(null);
     try {
-      const cleanPhone = whatsapp ? (whatsapp.startsWith("+91") ? whatsapp : `+91${whatsapp}`) : "+919999999999";
+      const cleanPhone = (whatsapp || "").replace(/\D/g, "").slice(-10) || "9999999999";
 
       // 0. Primary atomic RPC (with strict anti-duplicate UTR validation)
       for (const ev of events) {
@@ -1842,6 +1842,7 @@ function RegisterContent() {
       setWhatsapp(whatsapp);
 
       try {
+        const cleanPhone = (whatsapp || "").replace(/\D/g, "").slice(-10) || "9999999999";
         let orderId: string | null = null;
         let expiresAt: string | null = null;
         let totalPaise: number = events.reduce((acc, ev) => acc + effectiveFee(ev), 0);
@@ -1849,7 +1850,7 @@ function RegisterContent() {
         // Strategy 1: Try canonical create_order RPC
         try {
           const { data: ordData, error: ordError } = await supabase.rpc("create_order", {
-            p_whatsapp: whatsapp.startsWith("+91") ? whatsapp : `+91${whatsapp}`,
+            p_whatsapp: cleanPhone,
             p_events: events.map((ev) => ev.id),
             p_teams: events.map(() => team),
           });
@@ -1868,7 +1869,7 @@ function RegisterContent() {
           try {
             const { data: regData, error: regError } = await supabase.rpc("create_registration_order", {
               p_event_ids: events.map((e) => e.id),
-              p_whatsapp: whatsapp,
+              p_whatsapp: cleanPhone,
               p_team_name: team,
             });
             if (!regError && regData) {
@@ -1895,7 +1896,7 @@ function RegisterContent() {
               .from("orders")
               .insert({
                 id: generatedId,
-                whatsapp: whatsapp.startsWith("+91") ? whatsapp : `+91${whatsapp}`,
+                whatsapp: cleanPhone,
                 total_paise: totalPaise,
                 status: "pending",
                 expires_at: expiry,
@@ -1911,7 +1912,7 @@ function RegisterContent() {
               const regRows = events.map((ev) => ({
                 order_id: generatedId,
                 event_id: ev.id,
-                whatsapp: whatsapp.startsWith("+91") ? whatsapp : `+91${whatsapp}`,
+                whatsapp: cleanPhone,
                 team_name: team,
                 status: "pending_payment",
                 amount_paise: effectiveFee(ev),
