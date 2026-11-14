@@ -13,6 +13,7 @@ interface ChatMessage {
 }
 
 const STORAGE_KEY = "apex_support_chat_history";
+const POSITION_KEY = "apex_ai_bot_pos";
 
 const QUICK_ACTIONS = [
   { label: "🔑 Where is my Room ID & Pass?", query: "Where do I get my match Room ID and Password?" },
@@ -30,8 +31,27 @@ export function AISupportBot() {
   const [unreadCount, setUnreadCount] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Load chat history from localStorage on mount
+  // Draggable Floating Position State (touch + mouse)
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef<{ pointerX: number; pointerY: number; posX: number; posY: number } | null>(null);
+  const hasDraggedRef = useRef(false);
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+
+  // Load saved position & chat history on mount
   useEffect(() => {
+    try {
+      const savedPos = localStorage.getItem(POSITION_KEY);
+      if (savedPos) {
+        const parsed = JSON.parse(savedPos);
+        if (typeof parsed.x === "number" && typeof parsed.y === "number") {
+          const clampedX = Math.min(Math.max(8, parsed.x), Math.max(8, window.innerWidth - 80));
+          const clampedY = Math.min(Math.max(8, parsed.y), Math.max(8, window.innerHeight - 80));
+          setPosition({ x: clampedX, y: clampedY });
+        }
+      }
+    } catch {}
+
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -161,35 +181,152 @@ export function AISupportBot() {
     setMessages([freshWelcome]);
   };
 
+  // Draggable touch & mouse pointer handlers
+  const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0 && e.pointerType === "mouse") return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    dragStartRef.current = {
+      pointerX: e.clientX,
+      pointerY: e.clientY,
+      posX: position ? position.x : rect.left,
+      posY: position ? position.y : rect.top,
+    };
+    hasDraggedRef.current = false;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {}
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!dragStartRef.current) return;
+    const dx = e.clientX - dragStartRef.current.pointerX;
+    const dy = e.clientY - dragStartRef.current.pointerY;
+
+    if (!hasDraggedRef.current && Math.hypot(dx, dy) > 5) {
+      hasDraggedRef.current = true;
+      setIsDragging(true);
+    }
+
+    if (hasDraggedRef.current) {
+      const btnWidth = btnRef.current?.offsetWidth || 180;
+      const btnHeight = btnRef.current?.offsetHeight || 48;
+      const newX = Math.min(
+        Math.max(8, dragStartRef.current.posX + dx),
+        Math.max(8, window.innerWidth - btnWidth - 8)
+      );
+      const newY = Math.min(
+        Math.max(8, dragStartRef.current.posY + dy),
+        Math.max(8, window.innerHeight - btnHeight - 8)
+      );
+      setPosition({ x: newX, y: newY });
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!dragStartRef.current) return;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {}
+
+    const wasDragging = hasDraggedRef.current;
+    dragStartRef.current = null;
+    setIsDragging(false);
+
+    if (wasDragging) {
+      if (position) {
+        try {
+          localStorage.setItem(POSITION_KEY, JSON.stringify(position));
+        } catch {}
+      }
+    } else {
+      setIsOpen(true);
+    }
+  };
+
+  const handleResetPosition = () => {
+    try {
+      localStorage.removeItem(POSITION_KEY);
+    } catch {}
+    setPosition(null);
+  };
+
   return (
     <>
-      {/* ── Floating Launcher Button (Bottom Right) ── */}
-      <div className="fixed bottom-5 right-5 z-40">
-        {!isOpen && (
-          <button
-            type="button"
-            onClick={() => setIsOpen(true)}
-            className="group relative flex items-center gap-2.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-400 px-4 py-3 text-slate-950 font-black text-xs shadow-xl shadow-amber-500/25 transition-all duration-300 hover:scale-105 hover:shadow-amber-500/40 active:scale-95 cursor-pointer border border-amber-300"
-            aria-label="Open AI Tournament Support Bot"
-          >
-            <span className="relative flex h-3 w-3">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-slate-950 opacity-40" />
-              <span className="relative inline-flex h-3 w-3 rounded-full bg-emerald-600" />
+      {/* ── Touch & Mouse Draggable Floating Launcher Button ── */}
+      {!isOpen && (
+        <button
+          ref={btnRef}
+          type="button"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          style={
+            position
+              ? {
+                  position: "fixed",
+                  left: `${position.x}px`,
+                  top: `${position.y}px`,
+                  zIndex: 45,
+                  touchAction: "none",
+                  userSelect: "none",
+                }
+              : {
+                  position: "fixed",
+                  bottom: "1.25rem",
+                  right: "1.25rem",
+                  zIndex: 45,
+                  touchAction: "none",
+                  userSelect: "none",
+                }
+          }
+          className={`group relative flex items-center gap-2 rounded-full bg-gradient-to-r from-amber-500 to-amber-400 pl-3 pr-4 py-2.5 sm:py-3 text-slate-950 font-black text-xs shadow-xl shadow-amber-500/30 transition-shadow duration-200 border border-amber-300 select-none cursor-grab active:cursor-grabbing ${
+            isDragging ? "scale-105 shadow-2xl ring-2 ring-amber-400" : "hover:scale-105"
+          }`}
+          aria-label="Drag or tap to open AI Tournament Support Bot"
+          title="Drag anywhere on screen, tap to open"
+        >
+          {/* Subtle drag grip handle */}
+          <span className="text-slate-900/60 font-mono text-sm leading-none" title="Drag me anywhere">
+            ⠿
+          </span>
+
+          <span className="relative flex h-3 w-3 shrink-0">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-slate-950 opacity-40" />
+            <span className="relative inline-flex h-3 w-3 rounded-full bg-emerald-600" />
+          </span>
+          <span className="text-base leading-none">🤖</span>
+          <span className="font-extrabold tracking-wide">AI Support</span>
+          {unreadCount > 0 && (
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-600 text-[10px] font-black text-white shrink-0">
+              {unreadCount}
             </span>
-            <span className="text-base">🤖</span>
-            <span className="hidden sm:inline font-extrabold tracking-wide">AI Support &amp; IDP Guide</span>
-            {unreadCount > 0 && (
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-600 text-[10px] font-black text-white">
-                {unreadCount}
-              </span>
-            )}
-          </button>
-        )}
-      </div>
+          )}
+        </button>
+      )}
 
       {/* ── Chat Modal Window ── */}
       {isOpen && (
-        <div className="fixed bottom-4 right-4 z-50 flex h-[560px] max-h-[88vh] w-[92vw] max-w-[390px] flex-col rounded-3xl border border-slate-700/60 bg-[#0B132B] text-slate-100 shadow-2xl shadow-black/80 backdrop-blur-xl animate-in slide-in-from-bottom-5 duration-200 overflow-hidden">
+        <div
+          style={
+            position && typeof window !== "undefined" && window.innerWidth >= 640
+              ? {
+                  position: "fixed",
+                  left:
+                    position.x < window.innerWidth / 2
+                      ? `${Math.max(12, Math.min(position.x, window.innerWidth - 410))}px`
+                      : "auto",
+                  right:
+                    position.x >= window.innerWidth / 2
+                      ? `${Math.max(12, window.innerWidth - position.x - 390)}px`
+                      : "auto",
+                  bottom: "16px",
+                  zIndex: 50,
+                }
+              : undefined
+          }
+          className="fixed bottom-4 right-4 z-50 flex h-[560px] max-h-[88vh] w-[92vw] max-w-[390px] flex-col rounded-3xl border border-slate-700/60 bg-[#0B132B] text-slate-100 shadow-2xl shadow-black/80 backdrop-blur-xl animate-in slide-in-from-bottom-5 duration-200 overflow-hidden"
+        >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-white/10 bg-[#070D1F] px-4 py-3">
             <div className="flex items-center gap-2.5">
@@ -209,6 +346,14 @@ export function AISupportBot() {
             </div>
 
             <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={handleResetPosition}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-slate-200 transition-colors cursor-pointer text-xs"
+                title="Reset button position to default corner"
+              >
+                📌
+              </button>
               <button
                 type="button"
                 onClick={handleClearHistory}

@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS public.events (
   slot_range_end int DEFAULT 25,
   is_slot_list_published boolean DEFAULT false,
   custom_slot_assignments jsonb DEFAULT '{}'::jsonb,
+  slot_list_image_url text,
   room_id text,
   room_password text,
   whatsapp_group_link text,
@@ -183,6 +184,7 @@ BEGIN
   ALTER TABLE public.events ADD COLUMN IF NOT EXISTS slot_range_end int DEFAULT 25;
   ALTER TABLE public.events ADD COLUMN IF NOT EXISTS is_slot_list_published boolean DEFAULT false;
   ALTER TABLE public.events ADD COLUMN IF NOT EXISTS custom_slot_assignments jsonb DEFAULT '{}'::jsonb;
+  ALTER TABLE public.events ADD COLUMN IF NOT EXISTS slot_list_image_url text;
   ALTER TABLE public.events ADD COLUMN IF NOT EXISTS room_id text;
   ALTER TABLE public.events ADD COLUMN IF NOT EXISTS room_password text;
   ALTER TABLE public.events ADD COLUMN IF NOT EXISTS whatsapp_group_link text;
@@ -975,11 +977,15 @@ AS $$
     END AS masked_whatsapp,
     r.status::text,
     r.created_at,
-    COALESCE(
-      (e.custom_slot_assignments->>r.id::text)::int,
-      (e.custom_slot_assignments->>r.team_name)::int,
-      (ROW_NUMBER() OVER (PARTITION BY r.event_id ORDER BY r.created_at) + COALESCE(e.slot_range_start, 5) - 1)::int
-    ) AS slot_number,
+    CASE 
+      WHEN COALESCE(e.is_slot_list_published, false) = true THEN
+        COALESCE(
+          (e.custom_slot_assignments->>r.id::text)::int,
+          (e.custom_slot_assignments->>r.team_name)::int,
+          (ROW_NUMBER() OVER (PARTITION BY r.event_id ORDER BY r.created_at) + COALESCE(e.slot_range_start, 5) - 1)::int
+        )
+      ELSE NULL
+    END AS slot_number,
     COALESCE(e.is_slot_list_published, false) AS is_slot_list_published
   FROM registrations r
   JOIN events e ON e.id = r.event_id
@@ -1071,7 +1077,8 @@ RETURNS TABLE (
   amount_paise           int,
   registered_at          timestamptz,
   whatsapp               text,
-  is_slot_list_published boolean
+  is_slot_list_published boolean,
+  slot_list_image_url    text
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -1100,16 +1107,21 @@ BEGIN
     CASE WHEN p.status = 'approved' OR r.status = 'confirmed' THEN e.room_password ELSE NULL END AS room_password,
     CASE WHEN p.status = 'approved' OR r.status = 'confirmed' THEN e.whatsapp_group_link ELSE NULL END AS whatsapp_group_link,
     r.team_name,
-    COALESCE(
-      (e.custom_slot_assignments->>r.id::text)::int,
-      (e.custom_slot_assignments->>r.team_name)::int,
-      (ROW_NUMBER() OVER (PARTITION BY r.event_id ORDER BY r.created_at) + COALESCE(e.slot_range_start, 5) - 1)::int
-    ) AS slot_number,
+    CASE 
+      WHEN COALESCE(e.is_slot_list_published, false) = true THEN
+        COALESCE(
+          (e.custom_slot_assignments->>r.id::text)::int,
+          (e.custom_slot_assignments->>r.team_name)::int,
+          (ROW_NUMBER() OVER (PARTITION BY r.event_id ORDER BY r.created_at) + COALESCE(e.slot_range_start, 5) - 1)::int
+        )
+      ELSE NULL
+    END AS slot_number,
     CASE WHEN p.status = 'approved' OR r.status = 'confirmed' THEN 'confirmed' ELSE 'pending_verification' END AS status,
     COALESCE(r.amount_paise, p.amount_paise, 3000)                                 AS amount_paise,
     r.created_at                                                                   AS registered_at,
     COALESCE(r.whatsapp, o.whatsapp, '')                                           AS whatsapp,
-    COALESCE(e.is_slot_list_published, false)                                      AS is_slot_list_published
+    COALESCE(e.is_slot_list_published, false)                                      AS is_slot_list_published,
+    e.slot_list_image_url                                                          AS slot_list_image_url
   FROM registrations r
   JOIN events e ON e.id = r.event_id
   LEFT JOIN orders o ON o.id = r.order_id

@@ -140,9 +140,9 @@ function RegistrationCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
-            {reg.is_slot_list_published ? (
+            {reg.is_slot_list_published && reg.slot_number ? (
               <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-xs font-black text-indigo-900 font-mono shadow-2xs">
-                🎯 Official Slot #{reg.slot_number || 5}
+                🎯 Official Slot #{reg.slot_number}
               </span>
             ) : (
               <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-black text-emerald-800">
@@ -393,9 +393,10 @@ export default function ProfilePage() {
         effectiveStatus = "cancelled";
       }
 
+      const isPublished = Boolean(ev.is_slot_list_published);
       const customSlots = (ev.custom_slot_assignments as Record<string, number>) || {};
       const startSlot = (ev.slot_range_start as number) || 5;
-      const computedSlot = r.slot_number || customSlots[r.id] || customSlots[r.team_name] || (startSlot + i);
+      const computedSlot = isPublished ? (r.slot_number || customSlots[r.id] || customSlots[r.team_name] || (startSlot + i)) : null;
 
       return {
         id: r.id,
@@ -407,7 +408,7 @@ export default function ProfilePage() {
         event_id: r.event_id,
         order_id: r.order_id,
         slot_number: computedSlot,
-        is_slot_list_published: Boolean(ev.is_slot_list_published),
+        is_slot_list_published: isPublished,
         event_title: (ev.title as string) ?? "Tournament",
         event_kind: (ev.kind as string) ?? "scrim",
         event_starts_at: (ev.starts_at as string) ?? new Date().toISOString(),

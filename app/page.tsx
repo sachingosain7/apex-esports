@@ -45,6 +45,7 @@ type EventRow = {
     third?: number;
     fourth?: number;
   } | null;
+  slot_list_image_url?: string | null;
 };
 
 type PublicReg = {
@@ -53,7 +54,7 @@ type PublicReg = {
   masked_whatsapp: string;
   status: string;
   created_at: string;
-  slot_number?: number;
+  slot_number?: number | null;
   is_slot_list_published?: boolean;
 };
 
@@ -433,16 +434,49 @@ function PrizeModal({
 function TeamRoster({
   eventId,
   regs,
+  event,
 }: {
   eventId: string;
   regs: PublicReg[];
+  event?: EventRow;
 }) {
   const [open, setOpen] = useState(false);
+  const [showPosterModal, setShowPosterModal] = useState(false);
+  const [copiedList, setCopiedList] = useState(false);
+
   const eventRegs = regs.filter((r) => {
     if (r.event_id !== eventId) return false;
     if (r.status === "cancelled" || r.status === "rejected" || r.status === "pending_payment") return false;
     return true;
   });
+
+  const handleCopySlotList = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!event) return;
+    const lines = [
+      `🔥 *${event.title.toUpperCase()} — OFFICIAL SLOT LIST* 🔥`,
+      `📅 Schedule: ${event.start_times || "As announced"}`,
+      `📍 IDP Drop: ${event.idp_times || "15 mins before match"}`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `Slot 1: Host / Caster`,
+      `Slot 2: Host / Caster`,
+      `Slot 3: Reserved`,
+      `Slot 4: Reserved`,
+    ];
+    eventRegs.forEach((r, idx) => {
+      const slotNum = r.slot_number || ((event.slot_range_start ?? 5) + idx);
+      lines.push(`Slot ${slotNum}: ${r.team_name} (${r.masked_whatsapp || "Verified"})`);
+    });
+    lines.push(
+      `━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `⚠️ Strict Rule: Join only on your designated slot!`,
+      `⚡ Powered by Apex Esports`
+    );
+    navigator.clipboard.writeText(lines.join("\n")).then(() => {
+      setCopiedList(true);
+      setTimeout(() => setCopiedList(false), 2500);
+    });
+  };
 
   return (
     <div className="rounded-xl border border-slate-200/90 overflow-hidden bg-white">
@@ -470,7 +504,40 @@ function TeamRoster({
       </button>
 
       {open && (
-        <div className="border-t border-slate-100 max-h-52 overflow-y-auto divide-y divide-slate-100 bg-slate-50/50">
+        <div className="border-t border-slate-100 max-h-56 overflow-y-auto divide-y divide-slate-100 bg-slate-50/50">
+          {/* Official Slot Actions Bar (When published) */}
+          {event?.is_slot_list_published && (
+            <div className="bg-indigo-50/90 border-b border-indigo-100 px-3.5 py-2 flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-[11px] font-black text-indigo-950 flex items-center gap-1.5">
+                <span>🎯</span>
+                <span>Official Slot Allocation Live</span>
+              </span>
+              <div className="flex items-center gap-1.5">
+                {event.slot_list_image_url && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowPosterModal(true);
+                    }}
+                    className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-indigo-600 hover:bg-indigo-700 text-white transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                  >
+                    <span>🖼️</span>
+                    <span>View Poster</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleCopySlotList}
+                  className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                >
+                  <span>📋</span>
+                  <span>{copiedList ? "Copied! ✓" : "Copy List"}</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {eventRegs.length === 0 ? (
             <p className="px-4 py-3 text-xs text-slate-400 italic text-center">
               No teams registered yet. Be the first squad!
@@ -513,10 +580,10 @@ function TeamRoster({
 
                   {/* Right: Slot badge (if published) OR "Paid & Slot Assigned" badge */}
                   <div className="shrink-0 text-right">
-                    {r.is_slot_list_published ? (
+                    {r.is_slot_list_published && r.slot_number ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-black bg-indigo-50 border border-indigo-200 text-indigo-900 font-mono shadow-2xs">
                         <span>🎯</span>
-                        <span>Slot #{r.slot_number || i + 5}</span>
+                        <span>Slot #{r.slot_number}</span>
                       </span>
                     ) : isPaid ? (
                       <div className="flex flex-col items-end">
@@ -539,6 +606,35 @@ function TeamRoster({
               );
             })
           )}
+        </div>
+      )}
+
+      {/* Lightbox modal for slot list graphic poster */}
+      {showPosterModal && event?.slot_list_image_url && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 animate-in fade-in"
+          onClick={() => setShowPosterModal(false)}
+        >
+          <div
+            className="relative max-w-2xl max-h-[85vh] bg-slate-900 rounded-3xl overflow-hidden border border-white/20 p-2 shadow-2xl flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setShowPosterModal(false)}
+              className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-black/60 text-white font-bold hover:bg-black/90 flex items-center justify-center cursor-pointer"
+            >
+              ✕
+            </button>
+            <img
+              src={event.slot_list_image_url}
+              alt={`${event.title} Slot List Poster`}
+              className="w-full h-auto max-h-[75vh] object-contain rounded-2xl"
+            />
+            <div className="py-2.5 text-center text-xs text-slate-300 font-bold flex items-center justify-center gap-2">
+              <span>🖼️ {event.title} — Official Slot List Poster</span>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -724,7 +820,7 @@ function EventCard({
       </div>
 
       {/* ── Registered Teams Collapsible ── */}
-      <TeamRoster eventId={e.id} regs={regs} />
+      <TeamRoster eventId={e.id} regs={regs} event={e} />
 
       {/* ── Official Top 4 Winners & Points Table (When Concluded) ── */}
       {(Boolean(e.top_teams?.first) || Boolean(e.final_points_table_url)) && (
@@ -994,9 +1090,10 @@ export default function Home() {
             created_at: string;
           }, idx: number) => {
             const matchedEv = currentEvs.find((e) => e.id === r.event_id);
+            const isPublished = Boolean(matchedEv?.is_slot_list_published);
             const customSlots = (matchedEv?.custom_slot_assignments as Record<string, number>) || {};
             const startSlot = (matchedEv?.slot_range_start as number) || 5;
-            const computedSlot = r.slot_number || customSlots[r.team_name] || (startSlot + idx);
+            const computedSlot = isPublished ? (r.slot_number || customSlots[r.team_name] || (startSlot + idx)) : null;
 
             return {
               event_id: r.event_id,
@@ -1008,7 +1105,7 @@ export default function Home() {
               status: r.status,
               created_at: r.created_at,
               slot_number: computedSlot,
-              is_slot_list_published: Boolean(matchedEv?.is_slot_list_published),
+              is_slot_list_published: isPublished,
             };
           });
         }
@@ -1800,12 +1897,12 @@ export default function Home() {
         </div>
       </footer>
 
-      {/* Floating WhatsApp Support Pill - Smoothly moves above the dock when lobbies are selected so it NEVER overlaps checkout! */}
+      {/* Floating WhatsApp Support Pill - Positioned on Bottom-Left so it NEVER overlaps AI bot or checkout */}
       <a
         href={`https://wa.me/${SUPPORT_WHATSAPP}`}
         target="_blank"
         rel="noopener noreferrer"
-        className={`fixed right-4 sm:right-6 z-30 rounded-full bg-[#25D366] hover:bg-[#20ba59] text-black font-extrabold px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs flex items-center gap-2 shadow-2xl transition-all duration-200 cursor-pointer ${
+        className={`fixed left-4 sm:left-6 z-30 rounded-full bg-[#25D366] hover:bg-[#20ba59] text-black font-extrabold px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs flex items-center gap-2 shadow-2xl transition-all duration-200 cursor-pointer ${
           sel.length > 0 ? "bottom-24 sm:bottom-28" : "bottom-5 sm:bottom-6"
         }`}
         title="Chat with WhatsApp Support"

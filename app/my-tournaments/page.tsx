@@ -27,6 +27,7 @@ type Registration = {
   registered_at: string;
   whatsapp?: string | null;
   is_slot_list_published?: boolean;
+  slot_list_image_url?: string | null;
 };
 
 type SearchMode = "utr" | "whatsapp";
@@ -67,6 +68,7 @@ function SkeletonCard() {
 }
 
 function RegistrationCard({ reg, onRefresh }: { reg: Registration; onRefresh?: () => void }) {
+  const [showPoster, setShowPoster] = useState(false);
   const isConfirmed = reg.status.toLowerCase() === "confirmed" || reg.status.toLowerCase() === "approved";
 
   return (
@@ -75,14 +77,24 @@ function RegistrationCard({ reg, onRefresh }: { reg: Registration; onRefresh?: (
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap mb-1">
-            {reg.is_slot_list_published ? (
+            {reg.is_slot_list_published && reg.slot_number ? (
               <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-xs font-black text-indigo-900 font-mono shadow-2xs">
                 🎯 Official Slot #{reg.slot_number}
               </span>
             ) : (
               <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-black text-emerald-800">
-                ✓ Slot Assigned &amp; Paid (Slot # releases before match)
+                ✓ Slot Assigned &amp; Paid (Slot # releases when published)
               </span>
+            )}
+            {reg.is_slot_list_published && reg.slot_list_image_url && (
+              <button
+                type="button"
+                onClick={() => setShowPoster(true)}
+                className="rounded-full border border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-900 px-2.5 py-0.5 text-xs font-extrabold flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
+              >
+                <span>🖼️</span>
+                <span>View Slot List Poster</span>
+              </button>
             )}
             <span className="text-xs font-bold text-slate-500">
               Team: <strong className="text-slate-900">{reg.team_name}</strong>
@@ -147,6 +159,7 @@ function RegistrationCard({ reg, onRefresh }: { reg: Registration; onRefresh?: (
         startTimes={reg.start_times}
         slotNumber={reg.slot_number}
         isConfirmed={isConfirmed}
+        isSlotListPublished={Boolean(reg.is_slot_list_published)}
         teamName={reg.team_name}
         whatsapp={reg.whatsapp}
       />
@@ -168,6 +181,34 @@ function RegistrationCard({ reg, onRefresh }: { reg: Registration; onRefresh?: (
           <span>Request Slot Shift with Host</span>
         </a>
       </div>
+
+      {/* ── Official Slot List Poster Lightbox Modal ── */}
+      {showPoster && reg.slot_list_image_url && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="relative max-w-2xl w-full bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-800 bg-slate-950/80">
+              <div className="flex items-center gap-2">
+                <span>🖼️</span>
+                <span className="text-xs sm:text-sm font-black text-white">Official Slot List Graphic</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPoster(false)}
+                className="h-7 w-7 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm font-bold transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-3 overflow-auto flex-1 flex items-center justify-center bg-black/40">
+              <img
+                src={reg.slot_list_image_url}
+                alt="Official Slot List Poster"
+                className="max-h-[75vh] w-auto object-contain rounded-xl shadow-lg"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -243,7 +284,7 @@ export default function MyTournamentsPage() {
                 const eventIds = Array.from(new Set(regRows.map((r) => r.event_id)));
                 const { data: evRows } = await supabase
                   .from("events")
-                  .select("id, title, starts_at, idp_times, start_times, room_id, room_password, whatsapp_group_link, is_slot_list_published, slot_range_start, custom_slot_assignments")
+                  .select("id, title, starts_at, idp_times, start_times, room_id, room_password, whatsapp_group_link, is_slot_list_published, slot_range_start, custom_slot_assignments, slot_list_image_url")
                   .in("id", eventIds);
 
                 const evMap = new Map((evRows || []).map((e) => [e.id, e]));
@@ -254,7 +295,10 @@ export default function MyTournamentsPage() {
                   const isApproved = pay?.status === "approved" || r.status === "confirmed";
                   const customSlots = (ev?.custom_slot_assignments as Record<string, number>) || {};
                   const startSlot = (ev?.slot_range_start as number) || 5;
-                  const computedSlot = (r as any).slot_number || customSlots[r.id] || customSlots[r.team_name] || (startSlot + i);
+                  const isSlotPub = Boolean(ev?.is_slot_list_published);
+                  const computedSlot = isSlotPub
+                    ? (r as any).slot_number || customSlots[r.id] || customSlots[r.team_name] || (startSlot + i)
+                    : null;
 
                   return {
                     registration_id: r.id,
@@ -268,7 +312,8 @@ export default function MyTournamentsPage() {
                     whatsapp_group_link: isApproved ? ev?.whatsapp_group_link || null : null,
                     team_name: r.team_name,
                     slot_number: computedSlot,
-                    is_slot_list_published: Boolean(ev?.is_slot_list_published),
+                    is_slot_list_published: isSlotPub,
+                    slot_list_image_url: ev?.slot_list_image_url || null,
                     status: isApproved ? "confirmed" : "pending_verification",
                     amount_paise: r.amount_paise || pay?.amount_paise || 3000,
                     registered_at: r.created_at,
@@ -310,7 +355,7 @@ export default function MyTournamentsPage() {
               const eventIds = Array.from(new Set(validRegs.map((r) => r.event_id)));
               const { data: evRows } = await supabase
                 .from("events")
-                .select("id, title, starts_at, idp_times, start_times, room_id, room_password, whatsapp_group_link, is_slot_list_published, slot_range_start, custom_slot_assignments")
+                .select("id, title, starts_at, idp_times, start_times, room_id, room_password, whatsapp_group_link, is_slot_list_published, slot_range_start, custom_slot_assignments, slot_list_image_url")
                 .in("id", eventIds);
 
               const evMap = new Map((evRows || []).map((e) => [e.id, e]));
@@ -321,7 +366,10 @@ export default function MyTournamentsPage() {
                 const isConfirmed = r.status === "confirmed" || payStatus === "approved";
                 const customSlots = (ev?.custom_slot_assignments as Record<string, number>) || {};
                 const startSlot = (ev?.slot_range_start as number) || 5;
-                const computedSlot = (r as any).slot_number || customSlots[r.id] || customSlots[r.team_name] || (startSlot + i);
+                const isSlotPub = Boolean(ev?.is_slot_list_published);
+                const computedSlot = isSlotPub
+                  ? (r as any).slot_number || customSlots[r.id] || customSlots[r.team_name] || (startSlot + i)
+                  : null;
 
                 return {
                   registration_id: r.id,
@@ -335,7 +383,8 @@ export default function MyTournamentsPage() {
                   whatsapp_group_link: isConfirmed ? ev?.whatsapp_group_link || null : null,
                   team_name: r.team_name,
                   slot_number: computedSlot,
-                  is_slot_list_published: Boolean(ev?.is_slot_list_published),
+                  is_slot_list_published: isSlotPub,
+                  slot_list_image_url: ev?.slot_list_image_url || null,
                   status: isConfirmed ? "confirmed" : "pending_verification",
                   amount_paise: r.amount_paise || 3000,
                   registered_at: r.created_at,

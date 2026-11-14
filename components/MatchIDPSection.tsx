@@ -13,6 +13,7 @@ interface MatchIDPSectionProps {
   startTimes?: string | null | undefined;
   slotNumber?: number | null;
   isConfirmed?: boolean;
+  isSlotListPublished?: boolean;
   teamName?: string | null;
   whatsapp?: string | null;
 }
@@ -27,6 +28,7 @@ export function MatchIDPSection({
   startTimes,
   slotNumber,
   isConfirmed = true,
+  isSlotListPublished = false,
   teamName,
   whatsapp,
 }: MatchIDPSectionProps) {
@@ -63,9 +65,13 @@ export function MatchIDPSection({
               3 Matches · 3 Separate Custom Rooms
             </span>
           </div>
-          {slotNumber != null && (
+          {isSlotListPublished && slotNumber != null ? (
             <span className="rounded-full border border-emerald-300 bg-emerald-100 px-3 py-0.5 text-xs font-mono font-black text-emerald-800">
               Your Slot: #{slotNumber}
+            </span>
+          ) : (
+            <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600">
+              Slot # releases with official list
             </span>
           )}
         </div>
@@ -188,7 +194,7 @@ export function MatchIDPSection({
                     className="pointer-events-none select-none absolute inset-0 z-10 overflow-hidden flex items-center justify-center opacity-[0.11] rotate-[-12deg]"
                   >
                     <div className="text-center font-mono text-[9px] sm:text-xs font-black tracking-widest text-slate-900 uppercase space-y-1 whitespace-nowrap">
-                      <p>⚡ LEAK TRACKER · {teamName ? `TEAM: ${teamName}` : "VERIFIED REGISTRATION"} · SLOT #{slotNumber ?? "—"}</p>
+                      <p>⚡ LEAK TRACKER · {teamName ? `TEAM: ${teamName}` : "VERIFIED REGISTRATION"} · {isSlotListPublished && slotNumber != null ? `SLOT #${slotNumber}` : "SLOT PENDING RELEASE"}</p>
                       <p>+91 {whatsapp ? whatsapp.replace(/\D/g, "").slice(-10) : "REGISTERED"} · STRICTLY CONFIDENTIAL</p>
                     </div>
                   </div>
@@ -289,7 +295,7 @@ export function MatchIDPSection({
         </p>
         <p>1. Open BGMI ➔ Select Mode (Maps) ➔ Tap the <strong>Room</strong> icon on top.</p>
         <p>2. Enter Match Room ID &amp; Password from above.</p>
-        <p>3. Join your assigned slot {slotNumber != null ? <strong>(Slot #{slotNumber})</strong> : ""} immediately!</p>
+        <p>3. Join your assigned slot {isSlotListPublished && slotNumber != null ? <strong>(Slot #{slotNumber})</strong> : <strong>(revealed when official slot list is published)</strong>} immediately!</p>
       </div>
     </div>
   );

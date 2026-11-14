@@ -51,6 +51,7 @@ type EventAdmin = {
   slot_range_end?: number | null;
   is_slot_list_published?: boolean | null;
   custom_slot_assignments?: Record<string, number> | null;
+  slot_list_image_url?: string | null;
 };
 
 type PaymentRow = {
@@ -744,6 +745,8 @@ function TeamsRosterModal({
   const [slotStart, setSlotStart] = useState<number>(event.slot_range_start ?? 5);
   const [slotEnd, setSlotEnd] = useState<number>(event.slot_range_end ?? 25);
   const [isPublished, setIsPublished] = useState<boolean>(Boolean(event.is_slot_list_published));
+  const [slotListImageUrl, setSlotListImageUrl] = useState<string | null>(event.slot_list_image_url ?? null);
+  const [showPosterPreview, setShowPosterPreview] = useState(false);
 
   // Custom Slot Map: { [teamName or regId]: slotNumber }
   const [slotMap, setSlotMap] = useState<Record<string, number>>(event.custom_slot_assignments ?? {});
@@ -778,6 +781,7 @@ function TeamsRosterModal({
         if (parsed.slotEnd) setSlotEnd(parsed.slotEnd);
         if (parsed.isPublished !== undefined) setIsPublished(parsed.isPublished);
         if (parsed.slotMap) setSlotMap(parsed.slotMap);
+        if (parsed.slotListImageUrl !== undefined) setSlotListImageUrl(parsed.slotListImageUrl);
       }
     } catch {}
 
@@ -869,6 +873,23 @@ function TeamsRosterModal({
     showToast(`⚡ Auto-assigned ${teams.length} squads from Slot ${slotStart} to ${Math.min(slotEnd, slotStart + teams.length - 1)}!`, "success");
   };
 
+  const handleSlotListPosterUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      showToast("Slot list poster must be under 8MB", "error");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setSlotListImageUrl(reader.result);
+        showToast("🖼️ Slot list poster graphic loaded! Remember to Save & Sync.", "success");
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleUpdateTeamSlot = (key: string, val: number) => {
     setSlotMap((prev) => ({
       ...prev,
@@ -930,6 +951,7 @@ function TeamsRosterModal({
             slot_range_end: slotEnd,
             is_slot_list_published: isPublished,
             custom_slot_assignments: slotMap,
+            slot_list_image_url: slotListImageUrl,
           })
           .eq("id", event.id);
       } catch (err) {
@@ -945,6 +967,7 @@ function TeamsRosterModal({
             slotEnd,
             isPublished,
             slotMap,
+            slotListImageUrl,
             updatedAt: new Date().toISOString(),
           })
         );
@@ -1083,6 +1106,80 @@ function TeamsRosterModal({
               <span>{isPublished ? "🔒 Hide Slot List" : "📢 Publish Slot List Live"}</span>
             </button>
           </div>
+        </div>
+
+        {/* ── Slot List Graphic Poster Upload Zone (Optional) ── */}
+        <div className="rounded-2xl border border-dashed border-indigo-300 bg-white p-3.5 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🖼️</span>
+              <div>
+                <p className="text-xs font-black text-slate-900">
+                  Slot List Graphic Poster <span className="text-slate-400 font-normal">(Optional)</span>
+                </p>
+                <p className="text-[10px] text-slate-500">
+                  Upload an official graphic image. You can publish your slot list with a photo, without a photo (text table only), or both!
+                </p>
+              </div>
+            </div>
+            {slotListImageUrl && (
+              <button
+                type="button"
+                onClick={() => setSlotListImageUrl(null)}
+                className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-rose-50 px-2 py-1 rounded-lg border border-rose-200 cursor-pointer"
+              >
+                ✕ Remove Poster
+              </button>
+            )}
+          </div>
+
+          {slotListImageUrl ? (
+            <div className="flex items-center gap-3 bg-slate-50 rounded-xl p-2.5 border border-slate-200">
+              <img
+                src={slotListImageUrl}
+                alt="Slot list preview"
+                className="w-14 h-14 object-cover rounded-lg border border-slate-300 shadow-2xs cursor-pointer hover:opacity-90"
+                onClick={() => setShowPosterPreview(true)}
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <span className="text-emerald-600 font-black">✓ Graphic Poster Attached</span>
+                  <span className="text-[10px] text-slate-400">
+                    {isPublished ? "(Live to players)" : "(Saved, will publish with slot list)"}
+                  </span>
+                </p>
+                <div className="flex items-center gap-2 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowPosterPreview(true)}
+                    className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 underline cursor-pointer"
+                  >
+                    🔍 View Full Poster
+                  </button>
+                  <label className="text-[10px] font-black text-slate-600 hover:text-slate-900 cursor-pointer underline">
+                    Change Photo
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleSlotListPosterUpload}
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <label className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold cursor-pointer transition-colors">
+              <span>📷</span>
+              <span>Upload Slot List Poster Graphic (Optional — PNG, JPG up to 8MB)</span>
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleSlotListPosterUpload}
+              />
+            </label>
+          )}
         </div>
 
         {/* ── Squads Table with Editable Slot Number ── */}
@@ -1228,6 +1325,35 @@ function TeamsRosterModal({
             )}
           </button>
         </div>
+
+        {/* Fullscreen Poster Lightbox */}
+        {showPosterPreview && slotListImageUrl && (
+          <div
+            className="fixed inset-0 z-60 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 animate-in fade-in"
+            onClick={() => setShowPosterPreview(false)}
+          >
+            <div
+              className="relative max-w-2xl max-h-[85vh] bg-slate-900 rounded-2xl overflow-hidden border border-white/20 p-2 shadow-2xl flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => setShowPosterPreview(false)}
+                className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-black/60 text-white font-bold hover:bg-black/90 flex items-center justify-center cursor-pointer"
+              >
+                ✕
+              </button>
+              <img
+                src={slotListImageUrl}
+                alt="Official Slot List Poster"
+                className="w-full h-auto max-h-[75vh] object-contain rounded-xl"
+              />
+              <div className="py-2 text-center text-xs text-slate-300 font-bold">
+                Official Slot List Poster Preview
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -4120,6 +4246,8 @@ function SlotSquadShiftTab({
   const [slotStart, setSlotStart] = useState<number>(5);
   const [slotEnd, setSlotEnd] = useState<number>(25);
   const [isPublished, setIsPublished] = useState<boolean>(false);
+  const [slotListImageUrl, setSlotListImageUrl] = useState<string | null>(null);
+  const [showPosterPreview, setShowPosterPreview] = useState(false);
   const [slotMap, setSlotMap] = useState<Record<string, number>>({});
   const [savingSlots, setSavingSlots] = useState(false);
 
@@ -4170,6 +4298,7 @@ function SlotSquadShiftTab({
     setSlotEnd(ev?.slot_range_end ?? 25);
     setIsPublished(Boolean(ev?.is_slot_list_published));
     setSlotMap(ev?.custom_slot_assignments ?? {});
+    setSlotListImageUrl(ev?.slot_list_image_url ?? null);
 
     // Try RPC first
     const { data: rpcData, error: rpcErr } = await supabase.rpc("admin_get_event_registrations", {
@@ -4197,6 +4326,7 @@ function SlotSquadShiftTab({
         if (parsed.slotEnd) setSlotEnd(parsed.slotEnd);
         if (parsed.isPublished !== undefined) setIsPublished(parsed.isPublished);
         if (parsed.slotMap) setSlotMap(parsed.slotMap);
+        if (parsed.slotListImageUrl !== undefined) setSlotListImageUrl(parsed.slotListImageUrl);
       }
     } catch {}
 
@@ -4288,6 +4418,23 @@ function SlotSquadShiftTab({
     });
   };
 
+  const handleSlotListPosterUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      showToast("Slot list poster must be under 8MB", "error");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setSlotListImageUrl(reader.result);
+        showToast("🖼️ Slot list poster graphic loaded! Remember to Save Changes.", "success");
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleRewindSlotOverrides = () => {
     setSlotMap({});
     try {
@@ -4308,6 +4455,7 @@ function SlotSquadShiftTab({
             slot_range_end: slotEnd,
             is_slot_list_published: isPublished,
             custom_slot_assignments: slotMap,
+            slot_list_image_url: slotListImageUrl,
           })
           .eq("id", activeEvent.id);
       } catch {}
@@ -4320,6 +4468,7 @@ function SlotSquadShiftTab({
             slotEnd,
             isPublished,
             slotMap,
+            slotListImageUrl,
             updatedAt: new Date().toISOString(),
           })
         );
@@ -4853,6 +5002,80 @@ function SlotSquadShiftTab({
             </div>
           </div>
 
+          {/* ── Slot List Graphic Poster Upload Zone (Optional) ── */}
+          <div className="rounded-2xl border border-dashed border-indigo-300 bg-white p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🖼️</span>
+                <div>
+                  <p className="text-xs font-black text-slate-900">
+                    Slot List Graphic Poster <span className="text-slate-400 font-normal">(Optional)</span>
+                  </p>
+                  <p className="text-[10px] text-slate-500">
+                    Upload an official graphic image. You can publish your slot list with a photo, without a photo (text table only), or both!
+                  </p>
+                </div>
+              </div>
+              {slotListImageUrl && (
+                <button
+                  type="button"
+                  onClick={() => setSlotListImageUrl(null)}
+                  className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-rose-50 px-2 py-1 rounded-lg border border-rose-200 cursor-pointer"
+                >
+                  ✕ Remove Poster
+                </button>
+              )}
+            </div>
+
+            {slotListImageUrl ? (
+              <div className="flex items-center gap-3 bg-slate-50 rounded-xl p-2.5 border border-slate-200">
+                <img
+                  src={slotListImageUrl}
+                  alt="Slot list preview"
+                  className="w-14 h-14 object-cover rounded-lg border border-slate-300 shadow-2xs cursor-pointer hover:opacity-90"
+                  onClick={() => setShowPosterPreview(true)}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <span className="text-emerald-600 font-black">✓ Graphic Poster Attached</span>
+                    <span className="text-[10px] text-slate-400">
+                      {isPublished ? "(Live to players)" : "(Saved, will publish with slot list)"}
+                    </span>
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowPosterPreview(true)}
+                      className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 underline cursor-pointer"
+                    >
+                      🔍 View Full Poster
+                    </button>
+                    <label className="text-[10px] font-black text-slate-600 hover:text-slate-900 cursor-pointer underline">
+                      Change Photo
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleSlotListPosterUpload}
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <label className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold cursor-pointer transition-colors">
+                <span>📷</span>
+                <span>Upload Slot List Poster Graphic (Optional — PNG, JPG up to 8MB)</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleSlotListPosterUpload}
+                />
+              </label>
+            )}
+          </div>
+
           {/* ── Squads Table with Inline Slot & Action Buttons ── */}
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -4994,6 +5217,35 @@ function SlotSquadShiftTab({
           }}
           showToast={showToast}
         />
+      )}
+
+      {/* Fullscreen Poster Lightbox */}
+      {showPosterPreview && slotListImageUrl && (
+        <div
+          className="fixed inset-0 z-60 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 animate-in fade-in"
+          onClick={() => setShowPosterPreview(false)}
+        >
+          <div
+            className="relative max-w-2xl max-h-[85vh] bg-slate-900 rounded-2xl overflow-hidden border border-white/20 p-2 shadow-2xl flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setShowPosterPreview(false)}
+              className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-black/60 text-white font-bold hover:bg-black/90 flex items-center justify-center cursor-pointer"
+            >
+              ✕
+            </button>
+            <img
+              src={slotListImageUrl}
+              alt="Official Slot List Poster"
+              className="w-full h-auto max-h-[75vh] object-contain rounded-xl"
+            />
+            <div className="py-2 text-center text-xs text-slate-300 font-bold">
+              Official Slot List Poster Preview
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
