@@ -3149,6 +3149,7 @@ function LiveLobbiesTab({
   const [deleteEventTarget, setDeleteEventTarget] = useState<EventAdmin | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [cleaningEmptyDrafts, setCleaningEmptyDrafts] = useState(false);
+  const [cleaningExpired, setCleaningExpired] = useState(false);
 
   // Real-time registration statistics per event (NO dummy data)
   const [regStats, setRegStats] = useState<Record<string, { confirmed: number; pending: number; total: number }>>({});
@@ -3430,6 +3431,54 @@ function LiveLobbiesTab({
     }
   };
 
+  const handleCleanExpiredHolds = async () => {
+    setCleaningExpired(true);
+    try {
+      let cleanedCount = 0;
+      try {
+        const { data, error } = await supabase.rpc("cleanup_expired_registrations");
+        if (!error && typeof data === "number") cleanedCount = data;
+      } catch {}
+
+      try {
+        const { data: expiredRegs } = await supabase
+          .from("registrations")
+          .select("id, event_id")
+          .eq("status", "pending_payment");
+
+        if (expiredRegs && expiredRegs.length > 0) {
+          const expiredIds = expiredRegs.map((r) => r.id);
+          await supabase.from("registrations").delete().in("id", expiredIds);
+          cleanedCount += expiredIds.length;
+        }
+
+        const { data: allEvs } = await supabase.from("events").select("id");
+        if (allEvs) {
+          for (const ev of allEvs) {
+            const { count } = await supabase
+              .from("registrations")
+              .select("*", { count: "exact", head: true })
+              .eq("event_id", ev.id)
+              .neq("status", "cancelled");
+            await supabase.from("events").update({ filled_slots: count || 0 }).eq("id", ev.id);
+          }
+        }
+      } catch {}
+
+      try {
+        localStorage.removeItem("apex_active_booking_session");
+        window.dispatchEvent(new Event("storage"));
+      } catch {}
+
+      showToast(`🧹 Freed ${cleanedCount} expired / abandoned slot holds!`, "success");
+      await loadEvents();
+    } catch (err: unknown) {
+      showToast((err as Error).message || "Failed to clean expired holds", "error");
+    } finally {
+      setCleaningExpired(false);
+    }
+  };
+
   const saveEvent = async (id: string) => {
     const draft = drafts[id];
     if (!draft) return;
@@ -3623,6 +3672,17 @@ function LiveLobbiesTab({
             <span>{cleaningEmptyDrafts ? "Cleaning…" : "Clean All 0-Squad Drafts"}</span>
           </button>
         )}
+
+        {/* Clean Expired Holds button */}
+        <button
+          onClick={handleCleanExpiredHolds}
+          disabled={cleaningExpired}
+          className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+          title="Release all slots held by users who abandoned payment"
+        >
+          <span>⚡</span>
+          <span>{cleaningExpired ? "Releasing…" : "Release Expired Holds"}</span>
+        </button>
 
         <input
           value={search}

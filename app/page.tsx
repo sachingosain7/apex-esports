@@ -438,7 +438,15 @@ function TeamRoster({
   regs: PublicReg[];
 }) {
   const [open, setOpen] = useState(false);
-  const eventRegs = regs.filter((r) => r.event_id === eventId);
+  const eventRegs = regs.filter((r) => {
+    if (r.event_id !== eventId) return false;
+    if (r.status === "cancelled" || r.status === "rejected") return false;
+    if (r.status === "pending_payment") {
+      const regTime = new Date(r.created_at).getTime();
+      if (!isNaN(regTime) && Date.now() - regTime > 15 * 60 * 1000) return false;
+    }
+    return true;
+  });
 
   return (
     <div className="rounded-xl border border-slate-200/90 overflow-hidden bg-white">
@@ -562,9 +570,14 @@ function EventCard({
   clientNow: number;
 }) {
   const eventRegs = regs.filter((r) => r.event_id === e.id);
-  const activeRegs = eventRegs.filter(
-    (r) => r.status !== "cancelled" && r.status !== "rejected"
-  );
+  const activeRegs = eventRegs.filter((r) => {
+    if (r.status === "cancelled" || r.status === "rejected") return false;
+    if (r.status === "pending_payment") {
+      const regTime = new Date(r.created_at).getTime();
+      if (!isNaN(regTime) && clientNow - regTime > 15 * 60 * 1000) return false;
+    }
+    return true;
+  });
   const confirmedCount = eventRegs.filter((r) => r.status === "confirmed").length;
   const realFilled = Math.max(e.filled_slots || 0, activeRegs.length);
   const slotsLeft = Math.max(0, e.max_slots - realFilled);
@@ -1053,13 +1066,7 @@ export default function Home() {
           }
 
           for (const ev of rawEvents) {
-            let evId = ev.id || ev.event_id;
-            if (!evId && ev.title) {
-              const matchedEv = currentEvs.find(
-                (e) => e.title.toLowerCase().trim() === ev.title?.toLowerCase().trim()
-              );
-              if (matchedEv) evId = matchedEv.id;
-            }
+            const evId = ev.id || ev.event_id;
             if (!evId) continue;
 
             const matchedEv = currentEvs.find((e) => e.id === evId);

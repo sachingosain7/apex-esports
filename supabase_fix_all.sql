@@ -963,10 +963,73 @@ AS $$
   JOIN events e ON e.id = r.event_id
   LEFT JOIN orders o ON o.id = r.order_id
   WHERE r.status::text != 'cancelled'
+    AND r.status::text != 'rejected'
+    AND (
+      r.status::text = 'confirmed'
+      OR EXISTS (
+        SELECT 1 FROM payments p 
+        WHERE p.order_id = r.order_id 
+          AND p.status::text = 'pending_verification'
+      )
+      OR (
+        r.status::text = 'pending_payment'
+        AND (o.expires_at IS NULL OR o.expires_at > now())
+      )
+    )
   ORDER BY r.event_id, r.created_at ASC;
 $$;
 
 GRANT EXECUTE ON FUNCTION get_public_registrations() TO authenticated, anon;
+
+-- 12B. AUTOMATIC CLEANUP OF EXPIRED UNPAID CHECKOUT HOLDS
+DROP FUNCTION IF EXISTS public.cleanup_expired_registrations();
+CREATE OR REPLACE FUNCTION cleanup_expired_registrations()
+RETURNS int
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_count int := 0;
+BEGIN
+  -- Cancel registrations if hold expired without any submitted payment
+  WITH expired_orders AS (
+    SELECT id FROM orders
+    WHERE status = 'pending'
+      AND expires_at IS NOT NULL
+      AND expires_at < now()
+      AND NOT EXISTS (
+        SELECT 1 FROM payments p 
+        WHERE p.order_id = orders.id 
+          AND p.status::text != 'rejected'
+      )
+  )
+  UPDATE registrations
+  SET status = 'cancelled'
+  WHERE order_id IN (SELECT id FROM expired_orders)
+    AND status = 'pending_payment';
+
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+
+  -- Recompute filled_slots across events
+  UPDATE events e
+  SET filled_slots = (
+    SELECT COUNT(*)::int
+    FROM registrations r
+    WHERE r.event_id = e.id
+      AND r.status::text != 'cancelled'
+      AND r.status::text != 'rejected'
+      AND (
+        r.status::text = 'confirmed'
+        OR EXISTS (SELECT 1 FROM payments p WHERE p.order_id = r.order_id AND p.status::text != 'rejected')
+      )
+  );
+
+  RETURN v_count;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION cleanup_expired_registrations() TO authenticated, anon;
 
 -- 13. IDP & CREDENTIALS LOOKUP (/my-tournaments PORTAL)
 DROP FUNCTION IF EXISTS public.lookup_my_tournaments(text, text);
@@ -1392,6 +1455,8 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
+  PERFORM cleanup_expired_registrations();
+
   UPDATE events
   SET is_published = p_is_published
   WHERE id = p_event_id;
@@ -1411,6 +1476,8 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
+  PERFORM cleanup_expired_registrations();
+
   UPDATE events
   SET status = 'live'
   WHERE status = 'open'
