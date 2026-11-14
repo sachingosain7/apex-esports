@@ -927,6 +927,48 @@ function TeamsRosterModal({
     }));
   };
 
+  const handleCopyWhatsAppSlotList = () => {
+    if (teams.length === 0 || !event) {
+      showToast("No squads registered yet to copy.", "error");
+      return;
+    }
+
+    const lines: string[] = [
+      `🔥 *${event.title.toUpperCase()} — OFFICIAL SLOT LIST* 🔥`,
+      `📅 *Schedule:* ${event.start_times || "As announced"}`,
+      `📍 *IDP Drop:* ${event.idp_times || "15 mins before match"}`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `Slot 1: Host / Caster`,
+      `Slot 2: Host / Caster`,
+      `Slot 3: Reserved`,
+      `Slot 4: Reserved`,
+    ];
+
+    teams.forEach((t, idx) => {
+      const key = t.registration_id || t.team_name;
+      const assignedSlot = slotMap[key] ?? Math.min(slotEnd, slotStart + idx);
+      const maskedPhone = t.whatsapp && t.whatsapp.length >= 6
+        ? `${t.whatsapp.replace(/\D/g, "").slice(-10).slice(0, 6)}XXXX`
+        : "Verified";
+      lines.push(`Slot ${assignedSlot}: ${t.team_name} (+91 ${maskedPhone})`);
+    });
+
+    lines.push(
+      `━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `⚠️ *MATCH RULES & INSTRUCTIONS:*`,
+      `1. Join room strictly on your assigned slot.`,
+      `2. Unauthorized slot entry = instant kick & disqualification.`,
+      `3. Be inside the room at least 5 minutes before start.`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `⚡ Powered by Apex Esports`
+    );
+
+    const fullText = lines.join("\n");
+    navigator.clipboard.writeText(fullText).then(() => {
+      showToast("📋 Official WhatsApp Slot List copied to clipboard!", "success");
+    });
+  };
+
   const handleSaveAndSyncSlots = async () => {
     setSavingSlots(true);
     try {
@@ -1203,14 +1245,24 @@ function TeamsRosterModal({
         )}
 
         {/* Footer with Save & Sync button */}
-        <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer"
-          >
-            Cancel
-          </button>
+        <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleCopyWhatsAppSlotList}
+              className="px-4 py-2 rounded-xl text-xs font-black text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+            >
+              <span>📋</span>
+              <span>Copy WhatsApp Slot List</span>
+            </button>
+          </div>
           <button
             type="button"
             onClick={handleSaveAndSyncSlots}
@@ -4236,6 +4288,48 @@ function SlotSquadShiftTab({
     }));
   };
 
+  const handleCopyWhatsAppSlotList = () => {
+    if (squads.length === 0 || !activeEvent) {
+      showToast("No squads registered yet to copy.", "error");
+      return;
+    }
+
+    const lines: string[] = [
+      `🔥 *${activeEvent.title.toUpperCase()} — OFFICIAL SLOT LIST* 🔥`,
+      `📅 *Schedule:* ${activeEvent.start_times || "As announced"}`,
+      `📍 *IDP Drop:* ${activeEvent.idp_times || "15 mins before match"}`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `Slot 1: Host / Caster`,
+      `Slot 2: Host / Caster`,
+      `Slot 3: Reserved`,
+      `Slot 4: Reserved`,
+    ];
+
+    squads.forEach((t, idx) => {
+      const key = t.registration_id || t.team_name;
+      const assignedSlot = slotMap[key] ?? Math.min(slotEnd, slotStart + idx);
+      const maskedPhone = t.whatsapp && t.whatsapp.length >= 6
+        ? `${t.whatsapp.replace(/\D/g, "").slice(-10).slice(0, 6)}XXXX`
+        : "Verified";
+      lines.push(`Slot ${assignedSlot}: ${t.team_name} (+91 ${maskedPhone})`);
+    });
+
+    lines.push(
+      `━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `⚠️ *MATCH RULES & INSTRUCTIONS:*`,
+      `1. Join room strictly on your assigned slot.`,
+      `2. Unauthorized slot entry = instant kick & disqualification.`,
+      `3. Be inside the room at least 5 minutes before start.`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `⚡ Powered by Apex Esports`
+    );
+
+    const fullText = lines.join("\n");
+    navigator.clipboard.writeText(fullText).then(() => {
+      showToast("📋 Official WhatsApp Slot List copied to clipboard!", "success");
+    });
+  };
+
   const handleRewindSlotOverrides = () => {
     setSlotMap({});
     try {
@@ -4803,26 +4897,36 @@ function SlotSquadShiftTab({
 
           {/* ── Squads Table with Inline Slot & Action Buttons ── */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
               <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
                 <span>👥</span>
                 <span>Registered Squads ({squads.length})</span>
               </h4>
-              <button
-                type="button"
-                onClick={handleSaveAndSyncSlots}
-                disabled={savingSlots}
-                className="px-4 py-2 rounded-xl text-xs font-black bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-              >
-                {savingSlots ? (
-                  <span>Saving…</span>
-                ) : (
-                  <>
-                    <span>💾</span>
-                    <span>Save Changes &amp; Publish</span>
-                  </>
-                )}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyWhatsAppSlotList}
+                  className="px-3 py-2 rounded-xl text-xs font-black text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                >
+                  <span>📋</span>
+                  <span>Copy WhatsApp Slot List</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAndSyncSlots}
+                  disabled={savingSlots}
+                  className="px-4 py-2 rounded-xl text-xs font-black bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {savingSlots ? (
+                    <span>Saving…</span>
+                  ) : (
+                    <>
+                      <span>💾</span>
+                      <span>Save Changes &amp; Publish</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
 
             {loadingSquads ? (
