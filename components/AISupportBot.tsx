@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { ORG_NAME, SUPPORT_WHATSAPP } from "@/lib/config";
 
 interface ChatMessage {
@@ -24,6 +25,7 @@ const QUICK_ACTIONS = [
 ];
 
 export function AISupportBot() {
+  const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -249,6 +251,11 @@ export function AISupportBot() {
     } catch {}
     setPosition(null);
   };
+
+  // Do not render the customer support floating bot inside the admin dashboard
+  if (pathname?.startsWith("/admin")) {
+    return null;
+  }
 
   return (
     <>

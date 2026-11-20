@@ -207,8 +207,28 @@ function PhaseADetails({
   const [whatsapp, setWhatsapp] = useState("");
   const [teamName, setTeamName] = useState("");
   const [touched, setTouched] = useState({ whatsapp: false, teamName: false });
+  const [captainEmail, setCaptainEmail] = useState("");
   const [hasAutoLoaded, setHasAutoLoaded] = useState(false);
   const [showAutoSavedBadge, setShowAutoSavedBadge] = useState(false);
+
+  useEffect(() => {
+    try {
+      const savedEmail = localStorage.getItem("apex_saved_email") || "";
+      if (savedEmail) setCaptainEmail(savedEmail);
+      supabase.auth.getUser().then(({ data }) => {
+        if (data.user?.email && !savedEmail) {
+          setCaptainEmail(data.user.email);
+        }
+      });
+    } catch {}
+  }, []);
+
+  const handleCaptainEmailChange = (val: string) => {
+    setCaptainEmail(val);
+    try {
+      localStorage.setItem("apex_saved_email", val.trim());
+    } catch {}
+  };
 
   // Auto-load saved team details on mount (only if not booking an additional slot)
   useEffect(() => {
@@ -469,6 +489,26 @@ function PhaseADetails({
             )}
             <p className="text-[11px] text-slate-500">
               Your 3-Match IDP &amp; WhatsApp group link are sent here after admin verification.
+            </p>
+          </div>
+
+          {/* Captain Gmail Input */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-700">Captain Gmail (For Match IDP Email Alerts ✉️)</label>
+              <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full font-bold">
+                Email Alerts
+              </span>
+            </div>
+            <input
+              type="email"
+              value={captainEmail}
+              onChange={(e) => handleCaptainEmailChange(e.target.value)}
+              placeholder="e.g. captain@gmail.com"
+              className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-blue-600"
+            />
+            <p className="text-[11px] text-slate-500">
+              When Room ID &amp; Password are released, match credentials will be forwarded directly to your Gmail inbox!
             </p>
           </div>
         </div>

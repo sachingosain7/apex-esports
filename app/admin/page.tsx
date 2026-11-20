@@ -287,6 +287,39 @@ function BroadcastModal({
   showToast: (m: string, t: "success" | "error") => void;
 }) {
   const [template, setTemplate] = useState<"idp" | "registration" | "warning" | "results">("idp");
+  const [sendingIdpEmail, setSendingIdpEmail] = useState(false);
+  const [emailBroadcastResult, setEmailBroadcastResult] = useState<{
+    sentCount?: number;
+    totalCaptains?: number;
+    gmailWebUrl?: string;
+    message?: string;
+  } | null>(null);
+
+  const handleBroadcastIdpEmail = async () => {
+    setSendingIdpEmail(true);
+    setEmailBroadcastResult(null);
+    try {
+      const res = await fetch("/api/email/send-idp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId: event.id,
+          whatsappGroupLink: event.whatsapp_group_link,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setEmailBroadcastResult(data);
+        showToast(data.message || "IDP email notifications dispatched!", "success");
+      } else {
+        showToast(data.message || "Failed to dispatch emails.", "error");
+      }
+    } catch {
+      showToast("Network error contacting email service.", "error");
+    } finally {
+      setSendingIdpEmail(false);
+    }
+  };
   const lobbyTag = extractLobbyLabel(event.title);
   const start = formatTimestamp(event.starts_at);
   const mapsStr = event.maps?.join(", ") || "Erangel";
@@ -469,6 +502,28 @@ Prize money has been disbursed directly to winning captains. GG WP!`;
           >
             <span>💬</span> Share on WhatsApp
           </a>
+          <button
+            type="button"
+            onClick={handleBroadcastIdpEmail}
+            disabled={sendingIdpEmail}
+            className="py-3 px-4 rounded-xl text-xs font-black bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+            title="Send Room ID & Password to all registered captains via Gmail"
+          >
+            <span>{sendingIdpEmail ? "⏳" : "✉️"}</span>
+            <span>{sendingIdpEmail ? "Sending Emails…" : "Email IDP to Captains"}</span>
+          </button>
+          {emailBroadcastResult?.gmailWebUrl && (
+            <a
+              href={emailBroadcastResult.gmailWebUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="py-3 px-4 rounded-xl text-xs font-black bg-rose-600 hover:bg-rose-700 text-white transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+              title="Open pre-filled Gmail with all captains in BCC"
+            >
+              <span>📩</span>
+              <span>Open in Gmail (BCC)</span>
+            </a>
+          )}
           {event.whatsapp_group_link && (
             <a
               href={event.whatsapp_group_link}
@@ -6649,11 +6704,11 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
       {/* ── View Switcher & Search Bar ── */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         {/* View Mode Toggle */}
-        <div className="flex gap-1 p-1 bg-slate-200/90 rounded-2xl">
+        <div className="flex gap-1 p-1 bg-slate-200/90 rounded-2xl overflow-x-auto no-scrollbar max-w-full shrink-0">
           <button
             type="button"
             onClick={() => setViewMode("lobbies")}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
               viewMode === "lobbies"
                 ? "bg-white text-slate-950 shadow-sm"
                 : "text-slate-600 hover:text-slate-900"
@@ -6665,7 +6720,7 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
           <button
             type="button"
             onClick={() => setViewMode("queue")}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
               viewMode === "queue"
                 ? "bg-white text-slate-950 shadow-sm"
                 : "text-slate-600 hover:text-slate-900"
@@ -6774,8 +6829,8 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
                         </div>
 
                         {/* Revenue & Slots Pill */}
-                        <div className="flex items-center gap-3">
-                          <div className="text-right">
+                        <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
+                          <div className="text-left sm:text-right">
                             <span className="text-[10px] uppercase font-bold text-slate-400 block">Lobby Revenue</span>
                             <span className="text-lg font-black font-mono text-emerald-700">
                               ₹{l.revenueRupees.toLocaleString("en-IN")}
@@ -6784,7 +6839,7 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
                           <button
                             type="button"
                             onClick={() => toggleLobbyExpand(l.event.id)}
-                            className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs whitespace-nowrap shrink-0 ${
                               isExpanded
                                 ? "bg-slate-900 text-white"
                                 : "bg-indigo-600 text-white hover:bg-indigo-700"
@@ -6844,7 +6899,7 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
                       <div className="border-t border-slate-200 bg-slate-50/70 p-5 space-y-4 animate-in fade-in duration-150">
                         {/* Sub-tab Navigation inside this Lobby */}
                         <div className="flex items-center justify-between gap-2 flex-wrap border-b border-slate-200 pb-3">
-                          <div className="flex gap-1 p-1 bg-white border border-slate-200 rounded-xl">
+                          <div className="flex gap-1 p-1 bg-white border border-slate-200 rounded-xl overflow-x-auto no-scrollbar max-w-full shrink-0">
                             <button
                               type="button"
                               onClick={() => setLobbyActiveSubTab((prev) => ({ ...prev, [l.event.id]: "pending" }))}
@@ -7834,8 +7889,32 @@ export default function AdminPage() {
           </div>
         </header>
 
+        {/* ── Mobile Quick-Switch Tab Navigation Bar (Swipeable, Ergonomic) ── */}
+        <div className="lg:hidden flex items-center gap-1.5 px-3 py-2 bg-[#0A1128] border-b border-white/10 overflow-x-auto no-scrollbar shrink-0">
+          {visibleTabs.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
+                  isActive
+                    ? "bg-[#FFB800] text-slate-950 shadow-sm"
+                    : "bg-white/10 text-slate-300 hover:text-white"
+                }`}
+              >
+                <span>{tab.icon}</span>
+                <span>{tab.label}</span>
+                {tab.id === "payments" && metrics.pendingPayments > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
         {/* Dashboard Workspace */}
-        <main className="flex-1 px-3 sm:px-8 py-6 sm:py-8 max-w-7xl w-full mx-auto space-y-6">
+        <main className="flex-1 px-3 sm:px-8 py-4 sm:py-8 max-w-7xl w-full mx-auto space-y-5 sm:space-y-6">
           {/* ── Real-time Notification Alert Banner for Pending Payments ── */}
           {metrics.pendingPayments > 0 && (
             <div
@@ -7862,7 +7941,7 @@ export default function AdminPage() {
           )}
 
           {/* ── Top Platform Metrics Banner (4 Modern Interactive Cards) ── */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
             {/* Metric 1: Active Lobbies */}
             <button
               type="button"

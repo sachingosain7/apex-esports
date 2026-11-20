@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { parse3MatchIDP, extractLobbyLabel, SingleMatchIDP } from "@/lib/matchIdp";
 
 interface MatchIDPSectionProps {
@@ -33,6 +33,16 @@ export function MatchIDPSection({
   whatsapp,
 }: MatchIDPSectionProps) {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [targetEmail, setTargetEmail] = useState<string>("");
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailFeedback, setEmailFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("apex_saved_email") || "";
+      if (saved) setTargetEmail(saved);
+    } catch {}
+  }, []);
 
   const copyToClipboard = useCallback((text: string, key: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -52,26 +62,73 @@ export function MatchIDPSection({
 
   const hasAnyRoomReady = matches.some((m) => m.isAvailable);
 
+  const handleEmailIdp = async () => {
+    if (!targetEmail.trim() || !targetEmail.includes("@")) {
+      setEmailFeedback("Please enter a valid Gmail address.");
+      return;
+    }
+    setSendingEmail(true);
+    setEmailFeedback(null);
+    try {
+      try {
+        localStorage.setItem("apex_saved_email", targetEmail.trim());
+      } catch {}
+
+      const res = await fetch("/api/email/send-idp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          recipientEmail: targetEmail.trim(),
+          teamName: teamName || "Registered Squad",
+          slotNumber: slotNumber || null,
+          whatsappGroupLink,
+          matches: matches.map((m) => ({
+            matchNumber: m.matchNumber,
+            map: m.map,
+            roomId: m.roomId || "PENDING",
+            roomPassword: m.password || "PENDING",
+            startTime: m.startTime,
+            idpTime: m.idpTime,
+          })),
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setEmailFeedback("✓ Match IDP successfully forwarded to your Gmail!");
+        if (data.gmailWebUrl && data.provider === "client_gmail_intent") {
+          window.open(data.gmailWebUrl, "_blank");
+        }
+      } else {
+        setEmailFeedback(data.message || "Could not dispatch email.");
+      }
+    } catch {
+      setEmailFeedback("Network error connecting to email service.");
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm text-slate-900">
+    <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5 shadow-sm text-slate-900 w-full max-w-full overflow-hidden">
       {/* ── Lobby Identifier & Where IDP is Given Banner ── */}
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-3.5 sm:p-4 space-y-2.5">
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-3 sm:p-4 space-y-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="rounded-md bg-emerald-600 px-2.5 py-0.5 text-xs font-black tracking-wider text-white uppercase">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="rounded-md bg-emerald-600 px-2.5 py-0.5 text-xs font-black tracking-wider text-white uppercase shrink-0">
               {lobbyLabel}
             </span>
             <span className="text-xs sm:text-sm font-black text-emerald-950">
-              3 Matches · 3 Separate Custom Rooms
+              3 Matches · 3 Custom Rooms
             </span>
           </div>
           {isSlotListPublished && slotNumber != null ? (
-            <span className="rounded-full border border-emerald-300 bg-emerald-100 px-3 py-0.5 text-xs font-mono font-black text-emerald-800">
+            <span className="rounded-full border border-emerald-300 bg-emerald-100 px-3 py-0.5 text-xs font-mono font-black text-emerald-800 shrink-0">
               Your Slot: #{slotNumber}
             </span>
           ) : (
-            <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600">
-              Slot # releases with official list
+            <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600 shrink-0">
+              Slot # releases with list
             </span>
           )}
         </div>
@@ -83,7 +140,7 @@ export function MatchIDPSection({
               href={whatsappGroupLink}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 rounded-xl bg-[#25D366] hover:bg-[#20bd5a] text-black font-extrabold text-xs sm:text-sm py-2.5 px-4 transition-all shadow-md mt-1 cursor-pointer"
+              className="flex items-center justify-center gap-2 rounded-xl bg-[#25D366] hover:bg-[#20bd5a] text-black font-extrabold text-xs sm:text-sm py-2.5 px-4 transition-all shadow-sm mt-1 cursor-pointer w-full text-center"
             >
               <svg className="w-4 h-4 shrink-0 fill-black" viewBox="0 0 24 24">
                 <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
@@ -99,21 +156,21 @@ export function MatchIDPSection({
         ) : (
           <div className="rounded-xl bg-amber-50 border border-amber-300 p-3 text-xs text-amber-900 flex items-center gap-2 font-bold">
             <span>🔒</span>
-            <span>{lobbyLabel} WhatsApp Group link is locked until your payment is verified by Admin/Owner.</span>
+            <span>{lobbyLabel} WhatsApp Group link unlocks once payment is verified.</span>
           </div>
         )}
 
         {/* Clear Explanation for where IDP will be given */}
         <div className="pt-1 flex items-start gap-1.5 text-xs text-emerald-900 leading-relaxed">
-          <span className="font-black text-emerald-800">📍 Where IDP is given:</span>
+          <span className="font-black text-emerald-800 shrink-0">📍 Where IDP is given:</span>
           <span>
             {isConfirmed ? (
               <>
-                Host shares Room ID &amp; Password in your <strong>{lobbyLabel} WhatsApp Group</strong> and updates each match live below <strong>15 minutes before every match</strong>!
+                Credentials release in your <strong>{lobbyLabel} WhatsApp Group</strong> and live below <strong>15 minutes before every match</strong>!
               </>
             ) : (
               <>
-                Credentials and group link will unlock on this screen once payment is verified by the Admin or Owner.
+                Credentials and group link will unlock on this screen once payment is verified by Admin/Owner.
               </>
             )}
           </span>
@@ -141,13 +198,13 @@ export function MatchIDPSection({
               key={m.matchNumber}
               className={`rounded-xl border transition-all ${
                 matchReady
-                  ? "border-emerald-300 bg-emerald-50/40 p-3.5 sm:p-4"
-                  : "border-slate-200 bg-slate-50/60 p-3.5"
+                  ? "border-emerald-300 bg-emerald-50/40 p-3 sm:p-4"
+                  : "border-slate-200 bg-slate-50/60 p-3"
               }`}
             >
               {/* Match Header */}
-              <div className="flex items-center justify-between gap-2 mb-2.5">
-                <div className="flex items-center gap-2">
+              <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <span className="font-black text-xs sm:text-sm text-slate-900">
                     🎮 Match {m.matchNumber}
                   </span>
@@ -155,7 +212,7 @@ export function MatchIDPSection({
                     {m.map}
                   </span>
                   {(m.idpTime || m.startTime) && (
-                    <span className="text-[10px] text-slate-500 font-mono hidden sm:inline">
+                    <span className="text-[10px] text-slate-500 font-mono">
                       {m.idpTime ? `IDP: ${m.idpTime}` : ""}
                       {m.idpTime && m.startTime ? " · " : ""}
                       {m.startTime ? `Start: ${m.startTime}` : ""}
@@ -164,7 +221,7 @@ export function MatchIDPSection({
                 </div>
 
                 <span
-                  className={`rounded-full px-2.5 py-0.5 text-[10px] font-black tracking-wider border ${
+                  className={`rounded-full px-2.5 py-0.5 text-[10px] font-black tracking-wider border shrink-0 ${
                     !isConfirmed
                       ? "bg-amber-100 text-amber-800 border-amber-300"
                       : matchReady
@@ -199,45 +256,47 @@ export function MatchIDPSection({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 relative z-20">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {/* Room ID */}
-                    <div className="flex items-center justify-between gap-2 rounded-xl bg-white border border-slate-200 px-3 py-2 shadow-xs">
-                      <div className="min-w-0">
-                        <p className="text-[9px] uppercase tracking-wider text-slate-400 font-extrabold">
-                          ROOM ID
+                    <div className="rounded-xl border border-slate-200 bg-white p-3 flex items-center justify-between shadow-2xs">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                          Room ID
                         </p>
-                        <p className="font-mono text-sm sm:text-base font-black text-slate-900 tracking-wider truncate">
+                        <p className="text-base sm:text-lg font-black font-mono text-slate-900">
                           {m.roomId}
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => copyToClipboard(m.roomId!, `room-${m.matchNumber}`)}
-                        className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
-                          copiedKey === `room-${m.matchNumber}`
-                            ? "bg-emerald-600 text-white shadow-xs"
-                            : "bg-slate-100 hover:bg-slate-200 text-slate-800"
-                        }`}
-                      >
-                        {copiedKey === `room-${m.matchNumber}` ? "Copied ✓" : "Copy ID"}
-                      </button>
+                      {m.roomId && (
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(m.roomId!, `room-${m.matchNumber}`)}
+                          className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
+                            copiedKey === `room-${m.matchNumber}`
+                              ? "bg-emerald-600 text-white shadow-xs"
+                              : "bg-slate-100 hover:bg-slate-200 text-slate-800"
+                          }`}
+                        >
+                          {copiedKey === `room-${m.matchNumber}` ? "Copied ✓" : "Copy ID"}
+                        </button>
+                      )}
                     </div>
 
                     {/* Room Password */}
-                    <div className="flex items-center justify-between gap-2 rounded-xl bg-white border border-slate-200 px-3 py-2 shadow-xs">
-                      <div className="min-w-0">
-                        <p className="text-[9px] uppercase tracking-wider text-slate-400 font-extrabold">
-                          PASSWORD
+                    <div className="rounded-xl border border-slate-200 bg-white p-3 flex items-center justify-between shadow-2xs">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                          Password
                         </p>
-                        <p className="font-mono text-sm sm:text-base font-black text-slate-900 tracking-wider truncate">
-                          {m.password || "No Pass"}
+                        <p className="text-base sm:text-lg font-black font-mono text-slate-900">
+                          {m.password || "—"}
                         </p>
                       </div>
                       {m.password && (
                         <button
                           type="button"
                           onClick={() => copyToClipboard(m.password!, `pass-${m.matchNumber}`)}
-                          className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                          className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
                             copiedKey === `pass-${m.matchNumber}`
                               ? "bg-emerald-600 text-white shadow-xs"
                               : "bg-slate-100 hover:bg-slate-200 text-slate-800"
@@ -250,7 +309,7 @@ export function MatchIDPSection({
                   </div>
 
                   {/* 1-Tap Copy Both + Anti Leak Indicator */}
-                  <div className="flex items-center justify-between text-[11px] pt-1">
+                  <div className="flex items-center justify-between text-[11px] pt-1 flex-wrap gap-1">
                     <span className="text-slate-400 font-medium flex items-center gap-1 text-[10px]">
                       <span>🛡️</span>
                       <span>Anti-leak watermarked</span>
@@ -279,7 +338,7 @@ export function MatchIDPSection({
                 <div className="rounded-xl bg-white border border-slate-200 p-3 flex items-start gap-2 text-xs text-slate-600">
                   <span className="text-amber-500 mt-0.5">⏱️</span>
                   <span>
-                    Match {m.matchNumber} credentials will be released here <strong>15 mins before match</strong> and posted in your <strong>{lobbyLabel} WhatsApp Group</strong>.
+                    Match {m.matchNumber} credentials release <strong>15 mins before match</strong> here and in your <strong>{lobbyLabel} WhatsApp Group</strong>.
                   </span>
                 </div>
               )}
@@ -288,9 +347,56 @@ export function MatchIDPSection({
         })}
       </div>
 
+      {/* ── Email IDP Notification Box (Instant Gmail Forwarding & Alerts) ── */}
+      {isConfirmed && (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-3.5 space-y-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+              <span>✉️</span>
+              <span>{hasAnyRoomReady ? "Forward IDP to your Gmail" : "Get Match Alerts & IDP on Gmail"}</span>
+            </span>
+            <span className="text-[10px] bg-indigo-200 text-indigo-900 font-bold px-2 py-0.5 rounded-full">
+              Mobile Alert
+            </span>
+          </div>
+          <p className="text-[11px] text-indigo-900/80 leading-relaxed">
+            {hasAnyRoomReady
+              ? "Receive Room ID, Password, and match schedule directly in your Gmail so your phone alerts you before match starts!"
+              : "Save your Gmail address to get notified with Room ID, Password, and schedule as soon as the host releases credentials!"}
+          </p>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+            <input
+              type="email"
+              value={targetEmail}
+              onChange={(e) => setTargetEmail(e.target.value)}
+              placeholder="Enter your Gmail address…"
+              className="flex-1 bg-white border border-indigo-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 placeholder-slate-400 outline-none focus:border-indigo-600 shadow-2xs"
+            />
+            <button
+              type="button"
+              onClick={handleEmailIdp}
+              disabled={sendingEmail || !targetEmail.trim()}
+              className="px-4 py-2.5 rounded-xl text-xs font-black bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white transition-all cursor-pointer shadow-xs flex items-center justify-center gap-1.5 shrink-0"
+            >
+              <span>{sendingEmail ? "⏳" : "📩"}</span>
+              <span>
+                {sendingEmail
+                  ? "Sending…"
+                  : hasAnyRoomReady
+                  ? "Send IDP to Gmail"
+                  : "Save Gmail Alert"}
+              </span>
+            </button>
+          </div>
+          {emailFeedback && (
+            <p className="text-[11px] font-bold text-indigo-800 pt-0.5">{emailFeedback}</p>
+          )}
+        </div>
+      )}
+
       {/* ── Quick In-Game Join Help ── */}
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs text-slate-600 space-y-1">
-        <p className="font-black text-slate-800 uppercase tracking-wider text-[11px]">
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
+        <p className="font-black text-slate-800 uppercase tracking-wider text-[10px]">
           🎮 How to Join in BGMI:
         </p>
         <p>1. Open BGMI ➔ Select Mode (Maps) ➔ Tap the <strong>Room</strong> icon on top.</p>

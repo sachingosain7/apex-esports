@@ -119,3 +119,22 @@ body {
 .glow-pulse {
   animation: glowPulse 2s ease-in-out infinite;
 }
+
+/* iOS Safari font zoom fix: inputs with font-size < 16px cause page zoom-in on tap */
+@media screen and (max-width: 640px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Safe area inset utilities for iPhone Dynamic Island, Notches, and Android Navigation Bars */
+.safe-bottom {
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+}
+.safe-top {
+  padding-top: max(12px, env(safe-area-inset-top));
+}
+.safe-area-x {
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+}
