@@ -63,6 +63,7 @@ type PaymentRow = {
   whatsapp: string;
   team_names: string[];
   event_titles: string[];
+  event_ids?: string[];
   screenshot_url?: string | null;
 };
 
@@ -5623,19 +5624,53 @@ function SlotSquadShiftTab({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tab 3 — Payments & UTR Queue with 1-Click WhatsApp & Mass-Approve
+// Tab 3 — Payments, Revenue & Lobby Audit Hub (Lobby-Wise Approvals & Ledger)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "error") => void }) {
+  const [events, setEvents] = useState<EventAdmin[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
+  const [registrations, setRegistrations] = useState<{
+    id: string;
+    order_id: string;
+    event_id: string;
+    team_name: string;
+    whatsapp: string;
+    amount_paise: number;
+    status: string;
+    slot_number: number | null;
+    created_at: string;
+  }[]>([]);
+  const [shiftHistory, setShiftHistory] = useState<{
+    team_name: string;
+    whatsapp?: string;
+    from_event_id: string;
+    from_event_title?: string;
+    to_event_id: string;
+    to_event_title?: string;
+    new_slot?: number;
+    shifted_at: string;
+  }[]>([]);
+
   const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<"lobbies" | "queue">("lobbies");
   const [statusFilter, setStatusFilter] = useState<string | null>("pending_verification");
+  const [lobbyFilter, setLobbyFilter] = useState<"all" | "active" | "needs_approval" | "completed">("all");
+  const [showRevenueBreakdown, setShowRevenueBreakdown] = useState(true);
+  const [expandedLobbies, setExpandedLobbies] = useState<Record<string, boolean>>({});
+  const [lobbyActiveSubTab, setLobbyActiveSubTab] = useState<Record<string, "pending" | "verified" | "audit">>({});
+
   const [search, setSearch] = useState("");
   const [acting, setActing] = useState<Record<string, boolean>>({});
   const [confirmReject, setConfirmReject] = useState<string | null>(null);
   const [bulkApproving, setBulkApproving] = useState(false);
+  const [bulkApprovingLobbyId, setBulkApprovingLobbyId] = useState<string | null>(null);
   const [viewScreenshotUtr, setViewScreenshotUtr] = useState<string | null>(null);
   const [compensationModalPayment, setCompensationModalPayment] = useState<PaymentRow | null>(null);
+  const [shiftingSquadData, setShiftingSquadData] = useState<{
+    squad: EventRegistration;
+    sourceEvent: EventAdmin;
+  } | null>(null);
 
   // AI Receipt Verification state (Separate assistive check)
   const [aiVerifying, setAiVerifying] = useState(false);
@@ -5695,101 +5730,127 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
     }
   };
 
-  const loadPayments = useCallback(async () => {
+  // Master Data Loader: Lobbies + Registrations + Payments + Shift Logs
+  const loadMasterData = useCallback(async () => {
     setLoading(true);
-    let rows: PaymentRow[] = [];
-
-    // Layer 1: RPC call
     try {
-      const { data, error } = await supabase.rpc("admin_list_payments", {
-        p_status: statusFilter,
-      });
-      if (!error && Array.isArray(data) && data.length > 0) {
-        rows = data as PaymentRow[];
+      // 1. Fetch Events / Lobbies
+      const { data: evData } = await supabase
+        .from("events")
+        .select("*")
+        .order("starts_at", { ascending: false });
+
+      if (evData) {
+        setEvents(evData as EventAdmin[]);
       }
-    } catch {}
 
-    // Layer 2: Direct payments table fallback
-    try {
-      let query = supabase
-        .from("payments")
-        .select("utr, amount_paise, status, created_at, order_id, screenshot_url")
+      // 2. Fetch Registrations
+      const { data: regData } = await supabase
+        .from("registrations")
+        .select("id, order_id, event_id, team_name, whatsapp, amount_paise, status, slot_number, created_at")
         .order("created_at", { ascending: false });
 
-      if (statusFilter) {
-        query = query.eq("status", statusFilter);
+      if (regData) {
+        setRegistrations(regData);
       }
 
-      const { data: directPays, error: directErr } = await query;
-      if (!directErr && directPays && directPays.length > 0) {
-        const orderIds = directPays.map((p) => p.order_id).filter(Boolean);
-        const ordMap: Record<string, string> = {};
-        const regMap: Record<string, string[]> = {};
-
-        if (orderIds.length > 0) {
-          const { data: ords } = await supabase.from("orders").select("id, whatsapp").in("id", orderIds);
-          if (ords) {
-            ords.forEach((o) => { ordMap[o.id] = o.whatsapp; });
-          }
-          const { data: regs } = await supabase.from("registrations").select("order_id, team_name").in("order_id", orderIds);
-          if (regs) {
-            regs.forEach((r) => {
-              if (!regMap[r.order_id]) regMap[r.order_id] = [];
-              if (r.team_name && !regMap[r.order_id].includes(r.team_name)) {
-                regMap[r.order_id].push(r.team_name);
-              }
-            });
-          }
+      // 3. Fetch Payments (Layer 1: RPC, Layer 2: Table Fallback)
+      let payRows: PaymentRow[] = [];
+      try {
+        const { data: rpcPays, error: rpcErr } = await supabase.rpc("admin_list_payments");
+        if (!rpcErr && Array.isArray(rpcPays) && rpcPays.length > 0) {
+          payRows = rpcPays as PaymentRow[];
         }
+      } catch {}
 
-        const directMapped: PaymentRow[] = directPays.map((p) => ({
-          utr: p.utr,
-          amount_paise: p.amount_paise,
-          pay_status: p.status,
-          created_at: p.created_at,
-          order_id: p.order_id,
-          whatsapp: (ordMap[p.order_id] || "").replace("+91", ""),
-          team_names: regMap[p.order_id] || ["Squad"],
-          event_titles: [],
-          screenshot_url: p.screenshot_url,
-        }));
+      try {
+        const { data: directPays } = await supabase
+          .from("payments")
+          .select("utr, amount_paise, status, created_at, order_id, screenshot_url")
+          .order("created_at", { ascending: false });
 
-        for (const dp of directMapped) {
-          const existingIdx = rows.findIndex((r) => r.utr === dp.utr);
-          if (existingIdx >= 0) {
-            if (!rows[existingIdx].screenshot_url && dp.screenshot_url) {
-              rows[existingIdx].screenshot_url = dp.screenshot_url;
+        if (directPays && directPays.length > 0) {
+          const ordIds = directPays.map((p) => p.order_id).filter(Boolean);
+          const ordMap: Record<string, string> = {};
+          if (ordIds.length > 0) {
+            const { data: ords } = await supabase.from("orders").select("id, whatsapp").in("id", ordIds);
+            if (ords) {
+              ords.forEach((o) => { ordMap[o.id] = o.whatsapp; });
             }
-          } else {
-            rows.push(dp);
           }
+
+          directPays.forEach((dp) => {
+            const existing = payRows.find((r) => r.utr === dp.utr);
+            const matchedRegs = (regData || []).filter((r) => r.order_id === dp.order_id);
+            const matchedEvIds = matchedRegs.map((r) => r.event_id);
+            const matchedEvTitles = (evData || [])
+              .filter((e) => matchedEvIds.includes(e.id))
+              .map((e) => e.title);
+
+            if (!existing) {
+              payRows.push({
+                utr: dp.utr,
+                amount_paise: dp.amount_paise,
+                pay_status: dp.status,
+                created_at: dp.created_at,
+                order_id: dp.order_id,
+                whatsapp: (ordMap[dp.order_id] || "").replace("+91", ""),
+                team_names: matchedRegs.map((r) => r.team_name),
+                event_titles: matchedEvTitles,
+                event_ids: matchedEvIds,
+                screenshot_url: dp.screenshot_url,
+              });
+            } else {
+              if (!existing.screenshot_url && dp.screenshot_url) {
+                existing.screenshot_url = dp.screenshot_url;
+              }
+              if (!existing.event_ids) {
+                existing.event_ids = matchedEvIds;
+              }
+            }
+          });
         }
-      }
-    } catch {}
+      } catch {}
 
-    setPayments(rows);
-    setLoading(false);
-  }, [statusFilter]);
+      setPayments(payRows);
 
-  // Real-time listener: Supabase Postgres Changes + Window Storage + Polling
+      // 4. Load Shift History from localStorage
+      try {
+        const savedHistory = localStorage.getItem("apex_shift_history");
+        if (savedHistory) {
+          setShiftHistory(JSON.parse(savedHistory));
+        }
+      } catch {}
+    } catch (err) {
+      console.warn("Failed to load master payment and lobby data:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    loadPayments();
-    const interval = setInterval(loadPayments, 3500);
+    loadMasterData();
+    const interval = setInterval(loadMasterData, 4000);
 
-    const onStorage = () => { loadPayments(); };
+    const onStorage = () => { loadMasterData(); };
     window.addEventListener("storage", onStorage);
 
     const channel = supabase
-      .channel("admin-payments-sync")
+      .channel("admin-payments-sync-v2")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "payments" },
         (payload: { new?: { utr?: string; status?: string } }) => {
-          loadPayments();
+          loadMasterData();
           if (payload.new?.status === "pending_verification") {
             showToast(`🔔 New payment pending approval: UTR ${payload.new.utr}!`, "success");
           }
         }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "registrations" },
+        () => { loadMasterData(); }
       )
       .subscribe();
 
@@ -5798,14 +5859,15 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
       window.removeEventListener("storage", onStorage);
       supabase.removeChannel(channel);
     };
-  }, [loadPayments, showToast]);
+  }, [loadMasterData, showToast]);
 
-  const handleVerify = async (utr: string, action: "approve" | "reject") => {
+  // Approve / Reject verification handler
+  const handleVerify = async (utr: string, action: "approve" | "reject", targetEventId?: string) => {
     setActing((prev) => ({ ...prev, [utr]: true }));
     try {
       const newStatus = action === "approve" ? "approved" : "rejected";
 
-      // 1. Try admin_verify_payment RPC
+      // 1. RPC attempt
       try {
         await supabase.rpc("admin_verify_payment", {
           p_utr: utr,
@@ -5826,7 +5888,22 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
         }
       } catch {}
 
-      // 3. Local state & storage sync (Instantly triggers verification on player's screen!)
+      // 3. Recalculate event filled_slots
+      if (targetEventId) {
+        try {
+          const { count } = await supabase
+            .from("registrations")
+            .select("*", { count: "exact", head: true })
+            .eq("event_id", targetEventId)
+            .eq("status", "confirmed");
+          await supabase
+            .from("events")
+            .update({ filled_slots: count || 0 })
+            .eq("id", targetEventId);
+        } catch {}
+      }
+
+      // 4. Client state & storage sync
       try {
         localStorage.setItem(`apex_payment_status_${utr}`, newStatus);
 
@@ -5850,17 +5927,16 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
             );
           }
         }
-
         window.dispatchEvent(new Event("storage"));
       } catch {}
 
       showToast(
         action === "approve"
-          ? "Payment approved! Match credentials & WhatsApp group unlocked for player."
-          : "Payment rejected & slot released.",
+          ? "✓ Payment approved! Slot locked & credentials unlocked for captain."
+          : "✕ Payment rejected & slot released back to pool.",
         "success"
       );
-      await loadPayments();
+      await loadMasterData();
     } catch (err: unknown) {
       showToast((err as Error).message || "Action failed", "error");
     } finally {
@@ -5868,88 +5944,169 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
     }
   };
 
-  const handleBulkApprove = async () => {
-    setBulkApproving(true);
-    try {
-      const { data, error } = await supabase.rpc("admin_bulk_approve_payments");
-      const pending = payments.filter((p) => p.pay_status === "pending_verification");
+  // Bulk Approve for a specific lobby or all lobbies
+  const handleBulkApproveLobby = async (targetLobbyId?: string) => {
+    if (targetLobbyId) {
+      setBulkApprovingLobbyId(targetLobbyId);
+    } else {
+      setBulkApproving(true);
+    }
 
-      if (error) {
-        // Fallback: approve sequentially or direct table update
-        for (const p of pending) {
-          try {
-            await supabase.rpc("admin_verify_payment", { p_utr: p.utr, p_action: "approve" });
-          } catch {
-            await supabase.from("payments").update({ status: "approved" }).eq("utr", p.utr);
-            if (p.order_id) {
-              await supabase.from("registrations").update({ status: "confirmed" }).eq("order_id", p.order_id);
-              await supabase.from("orders").update({ status: "paid" }).eq("id", p.order_id);
-            }
+    try {
+      // Find pending payments for this lobby
+      const pendingToApprove = payments.filter((p) => {
+        if (p.pay_status !== "pending_verification") return false;
+        if (!targetLobbyId) return true;
+        const linkedRegs = registrations.filter((r) => r.order_id === p.order_id);
+        return linkedRegs.some((r) => r.event_id === targetLobbyId);
+      });
+
+      for (const p of pendingToApprove) {
+        try {
+          await supabase.rpc("admin_verify_payment", { p_utr: p.utr, p_action: "approve" });
+        } catch {
+          await supabase.from("payments").update({ status: "approved" }).eq("utr", p.utr);
+          if (p.order_id) {
+            await supabase.from("registrations").update({ status: "confirmed" }).eq("order_id", p.order_id);
+            await supabase.from("orders").update({ status: "paid" }).eq("id", p.order_id);
           }
-          try {
-            localStorage.setItem(`apex_payment_status_${p.utr}`, "approved");
-          } catch {}
         }
-        showToast(`Approved ${pending.length} pending payments!`, "success");
-      } else {
-        for (const p of pending) {
-          try {
-            localStorage.setItem(`apex_payment_status_${p.utr}`, "approved");
-          } catch {}
-        }
-        showToast(`Approved ${data ?? pending.length} pending payments in 1 click!`, "success");
+        try {
+          localStorage.setItem(`apex_payment_status_${p.utr}`, "approved");
+        } catch {}
       }
 
-      // Sync apex_all_submissions and active session
-      try {
-        const localSubsStr = localStorage.getItem("apex_all_submissions");
-        if (localSubsStr) {
-          const localSubs = JSON.parse(localSubsStr);
-          const updated = localSubs.map((ls: Record<string, unknown>) => ({
-            ...ls,
-            pay_status: "approved",
-            status: "confirmed",
-          }));
-          localStorage.setItem("apex_all_submissions", JSON.stringify(updated));
-        }
-        const activeSessionStr = localStorage.getItem("apex_active_booking_session");
-        if (activeSessionStr) {
-          const s = JSON.parse(activeSessionStr);
-          localStorage.setItem(
-            "apex_active_booking_session",
-            JSON.stringify({ ...s, phase: "confirmed", pay_status: "approved" })
-          );
-        }
-        window.dispatchEvent(new Event("storage"));
-      } catch {}
-
-      await loadPayments();
+      showToast(`Approved ${pendingToApprove.length} pending payments!`, "success");
+      await loadMasterData();
     } catch (err: unknown) {
       showToast((err as Error).message || "Bulk approval failed", "error");
     } finally {
       setBulkApproving(false);
+      setBulkApprovingLobbyId(null);
     }
   };
 
-  const pendingCount = payments.filter((p) => p.pay_status === "pending_verification").length;
+  const toggleLobbyExpand = (id: string) => {
+    setExpandedLobbies((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
 
-  const STATUS_TABS = [
-    { label: "Pending", value: "pending_verification" },
-    { label: "Approved", value: "approved" },
-    { label: "Rejected", value: "rejected" },
-    { label: "All", value: null },
-  ];
+  // ── Compute Per-Lobby Aggregated Financial & Squad Intelligence ──
+  const lobbiesFinancialData = events.map((ev) => {
+    const lobbyRegs = registrations.filter((r) => r.event_id === ev.id);
+    const lobbyPayments = payments.filter((p) => {
+      if (p.event_ids && p.event_ids.includes(ev.id)) return true;
+      if (p.event_titles && p.event_titles.includes(ev.title)) return true;
+      return lobbyRegs.some((r) => r.order_id === p.order_id);
+    });
 
-  const filtered = payments.filter((p) => {
-    const q = search.toLowerCase();
-    return p.utr.toLowerCase().includes(q) || p.whatsapp.toLowerCase().includes(q);
+    const confirmedSquads = lobbyRegs.filter((r) => {
+      const p = lobbyPayments.find((pay) => pay.order_id === r.order_id);
+      return r.status === "confirmed" || p?.pay_status === "approved";
+    });
+
+    const pendingSquads = lobbyRegs.filter((r) => {
+      const p = lobbyPayments.find((pay) => pay.order_id === r.order_id);
+      return (
+        (r.status === "pending_payment" || r.status === "pending_approval" || r.status === "pending") ||
+        p?.pay_status === "pending_verification"
+      );
+    });
+
+    const cancelledSquads = lobbyRegs.filter((r) => {
+      const p = lobbyPayments.find((pay) => pay.order_id === r.order_id);
+      return r.status === "cancelled" || r.status === "rejected" || p?.pay_status === "rejected";
+    });
+
+    const shiftedSquads = shiftHistory.filter(
+      (s) => s.from_event_id === ev.id || s.to_event_id === ev.id
+    );
+
+    const revenuePaise = confirmedSquads.reduce((sum, r) => sum + (r.amount_paise || ev.entry_fee_paise || 3000), 0);
+    const pendingRevenuePaise = pendingSquads.reduce((sum, r) => sum + (r.amount_paise || ev.entry_fee_paise || 3000), 0);
+
+    const dateKey = (() => {
+      try {
+        const d = new Date(ev.starts_at);
+        return d.toLocaleDateString("en-IN", {
+          timeZone: "Asia/Kolkata",
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        });
+      } catch {
+        return "Scheduled";
+      }
+    })();
+
+    return {
+      event: ev,
+      dateKey,
+      lobbyRegs,
+      lobbyPayments,
+      confirmedSquads,
+      pendingSquads,
+      cancelledSquads,
+      shiftedSquads,
+      revenueRupees: Math.round(revenuePaise / 100),
+      pendingRevenueRupees: Math.round(pendingRevenuePaise / 100),
+      maxSlots: ev.max_slots || 20,
+      fillRate: ev.max_slots > 0 ? Math.min(100, (confirmedSquads.length / ev.max_slots) * 100) : 0,
+    };
+  });
+
+  // Financial Totals
+  const totalRevenueAllLobbies = lobbiesFinancialData.reduce((sum, l) => sum + l.revenueRupees, 0);
+  const totalPendingInflow = lobbiesFinancialData.reduce((sum, l) => sum + l.pendingRevenueRupees, 0);
+  const totalVerifiedSquads = lobbiesFinancialData.reduce((sum, l) => sum + l.confirmedSquads.length, 0);
+  const totalPendingVerifications = lobbiesFinancialData.reduce((sum, l) => sum + l.pendingSquads.length, 0);
+  const totalShiftedSquads = shiftHistory.length;
+  const totalCancelledSquads = lobbiesFinancialData.reduce((sum, l) => sum + l.cancelledSquads.length, 0);
+
+  // Grouped by Date for Revenue Breakdown
+  const groupedByDate: Record<string, typeof lobbiesFinancialData> = {};
+  lobbiesFinancialData.forEach((l) => {
+    if (!groupedByDate[l.dateKey]) groupedByDate[l.dateKey] = [];
+    groupedByDate[l.dateKey].push(l);
+  });
+
+  // Filtered Lobbies for Display
+  const filteredLobbies = lobbiesFinancialData.filter((l) => {
+    if (lobbyFilter === "active" && l.event.status !== "open" && l.event.status !== "live") return false;
+    if (lobbyFilter === "needs_approval" && l.pendingSquads.length === 0) return false;
+    if (lobbyFilter === "completed" && l.event.status !== "completed") return false;
+
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      const matchTitle = l.event.title.toLowerCase().includes(q);
+      const matchSquad = l.lobbyRegs.some((r) => r.team_name.toLowerCase().includes(q) || r.whatsapp.includes(q));
+      const matchUtr = l.lobbyPayments.some((p) => p.utr.toLowerCase().includes(q));
+      return matchTitle || matchSquad || matchUtr;
+    }
+    return true;
+  });
+
+  // Global Queue Filtered Payments
+  const filteredGlobalPayments = payments.filter((p) => {
+    if (statusFilter && p.pay_status !== statusFilter) return false;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      return (
+        p.utr.toLowerCase().includes(q) ||
+        p.whatsapp.toLowerCase().includes(q) ||
+        (p.team_names && p.team_names.some((t) => t.toLowerCase().includes(q))) ||
+        (p.event_titles && p.event_titles.some((e) => e.toLowerCase().includes(q)))
+      );
+    }
+    return true;
   });
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
+      {/* ── Confirm Reject Dialog ── */}
       {confirmReject && (
         <ConfirmDialog
-          message={`Reject payment UTR ${confirmReject}? The team's reserved slot will be released back to the public pool.`}
+          message={`Reject payment UTR ${confirmReject}? The squad's reserved slot will be released back to the public pool.`}
           onConfirm={() => {
             handleVerify(confirmReject, "reject");
             setConfirmReject(null);
@@ -5978,7 +6135,6 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
               </button>
             </div>
 
-            {/* Image display */}
             {(() => {
               const localProof = typeof window !== "undefined" ? localStorage.getItem(`apex_payment_ss_${viewScreenshotUtr}`) : null;
               const payment = payments.find((p) => p.utr === viewScreenshotUtr);
@@ -6008,32 +6164,29 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
 
                     {/* AI Scan Receipt Trigger (Assistive Only) */}
                     <div className="pt-2 border-t border-slate-100 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <button
-                          type="button"
-                          onClick={() => handleAiVerifyReceipt(payment, imgUrl)}
-                          disabled={aiVerifying}
-                          className={`w-full py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-2xs ${
-                            aiVerifying
-                              ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                              : "bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
-                          }`}
-                        >
-                          {aiVerifying ? (
-                            <>
-                              <span className="animate-spin">⏳</span>
-                              <span>Scanning Receipt with AI Vision…</span>
-                            </>
-                          ) : (
-                            <>
-                              <span>🤖</span>
-                              <span>AI Scan &amp; Verify Receipt (Assistive)</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleAiVerifyReceipt(payment, imgUrl)}
+                        disabled={aiVerifying}
+                        className={`w-full py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-2xs ${
+                          aiVerifying
+                            ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                            : "bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
+                        }`}
+                      >
+                        {aiVerifying ? (
+                          <>
+                            <span className="animate-spin">⏳</span>
+                            <span>Scanning Receipt with AI Vision…</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>🤖</span>
+                            <span>AI Scan &amp; Verify Receipt (Assistive)</span>
+                          </>
+                        )}
+                      </button>
 
-                      {/* AI Analysis Result Card */}
                       {aiReceiptResult && (
                         <div className="rounded-2xl border-2 border-indigo-200 bg-indigo-50/70 p-3.5 space-y-2 text-xs animate-in fade-in">
                           <div className="flex items-center justify-between">
@@ -6056,27 +6209,17 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
 
                           <div className="grid grid-cols-2 gap-2 bg-white rounded-xl p-2.5 border border-indigo-100 font-mono text-[11px]">
                             <div>
-                              <span className="text-slate-400 block text-[9px] uppercase font-sans font-bold">
-                                Detected UTR
-                              </span>
-                              <span className="font-bold text-slate-900 truncate block">
-                                {aiReceiptResult.detectedUtr || "Detected in image"}
-                              </span>
+                              <span className="text-slate-400 block text-[9px] uppercase font-sans font-bold">Detected UTR</span>
+                              <span className="font-bold text-slate-900 truncate block">{aiReceiptResult.detectedUtr || "Detected in image"}</span>
                             </div>
                             <div>
-                              <span className="text-slate-400 block text-[9px] uppercase font-sans font-bold">
-                                Detected Amount
-                              </span>
-                              <span className="font-bold text-slate-900">
-                                ₹{aiReceiptResult.detectedAmount ?? paiseToRupees(payment.amount_paise)}
-                              </span>
+                              <span className="text-slate-400 block text-[9px] uppercase font-sans font-bold">Detected Amount</span>
+                              <span className="font-bold text-slate-900">₹{aiReceiptResult.detectedAmount ?? paiseToRupees(payment.amount_paise)}</span>
                             </div>
                           </div>
 
                           {aiReceiptResult.analysisNotes && (
-                            <p className="text-[11px] text-indigo-900 font-medium">
-                              💡 {aiReceiptResult.analysisNotes}
-                            </p>
+                            <p className="text-[11px] text-indigo-900 font-medium">💡 {aiReceiptResult.analysisNotes}</p>
                           )}
                         </div>
                       )}
@@ -6091,7 +6234,7 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
                   <p className="font-bold text-slate-800 text-sm">No Screenshot Attached</p>
                   <p className="text-xs text-slate-500 max-w-sm mx-auto">
                     The captain submitted the 12-digit UTR reference only. Verify UTR{" "}
-                    <strong className="font-mono text-slate-800">{viewScreenshotUtr}</strong> in your UPI Merchant app (GPay / PhonePe / Paytm / Bank SMS).
+                    <strong className="font-mono text-slate-800">{viewScreenshotUtr}</strong> in your UPI Merchant app.
                   </p>
                 </div>
               );
@@ -6109,7 +6252,7 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
                   handleVerify(viewScreenshotUtr, "approve");
                   setViewScreenshotUtr(null);
                 }}
-                className="px-4 py-2 rounded-xl text-xs font-black bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
+                className="px-4 py-2 rounded-xl text-xs font-black bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm cursor-pointer"
               >
                 ✓ Approve Payment
               </button>
@@ -6174,146 +6317,820 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
         </div>
       )}
 
-      {/* Filter Tabs + Mass Approve Action */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        <div className="flex gap-1.5 p-1 bg-slate-200/80 rounded-xl overflow-x-auto no-scrollbar">
-          {STATUS_TABS.map((t) => (
-            <button
-              key={String(t.value)}
-              onClick={() => setStatusFilter(t.value)}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
-                statusFilter === t.value
-                  ? "bg-white text-slate-950 shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+      {/* ── Squad Shift Modal Triggered from Payment Hub ── */}
+      {shiftingSquadData && (
+        <SquadShiftModal
+          squad={shiftingSquadData.squad}
+          sourceEvent={shiftingSquadData.sourceEvent}
+          allEvents={events}
+          onClose={() => setShiftingSquadData(null)}
+          onSuccess={() => {
+            setShiftingSquadData(null);
+            loadMasterData();
+          }}
+          showToast={showToast}
+        />
+      )}
+
+      {/* ── Top Executive Financial & Scrim Health Bar ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <div className="rounded-2xl border border-emerald-300 bg-emerald-50/70 p-4 space-y-1 shadow-2xs">
+          <div className="flex items-center justify-between text-xs font-bold text-emerald-800">
+            <span className="uppercase tracking-wider text-[10px]">Total Revenue</span>
+            <span>💰</span>
+          </div>
+          <p className="text-2xl sm:text-3xl font-black text-emerald-800 font-mono tracking-tight">
+            ₹{totalRevenueAllLobbies.toLocaleString("en-IN")}
+          </p>
+          <p className="text-[11px] text-emerald-700 font-medium">From {totalVerifiedSquads} verified teams</p>
         </div>
 
-        {statusFilter === "pending_verification" && pendingCount > 1 && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50/70 p-4 space-y-1 shadow-2xs">
+          <div className="flex items-center justify-between text-xs font-bold text-amber-900">
+            <span className="uppercase tracking-wider text-[10px]">Pending Inflow</span>
+            <span>⏳</span>
+          </div>
+          <p className="text-2xl sm:text-3xl font-black text-amber-900 font-mono tracking-tight">
+            ₹{totalPendingInflow.toLocaleString("en-IN")}
+          </p>
+          <p className="text-[11px] text-amber-800 font-medium">{totalPendingVerifications} payments awaiting approval</p>
+        </div>
+
+        <div className="rounded-2xl border border-blue-300 bg-blue-50/70 p-4 space-y-1 shadow-2xs">
+          <div className="flex items-center justify-between text-xs font-bold text-blue-900">
+            <span className="uppercase tracking-wider text-[10px]">Squads Shifted</span>
+            <span>🔄</span>
+          </div>
+          <p className="text-2xl sm:text-3xl font-black text-blue-900 font-mono tracking-tight">
+            {totalShiftedSquads}
+          </p>
+          <p className="text-[11px] text-blue-700 font-medium">Reassigned between lobbies</p>
+        </div>
+
+        <div className="rounded-2xl border border-rose-300 bg-rose-50/70 p-4 space-y-1 shadow-2xs">
+          <div className="flex items-center justify-between text-xs font-bold text-rose-900">
+            <span className="uppercase tracking-wider text-[10px]">Cancelled / Refunded</span>
+            <span>❌</span>
+          </div>
+          <p className="text-2xl sm:text-3xl font-black text-rose-900 font-mono tracking-tight">
+            {totalCancelledSquads}
+          </p>
+          <p className="text-[11px] text-rose-700 font-medium">Released back to open pool</p>
+        </div>
+      </div>
+
+      {/* ── Section: Executive Revenue & Scrim Ledger Breakdown Menu ── */}
+      <div className="rounded-3xl border border-indigo-200 bg-white shadow-sm overflow-hidden">
+        <div className="px-5 py-4 bg-gradient-to-r from-indigo-900 via-slate-900 to-indigo-950 text-white flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <span className="w-10 h-10 rounded-2xl bg-white/10 flex items-center justify-center text-xl font-black">
+              📊
+            </span>
+            <div>
+              <h3 className="text-base font-black tracking-tight text-white flex items-center gap-2">
+                <span>Revenue &amp; Scrim Ledger Breakdown</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/30 text-emerald-300 border border-emerald-400/50">
+                  Per-Lobby Breakthrough
+                </span>
+              </h3>
+              <p className="text-xs text-indigo-200">
+                Detailed date-wise revenue, verified teams (who played), shifted slots, and cancellations.
+              </p>
+            </div>
+          </div>
           <button
-            onClick={handleBulkApprove}
-            disabled={bulkApproving}
-            className="px-4 py-2 rounded-xl text-xs font-black bg-emerald-600 text-white hover:bg-emerald-700 transition-all flex items-center justify-center gap-1.5 shrink-0 shadow-sm cursor-pointer"
+            type="button"
+            onClick={() => setShowRevenueBreakdown(!showRevenueBreakdown)}
+            className="px-3.5 py-1.5 rounded-xl text-xs font-black bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-all cursor-pointer flex items-center gap-1.5"
           >
-            <span>⚡</span> {bulkApproving ? "Approving…" : `Approve All Pending (${pendingCount})`}
+            <span>{showRevenueBreakdown ? "▲ Hide Breakdown Menu" : "▼ Expand Breakdown Menu"}</span>
           </button>
+        </div>
+
+        {showRevenueBreakdown && (
+          <div className="p-5 space-y-6 animate-in fade-in duration-200">
+            {Object.keys(groupedByDate).length === 0 ? (
+              <div className="text-center py-8 text-xs font-semibold text-slate-400">
+                No lobby revenue records generated yet.
+              </div>
+            ) : (
+              Object.entries(groupedByDate).map(([dateStr, dateLobbies]) => {
+                const dayRevenue = dateLobbies.reduce((sum, l) => sum + l.revenueRupees, 0);
+                const dayConfirmed = dateLobbies.reduce((sum, l) => sum + l.confirmedSquads.length, 0);
+                const dayPending = dateLobbies.reduce((sum, l) => sum + l.pendingSquads.length, 0);
+
+                return (
+                  <div key={dateStr} className="space-y-3">
+                    {/* Date Subheader Banner */}
+                    <div className="flex items-center justify-between bg-slate-100/80 px-4 py-2.5 rounded-2xl border border-slate-200/80 flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">📅</span>
+                        <span className="text-xs font-black text-slate-900">{dateStr}</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white text-slate-700 border border-slate-300">
+                          {dateLobbies.length} Lobbies
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs font-bold">
+                        <span className="text-emerald-700 font-mono">₹{dayRevenue.toLocaleString("en-IN")} Generated</span>
+                        <span className="text-slate-400">·</span>
+                        <span className="text-slate-700">{dayConfirmed} Confirmed</span>
+                        {dayPending > 0 && (
+                          <>
+                            <span className="text-slate-400">·</span>
+                            <span className="text-amber-700 font-black">+{dayPending} In Review</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Financial Matrix Table */}
+                    <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 text-[10px] uppercase font-black text-slate-500 border-b border-slate-200">
+                          <tr>
+                            <th className="px-4 py-3">Lobby &amp; Mode</th>
+                            <th className="px-3 py-3">Entry Fee</th>
+                            <th className="px-3 py-3">Slots (Max)</th>
+                            <th className="px-3 py-3">Verified / Played</th>
+                            <th className="px-3 py-3">Shifted</th>
+                            <th className="px-3 py-3">Cancelled</th>
+                            <th className="px-3 py-3 text-right">Revenue Generated</th>
+                            <th className="px-4 py-3 text-center">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {dateLobbies.map((l) => (
+                            <tr key={l.event.id} className="hover:bg-slate-50/80 transition-colors">
+                              <td className="px-4 py-3.5">
+                                <p className="font-black text-slate-900 truncate max-w-[200px]">{l.event.title}</p>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span className="text-[10px] text-slate-500 font-mono">{formatTimestamp(l.event.starts_at)}</span>
+                                  <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase ${
+                                    l.event.status === "open" ? "bg-blue-100 text-blue-800" :
+                                    l.event.status === "live" ? "bg-emerald-100 text-emerald-800" :
+                                    "bg-slate-100 text-slate-600"
+                                  }`}>
+                                    {l.event.status}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="px-3 py-3.5 font-bold font-mono text-slate-700">
+                                ₹{paiseToRupees(l.event.entry_fee_paise)}
+                              </td>
+                              <td className="px-3 py-3.5">
+                                <span className="font-bold text-slate-900">{l.confirmedSquads.length}</span>
+                                <span className="text-slate-400">/{l.maxSlots}</span>
+                              </td>
+                              <td className="px-3 py-3.5">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                  🟢 {l.confirmedSquads.length} Confirmed
+                                </span>
+                              </td>
+                              <td className="px-3 py-3.5">
+                                {l.shiftedSquads.length > 0 ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                                    🔄 {l.shiftedSquads.length} Shifted
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 text-[11px]">—</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-3.5">
+                                {l.cancelledSquads.length > 0 ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                    ❌ {l.cancelledSquads.length} Cancelled
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 text-[11px]">—</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-3.5 text-right font-mono font-black text-sm text-emerald-700">
+                                ₹{l.revenueRupees.toLocaleString("en-IN")}
+                              </td>
+                              <td className="px-4 py-3.5 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setViewMode("lobbies");
+                                    setExpandedLobbies((prev) => ({ ...prev, [l.event.id]: true }));
+                                    const el = document.getElementById(`lobby-card-${l.event.id}`);
+                                    el?.scrollIntoView({ behavior: "smooth" });
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg text-[11px] font-black bg-indigo-50 text-indigo-800 border border-indigo-200 hover:bg-indigo-100 transition-colors cursor-pointer"
+                                >
+                                  View Lobby →
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
         )}
       </div>
 
-      <input
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search by 12-digit UTR or WhatsApp number…"
-        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-600 transition-colors shadow-xs"
-      />
-
-      {loading ? (
-        <Spinner />
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-16 bg-white border border-slate-200 rounded-2xl text-slate-400 text-sm font-semibold">
-          No payment records found.
+      {/* ── View Switcher & Search Bar ── */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        {/* View Mode Toggle */}
+        <div className="flex gap-1 p-1 bg-slate-200/90 rounded-2xl">
+          <button
+            type="button"
+            onClick={() => setViewMode("lobbies")}
+            className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+              viewMode === "lobbies"
+                ? "bg-white text-slate-950 shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <span>🎮</span>
+            <span>Group by Lobby (Per-Lobby Approvals)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("queue")}
+            className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+              viewMode === "queue"
+                ? "bg-white text-slate-950 shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <span>📜</span>
+            <span>Global UTR Queue ({payments.length})</span>
+          </button>
         </div>
-      ) : (
-        <div className="space-y-3">
-          {filtered.map((p) => (
-            <div key={p.utr} className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm text-slate-900">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="space-y-2 min-w-0 flex-1">
-                  {/* UTR + Status */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-base text-blue-700 font-black tracking-wider">{p.utr}</span>
-                    <button
-                      onClick={() => {
-                        copyToClipboard(p.utr);
-                        showToast("UTR copied!", "success");
-                      }}
-                      className="text-slate-500 hover:text-slate-900 text-xs px-2 py-0.5 rounded bg-slate-100 border border-slate-200 font-bold cursor-pointer"
-                      title="Copy UTR"
-                    >
-                      Copy
-                    </button>
-                    <button
-                      onClick={() => setViewScreenshotUtr(p.utr)}
-                      className="text-blue-700 hover:text-blue-900 text-xs px-2.5 py-0.5 rounded bg-blue-50 border border-blue-200 font-bold flex items-center gap-1 cursor-pointer"
-                      title="View Captain's Payment Screenshot"
-                    >
-                      <span>📸</span>
-                      <span>Screenshot</span>
-                    </button>
-                    <StatusBadge status={p.pay_status} />
-                  </div>
 
-                  {/* Amount */}
-                  <p className="text-2xl font-black text-slate-900 font-mono tracking-tight">₹{paiseToRupees(p.amount_paise)}</p>
+        {/* Search */}
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by Lobby Title, Team Name, UTR, or WhatsApp…"
+          className="flex-1 max-w-md bg-white border border-slate-300 rounded-xl px-4 py-2 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-600 shadow-2xs"
+        />
+      </div>
 
-                  {/* WhatsApp with 1-Click WhatsApp Button */}
-                  <div className="flex items-center gap-2 text-xs sm:text-sm text-slate-600 flex-wrap">
-                    <span className="font-bold">Captain WhatsApp:</span>
-                    <span className="font-mono text-slate-900 font-bold">+91 {p.whatsapp}</span>
-                    <a
-                      href={`https://wa.me/91${p.whatsapp}?text=Hi+Captain,+regarding+your+Apex+Esports+payment+(UTR:+${p.utr})`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="ml-2 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 transition-colors flex items-center gap-1"
-                    >
-                      <span>💬</span> WhatsApp
-                    </a>
-                  </div>
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* MODE 1: LOBBY-WISE APPROVALS & SQUAD LEDGER (RECOMMENDED)             */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {viewMode === "lobbies" && (
+        <div className="space-y-4">
+          {/* Lobby Filter Pills */}
+          <div className="flex gap-1.5 p-1 bg-slate-200/70 rounded-xl overflow-x-auto no-scrollbar">
+            {[
+              { id: "all", label: `All Lobbies (${lobbiesFinancialData.length})` },
+              { id: "needs_approval", label: `🔥 Needs Approval (${lobbiesFinancialData.filter((l) => l.pendingSquads.length > 0).length})` },
+              { id: "active", label: `🎮 Live & Today (${lobbiesFinancialData.filter((l) => l.event.status === "open" || l.event.status === "live").length})` },
+              { id: "completed", label: `✓ Completed (${lobbiesFinancialData.filter((l) => l.event.status === "completed").length})` },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setLobbyFilter(tab.id as typeof lobbyFilter)}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
+                  lobbyFilter === tab.id
+                    ? "bg-white text-slate-950 shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
 
-                  {/* Teams & Events */}
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {p.team_names?.map((t, i) => (
-                      <Badge key={i} text={`Squad: ${t}`} color="purple" />
-                    ))}
-                    {p.event_titles?.map((t, i) => (
-                      <Badge key={i} text={t} color="gray" />
-                    ))}
-                    {p.team_names && p.team_names.length > 1 && (
-                      <span className="px-2 py-0.5 rounded text-[11px] font-black bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1">
-                        <span>⚠️</span>
-                        <span>Duplicate Claim Alert: {p.team_names.length} Squads on this UTR</span>
-                      </span>
+          {loading ? (
+            <Spinner />
+          ) : filteredLobbies.length === 0 ? (
+            <div className="text-center py-16 bg-white border border-slate-200 rounded-2xl text-slate-400 text-sm font-semibold">
+              No tournament lobbies found matching this filter.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredLobbies.map((l) => {
+                const isExpanded = Boolean(expandedLobbies[l.event.id]);
+                const subTab = lobbyActiveSubTab[l.event.id] || "pending";
+
+                return (
+                  <div
+                    key={l.event.id}
+                    id={`lobby-card-${l.event.id}`}
+                    className={`rounded-3xl border transition-all duration-200 shadow-xs bg-white overflow-hidden ${
+                      l.pendingSquads.length > 0
+                        ? "border-amber-300 ring-2 ring-amber-400/20"
+                        : "border-slate-200"
+                    }`}
+                  >
+                    {/* Lobby Header Row */}
+                    <div className="p-5 sm:p-6 space-y-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                              {l.event.title}
+                            </h4>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-indigo-100 text-indigo-800">
+                              {l.event.mode || "Squad"}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                              l.event.status === "open" ? "bg-blue-100 text-blue-800" :
+                              l.event.status === "live" ? "bg-emerald-100 text-emerald-800" :
+                              "bg-slate-100 text-slate-600"
+                            }`}>
+                              {l.event.status}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 font-mono">
+                            📅 {formatTimestamp(l.event.starts_at)} · Entry: ₹{paiseToRupees(l.event.entry_fee_paise)} / squad
+                          </p>
+                        </div>
+
+                        {/* Revenue & Slots Pill */}
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <span className="text-[10px] uppercase font-bold text-slate-400 block">Lobby Revenue</span>
+                            <span className="text-lg font-black font-mono text-emerald-700">
+                              ₹{l.revenueRupees.toLocaleString("en-IN")}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleLobbyExpand(l.event.id)}
+                            className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                              isExpanded
+                                ? "bg-slate-900 text-white"
+                                : "bg-indigo-600 text-white hover:bg-indigo-700"
+                            }`}
+                          >
+                            <span>{isExpanded ? "▲ Close Ledger" : "▼ Open Lobby Ledger & Approvals"}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Status Badges Strip */}
+                      <div className="flex items-center justify-between gap-3 flex-wrap pt-1 border-t border-slate-100 text-xs">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {l.pendingSquads.length > 0 ? (
+                            <span className="px-2.5 py-1 rounded-lg text-xs font-black bg-rose-100 text-rose-800 border border-rose-300 animate-pulse flex items-center gap-1.5">
+                              <span>🔔</span>
+                              <span>{l.pendingSquads.length} Payment{l.pendingSquads.length === 1 ? "" : "s"} Awaiting Approval</span>
+                            </span>
+                          ) : (
+                            <span className="px-2 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-600">
+                              ✓ All verified
+                            </span>
+                          )}
+
+                          <span className="px-2 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                            🟢 {l.confirmedSquads.length} Confirmed / Paid
+                          </span>
+
+                          {l.shiftedSquads.length > 0 && (
+                            <span className="px-2 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                              🔄 {l.shiftedSquads.length} Shifted
+                            </span>
+                          )}
+
+                          {l.cancelledSquads.length > 0 && (
+                            <span className="px-2 py-1 rounded-lg text-xs font-bold bg-rose-50 text-rose-800 border border-rose-200">
+                              ❌ {l.cancelledSquads.length} Cancelled
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Mini Slot Progress */}
+                        <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                          <span>{l.confirmedSquads.length} / {l.maxSlots} Slots</span>
+                          <div className="w-24 h-2 rounded-full bg-slate-100 overflow-hidden">
+                            <div
+                              className="h-full bg-indigo-600 rounded-full transition-all"
+                              style={{ width: `${l.fillRate}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Expanded Lobby Ledger & Approvals Tray */}
+                    {isExpanded && (
+                      <div className="border-t border-slate-200 bg-slate-50/70 p-5 space-y-4 animate-in fade-in duration-150">
+                        {/* Sub-tab Navigation inside this Lobby */}
+                        <div className="flex items-center justify-between gap-2 flex-wrap border-b border-slate-200 pb-3">
+                          <div className="flex gap-1 p-1 bg-white border border-slate-200 rounded-xl">
+                            <button
+                              type="button"
+                              onClick={() => setLobbyActiveSubTab((prev) => ({ ...prev, [l.event.id]: "pending" }))}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                                subTab === "pending"
+                                  ? "bg-indigo-600 text-white shadow-2xs"
+                                  : "text-slate-600 hover:text-slate-900"
+                              }`}
+                            >
+                              <span>⏳</span>
+                              <span>Pending Approvals ({l.pendingSquads.length})</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setLobbyActiveSubTab((prev) => ({ ...prev, [l.event.id]: "verified" }))}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                                subTab === "verified"
+                                  ? "bg-indigo-600 text-white shadow-2xs"
+                                  : "text-slate-600 hover:text-slate-900"
+                              }`}
+                            >
+                              <span>✅</span>
+                              <span>Verified Teams ({l.confirmedSquads.length})</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setLobbyActiveSubTab((prev) => ({ ...prev, [l.event.id]: "audit" }))}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                                subTab === "audit"
+                                  ? "bg-indigo-600 text-white shadow-2xs"
+                                  : "text-slate-600 hover:text-slate-900"
+                              }`}
+                            >
+                              <span>📋</span>
+                              <span>Audit Trail ({l.shiftedSquads.length + l.cancelledSquads.length})</span>
+                            </button>
+                          </div>
+
+                          {subTab === "pending" && l.pendingSquads.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleBulkApproveLobby(l.event.id)}
+                              disabled={bulkApprovingLobbyId === l.event.id}
+                              className="px-3.5 py-1.5 rounded-xl text-xs font-black bg-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-2xs cursor-pointer flex items-center gap-1.5"
+                            >
+                              <span>⚡</span>
+                              <span>{bulkApprovingLobbyId === l.event.id ? "Approving…" : `Approve All for ${l.event.title} (${l.pendingSquads.length})`}</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* SUBTAB 1: PENDING APPROVALS FOR THIS LOBBY */}
+                        {subTab === "pending" && (
+                          <div className="space-y-3">
+                            {l.pendingSquads.length === 0 ? (
+                              <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 space-y-1">
+                                <span className="text-2xl">✨</span>
+                                <p className="text-xs font-black text-slate-800">All set! No pending payments for this lobby.</p>
+                                <p className="text-[11px] text-slate-500">When players submit UPI references for this lobby, they appear here.</p>
+                              </div>
+                            ) : (
+                              l.pendingSquads.map((squad) => {
+                                const pay = l.lobbyPayments.find((p) => p.order_id === squad.order_id);
+                                const utr = pay?.utr || squad.order_id?.slice(0, 12) || "Pending UTR";
+                                const isActing = acting[utr];
+
+                                return (
+                                  <div
+                                    key={squad.id}
+                                    className="p-4 rounded-2xl bg-white border border-amber-300 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+                                  >
+                                    <div className="space-y-1.5 min-w-0 flex-1">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-sm font-black text-slate-900">{squad.team_name}</span>
+                                        <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-300">
+                                          PENDING VERIFICATION
+                                        </span>
+                                        <span className="text-xs font-mono font-bold text-indigo-700">
+                                          ₹{paiseToRupees(squad.amount_paise || l.event.entry_fee_paise)}
+                                        </span>
+                                      </div>
+
+                                      <div className="flex items-center gap-2 text-xs text-slate-600 flex-wrap font-mono">
+                                        <span>UTR: <strong className="text-slate-900">{utr}</strong></span>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            copyToClipboard(utr);
+                                            showToast("UTR copied!", "success");
+                                          }}
+                                          className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 cursor-pointer"
+                                        >
+                                          Copy
+                                        </button>
+                                        <span>· Captain: +91 {squad.whatsapp}</span>
+                                        <a
+                                          href={`https://wa.me/91${squad.whatsapp}?text=Hi+Captain+of+${encodeURIComponent(squad.team_name)},+regarding+your+slot+for+${encodeURIComponent(l.event.title)}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-emerald-700 font-bold hover:underline"
+                                        >
+                                          💬 WhatsApp
+                                        </a>
+                                      </div>
+
+                                      <p className="text-[10px] text-slate-400 font-medium">Submitted {formatTimestamp(squad.created_at)}</p>
+                                    </div>
+
+                                    {/* Action Buttons */}
+                                    <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
+                                      {pay?.screenshot_url && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setViewScreenshotUtr(utr)}
+                                          className="px-3 py-2 rounded-xl text-xs font-bold bg-blue-50 text-blue-800 border border-blue-200 hover:bg-blue-100 transition-colors flex items-center gap-1 cursor-pointer"
+                                        >
+                                          <span>📸</span> Screenshot
+                                        </button>
+                                      )}
+
+                                      <button
+                                        type="button"
+                                        onClick={() => handleVerify(utr, "approve", l.event.id)}
+                                        disabled={isActing}
+                                        className="px-4 py-2 rounded-xl text-xs font-black bg-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                      >
+                                        <span>✓</span> {isActing ? "Approving…" : "Approve for this Lobby"}
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => setConfirmReject(utr)}
+                                        disabled={isActing}
+                                        className="px-3 py-2 rounded-xl text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-colors cursor-pointer"
+                                      >
+                                        ✕ Reject
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => setShiftingSquadData({
+                                          squad: {
+                                            registration_id: squad.id,
+                                            team_name: squad.team_name,
+                                            whatsapp: squad.whatsapp,
+                                            amount_paise: squad.amount_paise,
+                                            status: squad.status,
+                                            created_at: squad.created_at,
+                                            utr,
+                                          },
+                                          sourceEvent: l.event,
+                                        })}
+                                        className="px-2.5 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 transition-colors cursor-pointer"
+                                        title="Shift this squad to another lobby / time slot"
+                                      >
+                                        <span>🔄</span>
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        )}
+
+                        {/* SUBTAB 2: VERIFIED & CONFIRMED TEAMS FOR THIS LOBBY */}
+                        {subTab === "verified" && (
+                          <div className="space-y-2">
+                            {l.confirmedSquads.length === 0 ? (
+                              <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 text-xs text-slate-400 font-semibold">
+                                No confirmed squads in this lobby yet.
+                              </div>
+                            ) : (
+                              <div className="divide-y divide-slate-100 rounded-2xl bg-white border border-slate-200 overflow-hidden">
+                                {l.confirmedSquads.map((squad, idx) => {
+                                  const pay = l.lobbyPayments.find((p) => p.order_id === squad.order_id);
+                                  const slotDisplay = squad.slot_number || ((l.event.slot_range_start ?? 5) + idx);
+
+                                  return (
+                                    <div key={squad.id} className="p-3.5 flex items-center justify-between gap-3 hover:bg-slate-50 transition-colors">
+                                      <div className="flex items-center gap-3 min-w-0">
+                                        <span className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-950 font-mono font-black text-xs flex items-center justify-center shrink-0">
+                                          #{slotDisplay}
+                                        </span>
+                                        <div className="min-w-0">
+                                          <p className="text-xs font-black text-slate-900 truncate">{squad.team_name}</p>
+                                          <p className="text-[11px] text-slate-500 font-mono">
+                                            +91 {squad.whatsapp} {pay?.utr ? `· UTR: ${pay.utr}` : ""}
+                                          </p>
+                                        </div>
+                                      </div>
+
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-100 text-emerald-800">
+                                          PAID · ₹{paiseToRupees(squad.amount_paise || l.event.entry_fee_paise)}
+                                        </span>
+                                        <a
+                                          href={`https://wa.me/91${squad.whatsapp}?text=Hi+${encodeURIComponent(squad.team_name)},+your+slot+${slotDisplay}+for+${encodeURIComponent(l.event.title)}+is+confirmed!`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="p-1 rounded bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 border border-slate-200 text-xs"
+                                          title="Chat on WhatsApp"
+                                        >
+                                          💬
+                                        </a>
+                                        <button
+                                          type="button"
+                                          onClick={() => setShiftingSquadData({
+                                            squad: {
+                                              registration_id: squad.id,
+                                              team_name: squad.team_name,
+                                              whatsapp: squad.whatsapp,
+                                              amount_paise: squad.amount_paise,
+                                              status: squad.status,
+                                              created_at: squad.created_at,
+                                              utr: pay?.utr,
+                                            },
+                                            sourceEvent: l.event,
+                                          })}
+                                          className="p-1 rounded bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-700 border border-slate-200 text-xs cursor-pointer"
+                                          title="Shift squad to another lobby"
+                                        >
+                                          🔄
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* SUBTAB 3: AUDIT TRAIL (SHIFTED & CANCELLED) */}
+                        {subTab === "audit" && (
+                          <div className="space-y-3">
+                            <div className="rounded-2xl bg-white border border-slate-200 p-4 space-y-3">
+                              <h5 className="text-xs font-black uppercase text-slate-700 tracking-wider">
+                                Shifted &amp; Cancelled Squads Trail
+                              </h5>
+                              {l.shiftedSquads.length === 0 && l.cancelledSquads.length === 0 ? (
+                                <p className="text-xs text-slate-400 font-medium">No cancellations or shifts on record for this lobby.</p>
+                              ) : (
+                                <div className="space-y-2 text-xs">
+                                  {l.shiftedSquads.map((shift, i) => (
+                                    <div key={`shift-${i}`} className="p-2.5 rounded-xl bg-blue-50/60 border border-blue-200 flex items-center justify-between gap-2">
+                                      <div>
+                                        <span className="font-black text-blue-950">🔄 {shift.team_name}</span>
+                                        <p className="text-[11px] text-blue-800">
+                                          Shifted from <strong>{shift.from_event_title || "Lobby"}</strong> to <strong>{shift.to_event_title || "Target Lobby"}</strong> (Slot #{shift.new_slot || "Auto"})
+                                        </p>
+                                      </div>
+                                      <span className="text-[10px] text-blue-600 font-mono">{formatTimestamp(shift.shifted_at)}</span>
+                                    </div>
+                                  ))}
+
+                                  {l.cancelledSquads.map((c) => (
+                                    <div key={c.id} className="p-2.5 rounded-xl bg-rose-50/60 border border-rose-200 flex items-center justify-between gap-2">
+                                      <div>
+                                        <span className="font-black text-rose-950">❌ {c.team_name}</span>
+                                        <p className="text-[11px] text-rose-800">Registration cancelled &amp; slot released back to open pool.</p>
+                                      </div>
+                                      <span className="text-[10px] text-rose-600 font-mono">{formatTimestamp(c.created_at)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
-
-                  <p className="text-[11px] text-slate-400 font-medium">{formatTimestamp(p.created_at)}</p>
-                </div>
-
-                {/* Actions */}
-                <div className="flex sm:flex-col gap-2 shrink-0">
-                  {p.pay_status === "pending_verification" && (
-                    <>
-                      <button
-                        onClick={() => handleVerify(p.utr, "approve")}
-                        disabled={acting[p.utr]}
-                        className="px-5 py-2.5 rounded-xl text-xs font-black bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 transition-all shadow-sm cursor-pointer"
-                      >
-                        ✓ Approve
-                      </button>
-                      <button
-                        onClick={() => setConfirmReject(p.utr)}
-                        disabled={acting[p.utr]}
-                        className="px-5 py-2.5 rounded-xl text-xs font-bold bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-100 disabled:opacity-40 transition-all cursor-pointer"
-                      >
-                        ✗ Reject
-                      </button>
-                    </>
-                  )}
-                  <button
-                    onClick={() => setCompensationModalPayment(p)}
-                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                    title="Issue compensation slot or refund points"
-                  >
-                    <span>🎁</span>
-                    <span>Compensate</span>
-                  </button>
-                </div>
-              </div>
+                );
+              })}
             </div>
-          ))}
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* MODE 2: GLOBAL QUEUE (FLAT LIST OF ALL UTRs)                           */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {viewMode === "queue" && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="flex gap-1.5 p-1 bg-slate-200/80 rounded-xl overflow-x-auto no-scrollbar">
+              {[
+                { label: "Pending", value: "pending_verification" },
+                { label: "Approved", value: "approved" },
+                { label: "Rejected", value: "rejected" },
+                { label: "All", value: null },
+              ].map((t) => (
+                <button
+                  key={String(t.value)}
+                  onClick={() => setStatusFilter(t.value)}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
+                    statusFilter === t.value
+                      ? "bg-white text-slate-950 shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {statusFilter === "pending_verification" && filteredGlobalPayments.length > 1 && (
+              <button
+                onClick={() => handleBulkApproveLobby()}
+                disabled={bulkApproving}
+                className="px-4 py-2 rounded-xl text-xs font-black bg-emerald-600 text-white hover:bg-emerald-700 transition-all flex items-center justify-center gap-1.5 shrink-0 shadow-sm cursor-pointer"
+              >
+                <span>⚡</span> {bulkApproving ? "Approving…" : `Approve All Pending (${filteredGlobalPayments.length})`}
+              </button>
+            )}
+          </div>
+
+          {loading ? (
+            <Spinner />
+          ) : filteredGlobalPayments.length === 0 ? (
+            <div className="text-center py-16 bg-white border border-slate-200 rounded-2xl text-slate-400 text-sm font-semibold">
+              No payment records found in this queue.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredGlobalPayments.map((p) => (
+                <div key={p.utr} className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm text-slate-900">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="space-y-2 min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-base text-blue-700 font-black tracking-wider">{p.utr}</span>
+                        <button
+                          onClick={() => {
+                            copyToClipboard(p.utr);
+                            showToast("UTR copied!", "success");
+                          }}
+                          className="text-slate-500 hover:text-slate-900 text-xs px-2 py-0.5 rounded bg-slate-100 border border-slate-200 font-bold cursor-pointer"
+                          title="Copy UTR"
+                        >
+                          Copy
+                        </button>
+                        <button
+                          onClick={() => setViewScreenshotUtr(p.utr)}
+                          className="text-blue-700 hover:text-blue-900 text-xs px-2.5 py-0.5 rounded bg-blue-50 border border-blue-200 font-bold flex items-center gap-1 cursor-pointer"
+                          title="View Captain's Payment Screenshot"
+                        >
+                          <span>📸</span>
+                          <span>Screenshot</span>
+                        </button>
+                        <StatusBadge status={p.pay_status} />
+                      </div>
+
+                      <p className="text-2xl font-black text-slate-900 font-mono tracking-tight">₹{paiseToRupees(p.amount_paise)}</p>
+
+                      <div className="flex items-center gap-2 text-xs sm:text-sm text-slate-600 flex-wrap">
+                        <span className="font-bold">Captain WhatsApp:</span>
+                        <span className="font-mono text-slate-900 font-bold">+91 {p.whatsapp}</span>
+                        <a
+                          href={`https://wa.me/91${p.whatsapp}?text=Hi+Captain,+regarding+your+payment+(UTR:+${p.utr})`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="ml-2 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 transition-colors flex items-center gap-1"
+                        >
+                          <span>💬</span> WhatsApp
+                        </a>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {p.team_names?.map((t, i) => (
+                          <Badge key={i} text={`Squad: ${t}`} color="purple" />
+                        ))}
+                        {p.event_titles?.map((t, i) => (
+                          <Badge key={i} text={t} color="gray" />
+                        ))}
+                      </div>
+
+                      <p className="text-[11px] text-slate-400 font-medium">{formatTimestamp(p.created_at)}</p>
+                    </div>
+
+                    <div className="flex sm:flex-col gap-2 shrink-0">
+                      {p.pay_status === "pending_verification" && (
+                        <>
+                          <button
+                            onClick={() => handleVerify(p.utr, "approve")}
+                            disabled={acting[p.utr]}
+                            className="px-5 py-2.5 rounded-xl text-xs font-black bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 transition-all shadow-sm cursor-pointer"
+                          >
+                            ✓ Approve
+                          </button>
+                          <button
+                            onClick={() => setConfirmReject(p.utr)}
+                            disabled={acting[p.utr]}
+                            className="px-5 py-2.5 rounded-xl text-xs font-bold bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-100 disabled:opacity-40 transition-all cursor-pointer"
+                          >
+                            ✕ Reject
+                          </button>
+                        </>
+                      )}
+                      <button
+                        onClick={() => setCompensationModalPayment(p)}
+                        className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                        title="Issue compensation slot or refund points"
+                      >
+                        <span>🎁</span>
+                        <span>Compensate</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
