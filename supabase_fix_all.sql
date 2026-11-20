@@ -195,6 +195,13 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
 
+-- Drop mandatory user_id foreign key & not-null constraints to permit guest booking
+ALTER TABLE public.orders ALTER COLUMN user_id DROP NOT NULL;
+ALTER TABLE public.registrations ALTER COLUMN user_id DROP NOT NULL;
+ALTER TABLE public.registrations DROP CONSTRAINT IF EXISTS registrations_user_id_fkey;
+ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS orders_user_id_fkey;
+ALTER TABLE public.events ADD COLUMN IF NOT EXISTS slot_list_image_url text;
+
 -- 4. TABLE PERMISSIONS & RLS POLICIES
 GRANT ALL ON TABLE orders TO anon, authenticated;
 GRANT ALL ON TABLE registrations TO anon, authenticated;
