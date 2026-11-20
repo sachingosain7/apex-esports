@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { ORG_NAME, SUPPORT_WHATSAPP } from "@/lib/config";
 import { MatchIDPSection } from "@/components/MatchIDPSection";
+import { PublicPointsTableModal } from "@/components/PublicPointsTableModal";
 import Link from "next/link";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -228,6 +229,7 @@ export default function MyTournamentsPage() {
   const [loading, setLoading] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [results, setResults] = useState<Registration[] | null>(null);
+  const [pointsModalOpen, setPointsModalOpen] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -566,7 +568,16 @@ export default function MyTournamentsPage() {
             <span>{ORG_NAME}</span>
           </Link>
 
-          <nav className="flex items-center gap-4 text-xs sm:text-sm font-semibold">
+          <nav className="flex items-center gap-3 sm:gap-4 text-xs sm:text-sm font-semibold">
+            <button
+              type="button"
+              onClick={() => setPointsModalOpen(true)}
+              className="rounded-lg border border-blue-400/40 bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 px-3 py-1 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+              title="View Live Standings & Points Table"
+            >
+              <span>📊</span>
+              <span>Points Table</span>
+            </button>
             <Link href="/" className="text-slate-300 hover:text-white transition-colors">
               Home
             </Link>
@@ -802,6 +813,11 @@ export default function MyTournamentsPage() {
           </div>
         )}
       </main>
+
+      {/* ── Points Table Modal ── */}
+      {pointsModalOpen && (
+        <PublicPointsTableModal onClose={() => setPointsModalOpen(false)} />
+      )}
     </div>
   );
 }
