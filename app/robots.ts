@@ -6,7 +6,11 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: "*",
         allow: "/",
-        disallow: ["/admin"],
+        disallow: ["/admin", "/api/*"],
+      },
+      {
+        userAgent: ["Bytespider", "CCBot", "ClaudeBot", "GPTBot", "anthropic-ai"],
+        disallow: ["/"],
       },
     ],
     sitemap: "https://apex-esports.in/sitemap.xml",
