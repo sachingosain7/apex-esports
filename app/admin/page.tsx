@@ -6086,6 +6086,98 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
     return true;
   });
 
+  // Export 1: Revenue Ledger CSV
+  const handleExportRevenueLedgerCSV = () => {
+    if (lobbiesFinancialData.length === 0) {
+      showToast("No lobby data to export.", "error");
+      return;
+    }
+    const headers = [
+      "Match Date",
+      "Lobby Title",
+      "Mode",
+      "Entry Fee (INR)",
+      "Max Slots",
+      "Verified Squads",
+      "Pending Squads",
+      "Shifted Squads",
+      "Cancelled Squads",
+      "Total Revenue (INR)",
+      "Fill Rate (%)",
+    ];
+    const rows = lobbiesFinancialData.map((l) => [
+      `"${l.dateKey}"`,
+      `"${(l.event.title || "").replace(/"/g, '""')}"`,
+      `"${l.event.mode || "Squad"}"`,
+      Math.round((l.event.entry_fee_paise || 0) / 100),
+      l.maxSlots,
+      l.confirmedSquads.length,
+      l.pendingSquads.length,
+      l.shiftedSquads.length,
+      l.cancelledSquads.length,
+      l.revenueRupees,
+      Math.round(l.fillRate) + "%",
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `apex_revenue_ledger_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast("📥 Revenue Ledger exported to CSV!", "success");
+  };
+
+  // Export 2: Verified Squads Roster CSV
+  const handleExportVerifiedSquadsCSV = () => {
+    const allVerifiedRows: (string | number)[][] = [];
+    lobbiesFinancialData.forEach((l) => {
+      l.confirmedSquads.forEach((sq, idx) => {
+        const pay = l.lobbyPayments.find((p) => p.order_id === sq.order_id);
+        const slotNum = sq.slot_number ?? (l.event.slot_range_start ?? 5) + idx;
+        allVerifiedRows.push([
+          `"${(l.event.title || "").replace(/"/g, '""')}"`,
+          `"${l.dateKey}"`,
+          slotNum,
+          `"${(sq.team_name || "").replace(/"/g, '""')}"`,
+          `"+91 ${sq.whatsapp || "N/A"}"`,
+          `"${pay?.utr || "N/A"}"`,
+          Math.round((sq.amount_paise || l.event.entry_fee_paise || 0) / 100),
+          `"${sq.created_at || "N/A"}"`,
+        ]);
+      });
+    });
+
+    if (allVerifiedRows.length === 0) {
+      showToast("No verified squads found to export.", "error");
+      return;
+    }
+
+    const headers = [
+      "Lobby Title",
+      "Date",
+      "Slot #",
+      "Team Name",
+      "WhatsApp",
+      "12-Digit UTR",
+      "Entry Paid (INR)",
+      "Registered At",
+    ];
+
+    const csvContent =
+      "data:text/csv;charset=utf-8," +
+      [headers.join(","), ...allVerifiedRows.map((r) => r.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `apex_verified_squads_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast("📥 Verified Squads Roster exported to CSV!", "success");
+  };
+
   // Global Queue Filtered Payments
   const filteredGlobalPayments = payments.filter((p) => {
     if (statusFilter && p.pay_status !== statusFilter) return false;
@@ -6398,13 +6490,33 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowRevenueBreakdown(!showRevenueBreakdown)}
-            className="px-3.5 py-1.5 rounded-xl text-xs font-black bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-all cursor-pointer flex items-center gap-1.5"
-          >
-            <span>{showRevenueBreakdown ? "▲ Hide Breakdown Menu" : "▼ Expand Breakdown Menu"}</span>
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={handleExportRevenueLedgerCSV}
+              className="px-3 py-1.5 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              title="Export complete date and lobby financial breakdown to CSV spreadsheet"
+            >
+              <span>📥</span>
+              <span>Export Ledger (.CSV)</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleExportVerifiedSquadsCSV}
+              className="px-3 py-1.5 rounded-xl text-xs font-black bg-indigo-700 hover:bg-indigo-600 text-white shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              title="Export verified squads roster to CSV spreadsheet"
+            >
+              <span>👥</span>
+              <span>Export Squads (.CSV)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowRevenueBreakdown(!showRevenueBreakdown)}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-black bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              <span>{showRevenueBreakdown ? "▲ Hide Breakdown" : "▼ Expand Breakdown"}</span>
+            </button>
+          </div>
         </div>
 
         {showRevenueBreakdown && (
@@ -6564,13 +6676,28 @@ function PaymentsTab({ showToast }: { showToast: (m: string, t: "success" | "err
           </button>
         </div>
 
-        {/* Search */}
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by Lobby Title, Team Name, UTR, or WhatsApp…"
-          className="flex-1 max-w-md bg-white border border-slate-300 rounded-xl px-4 py-2 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-600 shadow-2xs"
-        />
+        {/* Search & Refresh */}
+        <div className="flex items-center gap-2 flex-1 max-w-lg">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by Lobby Title, Team Name, UTR, or WhatsApp…"
+            className="flex-1 bg-white border border-slate-300 rounded-xl px-4 py-2 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-600 shadow-2xs"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              loadMasterData();
+              showToast("Master ledger refreshed from database!", "success");
+            }}
+            disabled={loading}
+            className="px-3 py-2 rounded-xl text-xs font-black bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 shadow-2xs transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+            title="Refresh payments and registrations in real-time"
+          >
+            <span className={loading ? "animate-spin" : ""}>🔄</span>
+            <span>Refresh</span>
+          </button>
+        </div>
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════════ */}
@@ -7734,10 +7861,16 @@ export default function AdminPage() {
             </div>
           )}
 
-          {/* ── Top Platform Metrics Banner (4 Modern Cards) ── */}
+          {/* ── Top Platform Metrics Banner (4 Modern Interactive Cards) ── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {/* Metric 1: Active Lobbies */}
-            <div className="rounded-2xl border border-blue-200 bg-white p-4 sm:p-5 shadow-sm space-y-1">
+            <button
+              type="button"
+              onClick={() => setActiveTab("lobbies")}
+              className={`text-left rounded-2xl border p-4 sm:p-5 shadow-sm space-y-1 transition-all cursor-pointer hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 ${
+                activeTab === "lobbies" ? "border-blue-500 bg-blue-50/50 ring-2 ring-blue-500/20" : "border-blue-200 bg-white hover:border-blue-300"
+              }`}
+            >
               <div className="flex items-center justify-between text-xs font-bold text-blue-700">
                 <span className="uppercase tracking-wider text-[10px]">Active Lobbies</span>
                 <span className="w-7 h-7 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center text-sm font-black">
@@ -7747,11 +7880,20 @@ export default function AdminPage() {
               <p className="text-2xl sm:text-3xl font-black text-slate-900 font-mono tracking-tight">
                 {metrics.activeLobbies}
               </p>
-              <p className="text-[11px] text-slate-500">Open on public website</p>
-            </div>
+              <p className="text-[11px] text-slate-500 flex items-center gap-1 font-medium">
+                <span>Open on public site</span>
+                <span className="text-blue-600 font-bold">→</span>
+              </p>
+            </button>
 
             {/* Metric 2: Squads Locked */}
-            <div className="rounded-2xl border border-amber-200 bg-white p-4 sm:p-5 shadow-sm space-y-1">
+            <button
+              type="button"
+              onClick={() => setActiveTab("slots")}
+              className={`text-left rounded-2xl border p-4 sm:p-5 shadow-sm space-y-1 transition-all cursor-pointer hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 ${
+                activeTab === "slots" ? "border-amber-500 bg-amber-50/50 ring-2 ring-amber-500/20" : "border-amber-200 bg-white hover:border-amber-300"
+              }`}
+            >
               <div className="flex items-center justify-between text-xs font-bold text-amber-800">
                 <span className="uppercase tracking-wider text-[10px]">Squads Locked</span>
                 <span className="w-7 h-7 rounded-lg bg-amber-50 text-amber-800 flex items-center justify-center text-sm font-black">
@@ -7761,11 +7903,20 @@ export default function AdminPage() {
               <p className="text-2xl sm:text-3xl font-black text-slate-900 font-mono tracking-tight">
                 {metrics.lockedSquads}
               </p>
-              <p className="text-[11px] text-slate-500">Total verified registrations</p>
-            </div>
+              <p className="text-[11px] text-slate-500 flex items-center gap-1 font-medium">
+                <span>Total verified teams</span>
+                <span className="text-amber-700 font-bold">→</span>
+              </p>
+            </button>
 
             {/* Metric 3: Total Revenue */}
-            <div className="rounded-2xl border border-emerald-200 bg-white p-4 sm:p-5 shadow-sm space-y-1">
+            <button
+              type="button"
+              onClick={() => setActiveTab("payments")}
+              className={`text-left rounded-2xl border p-4 sm:p-5 shadow-sm space-y-1 transition-all cursor-pointer hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 ${
+                activeTab === "payments" ? "border-emerald-500 bg-emerald-50/50 ring-2 ring-emerald-500/20" : "border-emerald-200 bg-white hover:border-emerald-300"
+              }`}
+            >
               <div className="flex items-center justify-between text-xs font-bold text-emerald-800">
                 <span className="uppercase tracking-wider text-[10px]">Total Revenue</span>
                 <span className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-800 flex items-center justify-center text-sm font-black">
@@ -7775,11 +7926,26 @@ export default function AdminPage() {
               <p className="text-2xl sm:text-3xl font-black text-emerald-700 font-mono tracking-tight">
                 ₹{metrics.totalRevenue.toLocaleString("en-IN")}
               </p>
-              <p className="text-[11px] text-slate-500">Collected entry fees</p>
-            </div>
+              <p className="text-[11px] text-slate-500 flex items-center gap-1 font-medium">
+                <span>Collected entry fees</span>
+                <span className="text-emerald-700 font-bold">→</span>
+              </p>
+            </button>
 
             {/* Metric 4: Pending Payments */}
-            <div className="rounded-2xl border border-rose-200 bg-white p-4 sm:p-5 shadow-sm space-y-1">
+            <button
+              type="button"
+              onClick={() => setActiveTab("payments")}
+              className={`text-left rounded-2xl border p-4 sm:p-5 shadow-sm space-y-1 transition-all cursor-pointer hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 relative ${
+                activeTab === "payments" ? "border-rose-500 bg-rose-50/50 ring-2 ring-rose-500/20" : "border-rose-200 bg-white hover:border-rose-300"
+              }`}
+            >
+              {metrics.pendingPayments > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-rose-500"></span>
+                </span>
+              )}
               <div className="flex items-center justify-between text-xs font-bold text-rose-800">
                 <span className="uppercase tracking-wider text-[10px]">Pending UTRs</span>
                 <span className="w-7 h-7 rounded-lg bg-rose-50 text-rose-800 flex items-center justify-center text-sm font-black">
@@ -7789,10 +7955,11 @@ export default function AdminPage() {
               <p className="text-2xl sm:text-3xl font-black text-rose-700 font-mono tracking-tight">
                 {metrics.pendingPayments}
               </p>
-              <p className="text-[11px] text-slate-500">
-                {metrics.pendingPayments > 0 ? "Needs admin verification" : "All payments verified"}
+              <p className="text-[11px] text-slate-500 flex items-center gap-1 font-medium">
+                <span>{metrics.pendingPayments > 0 ? "Review UTRs & verify" : "All payments verified"}</span>
+                <span className="text-rose-600 font-bold">→</span>
               </p>
-            </div>
+            </button>
           </div>
 
           {/* ── Active Tab Workspace ── */}
