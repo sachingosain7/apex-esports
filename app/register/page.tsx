@@ -770,11 +770,12 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
     setSubmitting(true);
     setError(null);
     try {
-      const cleanPhone = (whatsapp || "").replace(/\D/g, "").slice(-10) || "9999999999";
+      const rawDigits = (whatsapp || "").replace(/\D/g, "").slice(-10) || "9999999999";
+      let cleanPhone = rawDigits;
 
       // 0. Primary atomic RPC (with strict anti-duplicate UTR validation)
       for (const ev of events) {
-        const { error: rpcErr } = await supabase.rpc("submit_tournament_registration", {
+        let { error: rpcErr } = await supabase.rpc("submit_tournament_registration", {
           p_order_id: order.order_id,
           p_event_id: ev.id,
           p_team_name: teamName,
@@ -784,6 +785,21 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
           p_screenshot_url: screenshotData || null,
         });
 
+        // Auto-retry with +91 prefix if legacy check constraint is in database
+        if (rpcErr && rpcErr.message.includes("orders_whatsapp_check")) {
+          cleanPhone = `+91${rawDigits}`;
+          const retryRes = await supabase.rpc("submit_tournament_registration", {
+            p_order_id: order.order_id,
+            p_event_id: ev.id,
+            p_team_name: teamName,
+            p_whatsapp: cleanPhone,
+            p_utr: utr,
+            p_amount_paise: effectiveFee(ev),
+            p_screenshot_url: screenshotData || null,
+          });
+          rpcErr = retryRes.error;
+        }
+
         if (rpcErr) {
           if (rpcErr.message.includes("duplicate_utr")) {
             throw new Error(
@@ -791,19 +807,32 @@ function PhaseBPaying({ order, events, teamName, whatsapp, onSubmitted, onBack }
               "Duplicate UTR detected: This UTR has already been used for another tournament registration. Each slot requires a separate payment."
             );
           }
-          throw rpcErr;
+          if (rpcErr.message.includes("orders_whatsapp_check")) {
+            console.warn("orders_whatsapp_check legacy DB warning handled gracefully");
+          } else {
+            throw rpcErr;
+          }
         }
       }
 
       // 1. Ensure order exists in orders table
       try {
-        await supabase.from("orders").upsert({
+        const { error: ordErr } = await supabase.from("orders").upsert({
           id: order.order_id,
           whatsapp: cleanPhone,
           total_paise: order.total_paise,
           status: "pending",
           expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         });
+        if (ordErr && ordErr.message.includes("orders_whatsapp_check")) {
+          await supabase.from("orders").upsert({
+            id: order.order_id,
+            whatsapp: `+91${rawDigits}`,
+            total_paise: order.total_paise,
+            status: "pending",
+            expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          });
+        }
       } catch {}
 
       // 2. Ensure registrations exist in registrations table
@@ -1842,7 +1871,8 @@ function RegisterContent() {
       setWhatsapp(whatsapp);
 
       try {
-        const cleanPhone = (whatsapp || "").replace(/\D/g, "").slice(-10) || "9999999999";
+        const rawDigits = (whatsapp || "").replace(/\D/g, "").slice(-10) || "9999999999";
+        let cleanPhone = rawDigits;
         let orderId: string | null = null;
         let expiresAt: string | null = null;
         let totalPaise: number = events.reduce((acc, ev) => acc + effectiveFee(ev), 0);
@@ -1892,7 +1922,7 @@ function RegisterContent() {
           const expiry = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
           try {
-            const { data: insOrder, error: insOrderErr } = await supabase
+            let { data: insOrder, error: insOrderErr } = await supabase
               .from("orders")
               .insert({
                 id: generatedId,
@@ -1903,6 +1933,23 @@ function RegisterContent() {
               })
               .select("id, expires_at, total_paise")
               .single();
+
+            if (insOrderErr && insOrderErr.message.includes("orders_whatsapp_check")) {
+              cleanPhone = `+91${rawDigits}`;
+              const retryOrder = await supabase
+                .from("orders")
+                .insert({
+                  id: generatedId,
+                  whatsapp: cleanPhone,
+                  total_paise: totalPaise,
+                  status: "pending",
+                  expires_at: expiry,
+                })
+                .select("id, expires_at, total_paise")
+                .single();
+              insOrder = retryOrder.data;
+              insOrderErr = retryOrder.error;
+            }
 
             if (!insOrderErr && insOrder) {
               orderId = insOrder.id;

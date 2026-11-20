@@ -285,7 +285,7 @@ function BroadcastModal({
   onClose: () => void;
   showToast: (m: string, t: "success" | "error") => void;
 }) {
-  const [template, setTemplate] = useState<"idp" | "registration">("idp");
+  const [template, setTemplate] = useState<"idp" | "registration" | "warning" | "results">("idp");
   const lobbyTag = extractLobbyLabel(event.title);
   const start = formatTimestamp(event.starts_at);
   const mapsStr = event.maps?.join(", ") || "Erangel";
@@ -337,7 +337,43 @@ ${matchCredentialsText}
 ━━━━━━━━━━━━━━━━━━━━
 Instant UPI QR verification & automatic slot confirmation!`;
 
-  const activeMessage = template === "idp" ? idpMessage : regMessage;
+  const warningMessage = `⚠️ *URGENT: ROOM IS LIVE — 5 MINUTES WARNING* ⚠️
+━━━━━━━━━━━━━━━━━━━━
+🎮 *Lobby:* ${event.title}
+⏰ *Match Starting In:* 5 MINUTES SHARP!
+━━━━━━━━━━━━━━━━━━━━
+🆔 *Room ID:* \`${event.room_id || "CHECK IDP SECTION"}\`
+🔑 *Password:* \`${event.room_password || "CHECK IDP SECTION"}\`
+━━━━━━━━━━━━━━━━━━━━
+🚨 *RULES:*
+• Enter ONLY your assigned slot number!
+• Teaming, cheating, or unauthorized slot hopping = IMMEDIATE PERMABAN!
+• Room will be started on time. Ready up immediately!`;
+
+  const resultsMessage = `🏆 *${ORG_NAME.toUpperCase()} — OFFICIAL TOURNAMENT RESULTS* 🏆
+━━━━━━━━━━━━━━━━━━━━
+🎮 *Tournament:* ${event.title}
+💰 *Total Prize Pool:* ₹${(event.prize_pool_paise / 100).toFixed(0)}
+━━━━━━━━━━━━━━━━━━━━
+👑 *TOP 4 WINNING SQUADS:*
+🥇 1st Place: ${(event.prize_distribution as any)?.first ? `₹${(event.prize_distribution as any).first}` : "Winner"}
+🥈 2nd Place: ${(event.prize_distribution as any)?.second ? `₹${(event.prize_distribution as any).second}` : "Runner Up"}
+🥉 3rd Place: ${(event.prize_distribution as any)?.third ? `₹${(event.prize_distribution as any).third}` : "3rd"}
+🏅 4th Place: ${(event.prize_distribution as any)?.fourth ? `₹${(event.prize_distribution as any).fourth}` : "4th"}
+━━━━━━━━━━━━━━━━━━━━
+⚡ Full points table & screenshots verified!
+Prize money has been disbursed directly to winning captains. GG WP!`;
+
+  const getActiveMessage = () => {
+    switch (template) {
+      case "idp": return idpMessage;
+      case "registration": return regMessage;
+      case "warning": return warningMessage;
+      case "results": return resultsMessage;
+    }
+  };
+
+  const activeMessage = getActiveMessage();
 
   const handleCopy = () => {
     copyToClipboard(activeMessage);
@@ -350,7 +386,7 @@ Instant UPI QR verification & automatic slot confirmation!`;
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div className="flex items-center gap-2">
             <span className="text-xl">📢</span>
-            <h3 className="font-black text-slate-900 text-base">WhatsApp Broadcast Notice</h3>
+            <h3 className="font-black text-slate-900 text-base">WhatsApp Broadcast Hub</h3>
           </div>
           <button
             onClick={onClose}
@@ -361,28 +397,50 @@ Instant UPI QR verification & automatic slot confirmation!`;
         </div>
 
         {/* Template Selector Tabs */}
-        <div className="flex p-1 bg-slate-100 border border-slate-200 rounded-xl gap-1">
+        <div className="grid grid-cols-2 sm:grid-cols-4 p-1 bg-slate-100 border border-slate-200 rounded-xl gap-1">
           <button
             type="button"
             onClick={() => setTemplate("idp")}
-            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
+            className={`py-2 px-1 rounded-lg text-[11px] font-bold transition-all text-center ${
               template === "idp"
                 ? "bg-white text-slate-950 shadow-sm"
                 : "text-slate-600 hover:text-slate-900"
             }`}
           >
-            🔑 Room ID &amp; Password Notice
+            🔑 ID &amp; Pass
+          </button>
+          <button
+            type="button"
+            onClick={() => setTemplate("warning")}
+            className={`py-2 px-1 rounded-lg text-[11px] font-bold transition-all text-center ${
+              template === "warning"
+                ? "bg-white text-slate-950 shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            ⚠️ 5m Warning
           </button>
           <button
             type="button"
             onClick={() => setTemplate("registration")}
-            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
+            className={`py-2 px-1 rounded-lg text-[11px] font-bold transition-all text-center ${
               template === "registration"
                 ? "bg-white text-slate-950 shadow-sm"
                 : "text-slate-600 hover:text-slate-900"
             }`}
           >
-            🚀 Registration Open Alert
+            🚀 Open Alert
+          </button>
+          <button
+            type="button"
+            onClick={() => setTemplate("results")}
+            className={`py-2 px-1 rounded-lg text-[11px] font-bold transition-all text-center ${
+              template === "results"
+                ? "bg-white text-slate-950 shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            🏆 Top 4 Results
           </button>
         </div>
 
@@ -390,25 +448,34 @@ Instant UPI QR verification & automatic slot confirmation!`;
           Ready to broadcast directly into your BGMI WhatsApp announcement groups:
         </p>
 
-        <pre className="bg-[#0A1128] border border-blue-900/50 rounded-2xl p-4 text-xs font-mono text-emerald-400 whitespace-pre-wrap max-h-64 overflow-y-auto leading-relaxed select-all">
+        <pre className="bg-[#0A1128] border border-blue-900/50 rounded-2xl p-4 text-xs font-mono text-emerald-400 whitespace-pre-wrap max-h-56 overflow-y-auto leading-relaxed select-all">
           {activeMessage}
         </pre>
 
-        <div className="flex flex-col sm:flex-row gap-3 pt-2">
+        <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
           <button
             onClick={handleCopy}
-            className="flex-1 py-3 rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 font-black text-xs transition-colors flex items-center justify-center gap-2 shadow-sm"
+            className="flex-1 py-3 rounded-xl bg-[#FFB800] hover:bg-[#F59E0B] text-slate-950 font-black text-xs transition-colors flex items-center justify-center gap-2 shadow-sm cursor-pointer"
           >
-            <span>📋</span> Copy {template === "idp" ? "IDP Notice" : "Registration Alert"}
+            <span>📋</span> Copy Broadcast
           </button>
+          <a
+            href={`https://wa.me/?text=${encodeURIComponent(activeMessage)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="py-3 px-4 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+            title="Open WhatsApp Web with this broadcast text"
+          >
+            <span>💬</span> Share on WhatsApp
+          </a>
           {event.whatsapp_group_link && (
             <a
               href={event.whatsapp_group_link}
               target="_blank"
               rel="noopener noreferrer"
-              className="py-3 rounded-xl border border-emerald-300 bg-emerald-50 px-4 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2"
+              className="py-3 rounded-xl border border-emerald-300 bg-emerald-50 px-3 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition-colors flex items-center justify-center gap-1.5"
             >
-              <span>💬</span> Open Group
+              <span>👥</span> Lobby Group
             </a>
           )}
         </div>
@@ -750,6 +817,7 @@ function TeamsRosterModal({
 
   // Custom Slot Map: { [teamName or regId]: slotNumber }
   const [slotMap, setSlotMap] = useState<Record<string, number>>(event.custom_slot_assignments ?? {});
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
   const loadTeams = useCallback(async () => {
     setLoading(true);
@@ -849,6 +917,46 @@ function TeamsRosterModal({
       showToast(`Cancelled and refunded slot for "${squad.team_name}". Slot is now open!`, "success");
     } catch (err: unknown) {
       showToast((err as Error).message || "Failed to cancel slot", "error");
+    }
+  };
+
+  // Purge all registered squads for this lobby (reset slots to 0)
+  const handlePurgeAllLobbySquads = async () => {
+    const ok = window.confirm(
+      `⚠️ Clear all registered squads from "${event.title}"?\n\nThis will remove any test squads and reset filled slots to 0.`
+    );
+    if (!ok) return;
+
+    try {
+      let rpcSuccess = false;
+      try {
+        const { data, error } = await supabase.rpc("admin_reset_lobby_slots", {
+          p_event_id: event.id,
+        });
+        if (!error && data?.success) rpcSuccess = true;
+      } catch {}
+
+      if (!rpcSuccess) {
+        await supabase
+          .from("registrations")
+          .update({ status: "cancelled" })
+          .eq("event_id", event.id);
+
+        await supabase
+          .from("events")
+          .update({ filled_slots: 0, custom_slot_assignments: {} })
+          .eq("id", event.id);
+      }
+
+      try {
+        localStorage.removeItem(`apex_slot_settings_${event.id}`);
+      } catch {}
+
+      setTeams([]);
+      setSlotMap({});
+      showToast(`✨ All squads purged from "${event.title}". Slots reset to 0!`, "success");
+    } catch (err: unknown) {
+      showToast((err as Error).message || "Failed to purge squads", "error");
     }
   };
 
@@ -1182,15 +1290,187 @@ function TeamsRosterModal({
           )}
         </div>
 
-        {/* ── Squads Table with Editable Slot Number ── */}
+        {/* ── Toolbar: View Mode Toggle & Purge Action ── */}
+        <div className="flex items-center justify-between gap-2 pb-1 flex-wrap">
+          <div className="flex items-center gap-1 p-1 bg-slate-100 border border-slate-200 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setViewMode("grid")}
+              className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                viewMode === "grid"
+                  ? "bg-white text-indigo-950 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <span>🎯</span>
+              <span>25-Slot Grid</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("list")}
+              className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                viewMode === "list"
+                  ? "bg-white text-indigo-950 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <span>📋</span>
+              <span>Table List</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold text-slate-500">
+              {teams.length} Squad{teams.length === 1 ? "" : "s"} Assigned
+            </span>
+            {teams.length > 0 && (
+              <button
+                type="button"
+                onClick={handlePurgeAllLobbySquads}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-black text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors cursor-pointer flex items-center gap-1"
+                title="Purge all registered squads and reset slots to 0"
+              >
+                <span>✨</span>
+                <span>Purge Squads</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* ── Squads Display: Grid View or List View ── */}
         <div className="flex-1 overflow-y-auto space-y-2 pr-1">
           {loading ? (
             <Spinner />
+          ) : viewMode === "grid" ? (
+            /* 25-Slot Visual Esports Grid */
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+              {/* Host & Caster Slots 1-4 */}
+              {[1, 2, 3, 4].map((sNum) => (
+                <div
+                  key={`host-slot-${sNum}`}
+                  className="rounded-xl border border-amber-300 bg-amber-50/60 p-2.5 flex items-center justify-between gap-2 shadow-2xs"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="w-7 h-7 rounded-lg bg-amber-200/80 text-amber-950 flex items-center justify-center font-mono font-black text-xs">
+                      #{sNum}
+                    </span>
+                    <div>
+                      <p className="text-xs font-black text-amber-950 flex items-center gap-1">
+                        <span>🎙️</span> Host / Caster
+                      </p>
+                      <p className="text-[10px] text-amber-800 font-bold uppercase tracking-wider">Reserved</p>
+                    </div>
+                  </div>
+                  <span className="text-xs">🔒</span>
+                </div>
+              ))}
+
+              {/* Competitive Squad Slots 5-25 */}
+              {Array.from({ length: 21 }, (_, i) => i + 5).map((sNum) => {
+                const assignedSquad = teams.find((t, idx) => {
+                  const key = t.registration_id || t.team_name;
+                  const s = slotMap[key] ?? (slotStart + idx);
+                  return s === sNum;
+                });
+
+                if (assignedSquad) {
+                  const key = assignedSquad.registration_id || assignedSquad.team_name;
+                  return (
+                    <div
+                      key={`slot-${sNum}`}
+                      className="rounded-xl border-2 border-emerald-400 bg-emerald-50/70 p-2.5 flex flex-col justify-between gap-2 shadow-2xs"
+                    >
+                      <div className="flex items-start justify-between gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-600 text-white font-mono font-black text-xs">
+                            #{sNum}
+                          </span>
+                          <span
+                            className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase ${
+                              assignedSquad.status === "confirmed"
+                                ? "bg-emerald-200 text-emerald-950"
+                                : "bg-amber-200 text-amber-950"
+                            }`}
+                          >
+                            {assignedSquad.status === "confirmed" ? "PAID" : "HOLD"}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setShiftingSquad(assignedSquad)}
+                            className="p-1 rounded text-[10px] bg-white border border-slate-200 hover:bg-slate-50 text-blue-800 cursor-pointer"
+                            title="Shift squad"
+                          >
+                            🔄
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleCancelAndRefundSquad(assignedSquad)}
+                            className="p-1 rounded text-[10px] bg-white border border-slate-200 hover:bg-rose-50 text-rose-700 cursor-pointer"
+                            title="Cancel slot"
+                          >
+                            ❌
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="text-xs font-black text-slate-900 truncate" title={assignedSquad.team_name}>
+                          {assignedSquad.team_name}
+                        </p>
+                        <p className="text-[10px] text-slate-600 font-mono">
+                          +91 {assignedSquad.whatsapp}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 border-t border-emerald-200/60 text-[10px]">
+                        <span className="text-emerald-900 font-medium truncate">
+                          {assignedSquad.utr ? `UTR: ${assignedSquad.utr}` : "Verified"}
+                        </span>
+                        <a
+                          href={`https://wa.me/91${assignedSquad.whatsapp}?text=Hi+${encodeURIComponent(
+                            assignedSquad.team_name
+                          )},+slot+${sNum}+confirmed+for+${encodeURIComponent(event.title)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-emerald-700 font-bold hover:underline"
+                        >
+                          💬 WhatsApp
+                        </a>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Empty Slot
+                return (
+                  <div
+                    key={`slot-${sNum}`}
+                    className="rounded-xl border border-dashed border-slate-300 bg-white/70 p-2.5 flex items-center justify-between gap-2 shadow-2xs hover:bg-slate-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="w-7 h-7 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center font-mono font-bold text-xs">
+                        #{sNum}
+                      </span>
+                      <div>
+                        <p className="text-xs font-bold text-slate-500">Open Slot</p>
+                        <p className="text-[10px] text-slate-400">Available</p>
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100">
+                      Empty
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           ) : teams.length === 0 ? (
             <div className="text-center py-12 text-slate-400 text-xs font-semibold">
               No squads registered for this lobby yet.
             </div>
           ) : (
+            /* Table List View */
             <div className="divide-y divide-slate-100">
               {teams.map((t, idx) => {
                 const key = t.registration_id || t.team_name;
@@ -3223,6 +3503,8 @@ function LiveLobbiesTab({
   const [duplicating, setDuplicating] = useState<Record<string, boolean>>({});
   const [deleteEventTarget, setDeleteEventTarget] = useState<EventAdmin | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [resetLobbyTarget, setResetLobbyTarget] = useState<EventAdmin | null>(null);
+  const [resettingId, setResettingId] = useState<string | null>(null);
   const [cleaningEmptyDrafts, setCleaningEmptyDrafts] = useState(false);
   const [cleaningExpired, setCleaningExpired] = useState(false);
 
@@ -3479,6 +3761,46 @@ function LiveLobbiesTab({
     }
   };
 
+  const confirmResetLobby = async () => {
+    if (!resetLobbyTarget) return;
+    const targetId = resetLobbyTarget.id;
+    const targetTitle = resetLobbyTarget.title;
+    setResettingId(targetId);
+    try {
+      let rpcSuccess = false;
+      try {
+        const { data, error } = await supabase.rpc("admin_reset_lobby_slots", {
+          p_event_id: targetId,
+        });
+        if (!error && data?.success) rpcSuccess = true;
+      } catch {}
+
+      if (!rpcSuccess) {
+        await supabase
+          .from("registrations")
+          .update({ status: "cancelled" })
+          .eq("event_id", targetId);
+
+        await supabase
+          .from("events")
+          .update({ filled_slots: 0, custom_slot_assignments: {} })
+          .eq("id", targetId);
+      }
+
+      try {
+        localStorage.removeItem(`apex_slot_settings_${targetId}`);
+      } catch {}
+
+      showToast(`✨ All squads purged from "${targetTitle}"! Slots reset to 0.`, "success");
+      setResetLobbyTarget(null);
+      await loadEvents();
+    } catch (err: unknown) {
+      showToast((err as Error).message || "Failed to reset lobby slots", "error");
+    } finally {
+      setResettingId(null);
+    }
+  };
+
   const handleCleanEmptyDrafts = async () => {
     const emptyDrafts = events.filter((e) => e.is_published === false && (regStats[e.id]?.total || 0) === 0);
     if (emptyDrafts.length === 0) {
@@ -3709,6 +4031,45 @@ function LiveLobbiesTab({
         </div>
       )}
 
+      {/* Reset Lobby Slots Confirmation Dialog */}
+      {resetLobbyTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 text-amber-600">
+              <span className="w-10 h-10 rounded-2xl bg-amber-100 flex items-center justify-center text-xl shrink-0 font-black">
+                ✨
+              </span>
+              <div>
+                <h3 className="text-base font-black text-slate-900">Reset Lobby Slots &amp; Purge Squads</h3>
+                <p className="text-xs text-slate-500">Free up all slots for this lobby</p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-200">
+              Are you sure you want to clear all registered squads from <strong>&quot;{resetLobbyTarget.title}&quot;</strong>?
+              This will cancel lingering test registrations (such as test squads) and reset the filled slots count back to 0.
+            </p>
+            <div className="flex justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setResetLobbyTarget(null)}
+                disabled={resettingId === resetLobbyTarget.id}
+                className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmResetLobby}
+                disabled={resettingId === resetLobbyTarget.id}
+                className="px-5 py-2 rounded-xl text-xs font-black bg-amber-500 text-slate-950 hover:bg-amber-600 transition-colors shadow-sm cursor-pointer"
+              >
+                {resettingId === resetLobbyTarget.id ? "Resetting…" : "✨ Yes, Reset Slots to 0"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Filters & Search */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex gap-1.5 p-1 bg-slate-200/80 rounded-xl overflow-x-auto no-scrollbar">
@@ -3900,6 +4261,16 @@ function LiveLobbiesTab({
                       title="Edit title, date/time, maps, mode, kind, fee and prize directly"
                     >
                       <span>{draft.isEditingDetails ? "✕ Done" : "✏️ Edit Info"}</span>
+                    </button>
+
+                    {/* Reset Slots Button */}
+                    <button
+                      onClick={() => setResetLobbyTarget(event)}
+                      className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-amber-50 border border-amber-300 text-amber-900 hover:bg-amber-100 transition-colors flex items-center gap-1 cursor-pointer"
+                      title="Clear test registrations and reset slots to 0"
+                    >
+                      <span>✨</span>
+                      <span>Reset Slots</span>
                     </button>
 
                     {/* Delete Lobby Button */}

@@ -73,11 +73,9 @@ BEGIN
   END IF;
 END $$;
 
--- 1G. RELAX WHATSAPP CHECK CONSTRAINTS (ACCEPTS 10 DIGITS, WITH OR WITHOUT +91)
+-- 1G. DROP RIGID PHONE CHECK CONSTRAINTS (PREVENTS SUBMISSION BLOCKERS)
 ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_whatsapp_check;
 ALTER TABLE registrations DROP CONSTRAINT IF EXISTS registrations_whatsapp_check;
-ALTER TABLE orders ADD CONSTRAINT orders_whatsapp_check CHECK (length(regexp_replace(whatsapp, '[^0-9]', '', 'g')) >= 10);
-ALTER TABLE registrations ADD CONSTRAINT registrations_whatsapp_check CHECK (length(regexp_replace(whatsapp, '[^0-9]', '', 'g')) >= 10);
 
 -- 2. ENSURE TABLES AND SUPPORTING COLUMNS EXIST
 CREATE TABLE IF NOT EXISTS public.events (
@@ -1330,6 +1328,33 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION admin_cancel_squad_slot(uuid, uuid) TO authenticated, anon;
+
+-- 14B. RESET LOBBY SLOTS (PURGE TEST DATA & RESET FILLED SLOTS)
+DROP FUNCTION IF EXISTS admin_reset_lobby_slots(uuid);
+CREATE OR REPLACE FUNCTION admin_reset_lobby_slots(p_event_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_count int := 0;
+BEGIN
+  UPDATE registrations
+  SET status = 'cancelled'
+  WHERE event_id = p_event_id AND status != 'cancelled';
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+
+  UPDATE events
+  SET filled_slots = 0,
+      custom_slot_assignments = '{}'::jsonb
+  WHERE id = p_event_id;
+
+  RETURN jsonb_build_object('success', true, 'cleared_count', v_count);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION admin_reset_lobby_slots(uuid) TO authenticated, anon;
 
 -- 15. BULK GENERATOR RPC
 DROP FUNCTION IF EXISTS admin_bulk_create_lobbies(text, text[], text, text[], timestamptz[], text, text, int, int, int, int, int, boolean, jsonb);
